@@ -198,6 +198,34 @@ function OppBlueSheetPanel({ opp, clientId, onClose }: { opp: any; clientId: num
 
   // 分数存 0-4，对应 0/25/50/75/100，健康度 = 均值百分比
   const totalScore = MEDDPICC_DIMENSIONS.reduce((sum, dim) => sum + (meddpiccScores[dim.key] ?? 0), 0);
+
+  // MEDDPICC → Blue Sheet 弱项映射（分数 ≤ 1 时触发高亮）
+  const weakM  = (meddpiccScores["metricsScore"] ?? 0) <= 1 && meddpiccInitialized;
+  const weakE  = (meddpiccScores["economicBuyerScore"] ?? 0) <= 1 && meddpiccInitialized;
+  const weakDc = (meddpiccScores["decisionCriteriaScore"] ?? 0) <= 1 && meddpiccInitialized;
+  const weakDp = (meddpiccScores["decisionProcessScore"] ?? 0) <= 1 && meddpiccInitialized;
+  const weakP  = (meddpiccScores["paperProcessScore"] ?? 0) <= 1 && meddpiccInitialized;
+  const weakI  = (meddpiccScores["implicatePainScore"] ?? 0) <= 1 && meddpiccInitialized;
+  const weakC  = (meddpiccScores["championScore"] ?? 0) <= 1 && meddpiccInitialized;
+  const weakC2 = (meddpiccScores["competitionScore"] ?? 0) <= 1 && meddpiccInitialized;
+
+  // 字段级弱项标记
+  const weakBizObj    = weakM || weakI;         // 客户业务目标 ← M + I
+  const weakValueProp = weakM || weakE;         // 我方价值主张 ← M + E
+  const weakChampion  = weakC;                  // Champion ← C
+  const weakCompetitor = weakC2;               // 竞争态势 ← C2
+  const weakWinStrat  = weakI || weakDc;        // 赢单策略 ← I + Dc
+  const weakMilestone = weakDp || weakP;        // 关键里程碑 ← Dp + P
+  const weakRisk      = weakDp || weakP || weakE; // 风险与应对 ← Dp + P + E
+
+  function WeakHint({ dims }: { dims: string[] }) {
+    return (
+      <div className="flex items-center gap-1 mt-0.5 mb-1">
+        <span className="text-[9px] text-orange-400 font-medium">⚠ MEDDPICC</span>
+        <span className="text-[9px] text-orange-400/80">{dims.join(" · ")} 评分偏低 — 请在此补充应对策略</span>
+      </div>
+    );
+  }
   const maxScore = MEDDPICC_DIMENSIONS.length * 4;
   const healthPct = Math.round((totalScore / maxScore) * 100);
   const weakDimensions = MEDDPICC_DIMENSIONS.filter(dim => (meddpiccScores[dim.key] ?? 0) <= 1).map(dim => ({
@@ -255,18 +283,21 @@ function OppBlueSheetPanel({ opp, clientId, onClose }: { opp: any; clientId: num
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-medium text-cyan-400 mb-1 block">客户业务目标</label>
-              <Textarea className="text-xs h-16 resize-none" placeholder="此商机解决客户什么核心业务问题？" value={blueSheet.bizObjective} onChange={e => setBlueSheet(p => ({ ...p, bizObjective: e.target.value }))} />
+              {weakBizObj && <WeakHint dims={[...(weakM ? ["M-价值量化"] : []), ...(weakI ? ["I-痛点牵连"] : [])]} />}
+              <Textarea className={cn("text-xs h-16 resize-none", weakBizObj && "border-orange-500/50 focus-visible:ring-orange-500/30")} placeholder="此商机解决客户什么核心业务问题？" value={blueSheet.bizObjective} onChange={e => setBlueSheet(p => ({ ...p, bizObjective: e.target.value }))} />
             </div>
             <div>
               <label className="text-[10px] font-medium text-green-400 mb-1 block">我方价值主张</label>
-              <Textarea className="text-xs h-16 resize-none" placeholder="针对此商机的差异化价值（量化）" value={blueSheet.valueProposition} onChange={e => setBlueSheet(p => ({ ...p, valueProposition: e.target.value }))} />
+              {weakValueProp && <WeakHint dims={[...(weakM ? ["M-价值量化"] : []), ...(weakE ? ["E-决策人"] : [])]} />}
+              <Textarea className={cn("text-xs h-16 resize-none", weakValueProp && "border-orange-500/50 focus-visible:ring-orange-500/30")} placeholder="针对此商机的差异化价值（量化）" value={blueSheet.valueProposition} onChange={e => setBlueSheet(p => ({ ...p, valueProposition: e.target.value }))} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-medium text-yellow-400 mb-1 block">Champion</label>
+              {weakChampion && <WeakHint dims={["C-Champion"]} />}
               <div className="flex gap-1.5">
-                <Input className="h-7 text-xs flex-1" placeholder="Champion 姓名" value={blueSheet.champion} onChange={e => setBlueSheet(p => ({ ...p, champion: e.target.value }))} />
+                <Input className={cn("h-7 text-xs flex-1", weakChampion && "border-orange-500/50")} placeholder="Champion 姓名" value={blueSheet.champion} onChange={e => setBlueSheet(p => ({ ...p, champion: e.target.value }))} />
                 <Select value={blueSheet.championStance} onValueChange={v => setBlueSheet(p => ({ ...p, championStance: v }))}>
                   <SelectTrigger className="h-7 text-xs w-20"><SelectValue /></SelectTrigger>
                   <SelectContent>{STANCE_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
@@ -275,21 +306,25 @@ function OppBlueSheetPanel({ opp, clientId, onClose }: { opp: any; clientId: num
             </div>
             <div>
               <label className="text-[10px] font-medium text-orange-400 mb-1 block">竞争态势</label>
-              <Input className="h-7 text-xs" placeholder="竞品名称及应对策略" value={blueSheet.blueSheetCompetitor} onChange={e => setBlueSheet(p => ({ ...p, blueSheetCompetitor: e.target.value }))} />
+              {weakCompetitor && <WeakHint dims={["C2-竞争态势"]} />}
+              <Input className={cn("h-7 text-xs", weakCompetitor && "border-orange-500/50")} placeholder="竞品名称及应对策略" value={blueSheet.blueSheetCompetitor} onChange={e => setBlueSheet(p => ({ ...p, blueSheetCompetitor: e.target.value }))} />
             </div>
           </div>
           <div>
             <label className="text-[10px] font-medium text-primary mb-1 block">赢单策略</label>
-            <Textarea className="text-xs h-14 resize-none" placeholder="针对此商机的具体打法和差异化策略" value={blueSheet.winStrategy} onChange={e => setBlueSheet(p => ({ ...p, winStrategy: e.target.value }))} />
+            {weakWinStrat && <WeakHint dims={[...(weakI ? ["I-痛点牵连"] : []), ...(weakDc ? ["Dc-决策标准"] : [])]} />}
+            <Textarea className={cn("text-xs h-14 resize-none", weakWinStrat && "border-orange-500/50 focus-visible:ring-orange-500/30")} placeholder="针对此商机的具体打法和差异化策略" value={blueSheet.winStrategy} onChange={e => setBlueSheet(p => ({ ...p, winStrategy: e.target.value }))} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-medium text-blue-400 mb-1 block">关键里程碑</label>
-              <Textarea className="text-xs h-14 resize-none" placeholder="时间节点，每行一条" value={blueSheet.keyMilestones} onChange={e => setBlueSheet(p => ({ ...p, keyMilestones: e.target.value }))} />
+              {weakMilestone && <WeakHint dims={[...(weakDp ? ["Dp-决策流程"] : []), ...(weakP ? ["P-采购流程"] : [])]} />}
+              <Textarea className={cn("text-xs h-14 resize-none", weakMilestone && "border-orange-500/50 focus-visible:ring-orange-500/30")} placeholder="时间节点，每行一条" value={blueSheet.keyMilestones} onChange={e => setBlueSheet(p => ({ ...p, keyMilestones: e.target.value }))} />
             </div>
             <div>
               <label className="text-[10px] font-medium text-red-400 mb-1 block">风险与应对</label>
-              <Textarea className="text-xs h-14 resize-none" placeholder="主要风险及应对措施" value={blueSheet.riskAndMitigation} onChange={e => setBlueSheet(p => ({ ...p, riskAndMitigation: e.target.value }))} />
+              {weakRisk && <WeakHint dims={[...(weakDp ? ["Dp-决策流程"] : []), ...(weakP ? ["P-采购流程"] : []), ...(weakE ? ["E-决策人"] : [])]} />}
+              <Textarea className={cn("text-xs h-14 resize-none", weakRisk && "border-orange-500/50 focus-visible:ring-orange-500/30")} placeholder="主要风险及应对措施" value={blueSheet.riskAndMitigation} onChange={e => setBlueSheet(p => ({ ...p, riskAndMitigation: e.target.value }))} />
             </div>
           </div>
           <Button size="sm" className="h-7 text-xs gap-1" disabled={savingBlueSheet || updateBlueSheet.isPending}
