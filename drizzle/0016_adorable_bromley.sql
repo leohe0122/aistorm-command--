@@ -1,0 +1,2 @@
+ALTER TABLE `clients` MODIFY COLUMN `stage` enum('建图','进门','定痛','找人','进入商机') NOT NULL DEFAULT '建图';--> statement-breakpoint
+ALTER TABLE `opportunities` MODIFY COLUMN `stage` enum('Qualified','Discovery','POC','Proposal','Negotiation','Closed Won','Closed Lost') NOT NULL DEFAULT 'Qualified';

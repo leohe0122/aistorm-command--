@@ -1,0 +1,1 @@
+ALTER TABLE `pod_tasks` ADD `taskStatus` enum('pending','in_progress','done') DEFAULT 'pending' NOT NULL;

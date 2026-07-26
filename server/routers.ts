@@ -1,0 +1,2980 @@
+import { z } from "zod";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
+import { COOKIE_NAME } from "@shared/const";
+import { getSessionCookieOptions } from "./_core/cookies";
+import { systemRouter } from "./_core/systemRouter";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { invokeLLM } from "./_core/llm";
+import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient,
+  getMeddpiccByClientId, upsertMeddpicc,
+  insertClient, deleteClientCascade,
+  getSignalsByClientId, getAllRecentSignals, insertSignal, updateSignal,
+  getActionsByClientId, getActionsByRole, insertActions, completeAction, deleteActionById, clearPendingActionsByClient,
+  getOnePagersByClientId, insertOnePager,
+  getAmmoByClientId, insertAmmo,
+  getMeetingsByClientId, insertMeeting, updateMeeting,
+  getPodTasksByRole, insertPodTask, completePodTask, deletePodTask, clearCompletedPodTasks, clearPodTasksByRole,
+  getLatestScoreByClientId, insertScore,
+  getDealReviews, insertDealReview,
+  getContactsByClientId, insertContact, updateContact, deleteContact,
+  getWeeklyReportData,
+  saveMeddpiccSnapshot, getMeddpiccHistory,
+  getSystemConfig, setSystemConfig, getAllSystemConfigs,
+  getDb,
+} from "./db";
+
+export const appRouter = router({
+  system: systemRouter,
+  auth: router({
+    me: publicProcedure.query(opts => opts.ctx.user),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      return { success: true } as const;
+    }),
+  }),
+
+  // ── Clients ──────────────────────────────────────────────────────────────
+  clients: router({
+    list: publicProcedure.query(() => getAllClientsWithVisitStats()),
+    get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const result = await getClientById(input.id);
+      return result ?? null;
+    }),
+    update: publicProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      nameEn: z.string().optional(),
+      industry: z.string().optional(),
+      stage: z.string().optional(),
+      notes: z.string().optional(),
+      hookTopic: z.string().optional(),
+      securityAngle: z.string().optional(),
+      monitorKeywords: z.array(z.string()).optional(),
+      priority: z.enum(["P0", "P1", "P2"]).optional(),
+      plannedFirstVisitDate: z.number().nullable().optional(),
+    })).mutation(({ input }) => {
+      const { id, ...data } = input;
+      return updateClient(id, data as any);
+    }),
+    create: publicProcedure.input(z.object({
+      name: z.string().min(1),
+      nameEn: z.string().optional(),
+      industry: z.string().optional(),
+      priority: z.enum(["P0", "P1", "P2"]).default("P1"),
+      stage: z.enum(["建图", "进门", "定痛", "找人", "进入商机"]).default("建图"),
+      notes: z.string().optional(),
+      hookTopic: z.string().optional(),
+      securityAngle: z.string().optional(),
+      monitorKeywords: z.array(z.string()).optional(),
+    })).mutation(async ({ input }) => {
+      const newId = await insertClient(input);
+      return { id: newId };
+    }),
+    delete: publicProcedure.input(z.object({
+      id: z.number(),
+    })).mutation(async ({ input }) => {
+      await deleteClientCascade(input.id);
+      return { ok: true };
+    }),
+    importBatch: publicProcedure.input(z.object({
+      clients: z.array(z.object({
+        name: z.string().min(1),
+        nameEn: z.string().optional(),
+        industry: z.string().optional(),
+        priority: z.enum(["P0", "P1", "P2"]).default("P1"),
+        stage: z.enum(["建图", "进门", "定痛", "找人", "进入商机"]).default("建图"),
+        hookTopic: z.string().optional(),
+        securityAngle: z.string().optional(),
+        monitorKeywords: z.array(z.string()).optional(),
+      })),
+    })).mutation(async ({ input }) => {
+      const results: { name: string; id: number; ok: boolean; error?: string }[] = [];
+      for (const c of input.clients) {
+        try {
+          const id = await insertClient(c);
+          results.push({ name: c.name, id, ok: true });
+        } catch (e: any) {
+          results.push({ name: c.name, id: 0, ok: false, error: e?.message ?? 'Unknown error' });
+        }
+      }
+      return { results, total: input.clients.length, succeeded: results.filter(r => r.ok).length };
+    }),
+    suggestHookAndAngle: publicProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+      industry: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const [signals, meddpicc, productDocsList] = await Promise.all([
+        getSignalsByClientId(input.clientId),
+        getMeddpiccByClientId(input.clientId),
+        (async () => {
+          const { getDb } = await import('./db.js');
+          const db = await getDb();
+          if (!db) return [] as { title: string; productLine: string | null; description: string | null }[];
+          const { productDocs } = await import('../drizzle/schema');
+          return db.select({ title: productDocs.title, productLine: productDocs.productLine, description: productDocs.description }).from(productDocs).limit(10);
+        })(),
+      ]);
+      const meddpiccContext = meddpicc ? (() => {
+        const dims = [
+          { name: 'M(可量化价值)', score: meddpicc.metricsScore },
+          { name: 'E(预算决策人)', score: meddpicc.economicBuyerScore },
+          { name: 'D1(决策标准)', score: meddpicc.decisionCriteriaScore },
+          { name: 'D2(决策流程)', score: meddpicc.decisionProcessScore },
+          { name: 'P(合同流程)', score: meddpicc.paperProcessScore },
+          { name: 'I(痛点牵连)', score: meddpicc.implicatePainScore },
+          { name: 'C1(Champion)', score: meddpicc.championScore },
+          { name: 'C2(竞争态势)', score: meddpicc.competitionScore },
+        ].sort((a, b) => a.score - b.score);
+        return dims.slice(0, 3).map(d => d.name + ': ' + d.score + '分').join('、');
+      })() : '暂无数据';
+      const signalsContext = signals.slice(0, 3).map((s: any) =>
+        '[' + s.signalType + '] ' + (s.rawSignal || s.aiInterpretation || '')
+      ).join('\n') || '暂无情报信号';
+      const docsContext = productDocsList.length > 0
+        ? productDocsList.map((d: any) => '[' + d.productLine + '] ' + d.title + (d.description ? ': ' + d.description.slice(0, 80) : '')).join('\n')
+        : '暂无上传产品文档（可在武器库中上传）';
+      const prompt = `你是一位顶级企业销售战略顾问，专注于网络安全行业。
+请根据以下信息，为销售团队建议最佳的「敲门砖话题」和「安全切入点」，用于拜访 \${input.clientName}（\${input.industry || '企业'}）的高层。
+
+【最新情报信号（最近3条）】
+\${signalsContext}
+
+【MEDDPICC薄弱维度（分数最低3项）】
+\${meddpiccContext}
+
+【武器库产品文档（已有方案）】
+\${docsContext}
+
+请输出JSON格式（不要有其他内容）：
+{
+  "hookTopic": "具体的敲门砖话题（1-2句，要有具体事件/数据/趋势作为切入，不超过50字）",
+  "securityAngle": "具体的安全切入点（1-2句，结合客户痛点和我们的产品能力，不超过50字）",
+  "reasoning": "建议理由（2-3句，说明为什么选这个敲门砖和切入点，引用了哪些情报或产品能力）"
+}`;
+      const result = await invokeLLM({
+        model: 'gemini-2.5-flash',
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const textContent = result.choices[0]?.message?.content;
+      const text = typeof textContent === 'string' ? textContent : JSON.stringify(textContent);
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+        return { hookTopic: parsed.hookTopic || '', securityAngle: parsed.securityAngle || '', reasoning: parsed.reasoning || '' };
+      } catch {
+        return { hookTopic: '', securityAngle: '', reasoning: text };
+      }
+    }),
+  }),
+
+  // ── MEDDPICC ─────────────────────────────────────────────────────────────
+  meddpicc: router({
+    get: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const result = await getMeddpiccByClientId(input.clientId);
+      return result ?? null;
+    }),
+    update: publicProcedure.input(z.object({
+      clientId: z.number(),
+      metricsScore: z.number().min(0).max(100).optional(),
+      metricsNotes: z.string().optional(),
+      economicBuyerScore: z.number().min(0).max(100).optional(),
+      economicBuyerName: z.string().optional(),
+      economicBuyerNotes: z.string().optional(),
+      decisionCriteriaScore: z.number().min(0).max(100).optional(),
+      decisionCriteriaNotes: z.string().optional(),
+      decisionProcessScore: z.number().min(0).max(100).optional(),
+      decisionProcessNotes: z.string().optional(),
+      paperProcessScore: z.number().min(0).max(100).optional(),
+      paperProcessNotes: z.string().optional(),
+      implicatePainScore: z.number().min(0).max(100).optional(),
+      implicatePainNotes: z.string().optional(),
+      championScore: z.number().min(0).max(100).optional(),
+      championName: z.string().optional(),
+      championNotes: z.string().optional(),
+      competitionScore: z.number().min(0).max(100).optional(),
+      competitionNotes: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const { clientId, ...data } = input;
+      await upsertMeddpicc(clientId, data as any);
+      // Save snapshot for trend chart (log errors but don't fail the update)
+      const updated = await getMeddpiccByClientId(clientId);
+      if (updated) {
+        await saveMeddpiccSnapshot(clientId, updated).catch((err) => {
+          console.error("[MEDDPICC] Failed to save snapshot:", err);
+        });
+      }
+    }),
+    history: publicProcedure.input(z.object({ clientId: z.number(), weeks: z.number().default(4) })).query(async ({ input }) => {
+      return getMeddpiccHistory(input.clientId, input.weeks);
+    }),
+    getAll: publicProcedure.query(async () => {
+      const allClients = await getAllClients();
+      const results = await Promise.all(allClients.map(async (c) => {
+        const m = await getMeddpiccByClientId(c.id);
+        return { clientId: c.id, clientName: c.name, clientStage: c.stage, meddpicc: m ?? null };
+      }));
+      return results;
+    }),
+    // Append a log entry for a dimension (score + note + authorRole)
+    addLog: publicProcedure.input(z.object({
+      clientId: z.number(),
+      dimension: z.string(),
+      score: z.number().min(0).max(100),
+      note: z.string().min(1),
+      authorRole: z.enum(["AD", "SAM", "SA", "RSM"]).default("SAM"),
+    })).mutation(async ({ input }) => {
+      const { getDb } = await import('./db.js');
+      const { meddpiccLogs } = await import('../drizzle/schema.js');
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      await db.insert(meddpiccLogs).values({
+        clientId: input.clientId,
+        dimension: input.dimension,
+        score: input.score,
+        note: input.note,
+        authorRole: input.authorRole,
+      });
+      return { ok: true };
+    }),
+    // Get all logs for a client (optionally filtered by dimension)
+    getLogs: publicProcedure.input(z.object({
+      clientId: z.number(),
+      dimension: z.string().optional(),
+    })).query(async ({ input }) => {
+      const { getDb } = await import('./db.js');
+      const { meddpiccLogs } = await import('../drizzle/schema.js');
+      const { eq, and, desc } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) return [];
+      const conditions = input.dimension
+        ? and(eq(meddpiccLogs.clientId, input.clientId), eq(meddpiccLogs.dimension, input.dimension))
+        : eq(meddpiccLogs.clientId, input.clientId);
+      return db.select().from(meddpiccLogs).where(conditions).orderBy(desc(meddpiccLogs.createdAt)).limit(100);
+    }),
+  }),
+
+  // ── Intelligence Signals ──────────────────────────────────────────────────
+  intelligence: router({
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(({ input }) =>
+      getSignalsByClientId(input.clientId)
+    ),
+    listAll: publicProcedure.query(() => getAllRecentSignals()),
+    analyze: publicProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+      rawSignal: z.string(),
+      industry: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      // AI analyze the signal
+      const prompt = `你是一位顶级企业销售情报分析师，专注于网络安全行业的大客户销售。
+
+客户：${input.clientName}（${input.industry || "科技企业"}）
+原始信号：${input.rawSignal}
+
+请分析这条情报信号，返回JSON格式：
+{
+  "signalType": "人事变动|业务扩张|合规事件|招聘信号|技术公告|其他",
+  "urgency": "高|中|低",
+  "interpretation": "对这条信号的深度解读（2-3句话，结合客户背景分析其业务含义）",
+  "recommendation": "基于此信号，销售团队应立即采取的具体触达行动（包括：触达对象、触达理由、建议话术要点）"
+}`;
+
+      const res = await invokeLLM({
+        model: "gpt-5-mini",
+        messages: [{ role: "user", content: prompt }],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "signal_analysis",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                signalType: { type: "string" },
+                urgency: { type: "string" },
+                interpretation: { type: "string" },
+                recommendation: { type: "string" },
+              },
+              required: ["signalType", "urgency", "interpretation", "recommendation"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const parsed = JSON.parse(String(res.choices[0].message.content) || "{}");
+      const signalId = await insertSignal({
+        clientId: input.clientId,
+        rawSignal: input.rawSignal,
+        signalType: parsed.signalType as any,
+        aiInterpretation: parsed.interpretation,
+        aiRecommendation: parsed.recommendation,
+        urgency: parsed.urgency as any,
+        isProcessed: true,
+      });
+      return { id: signalId, ...parsed };
+    }),
+  }),
+
+  // ── RSS Sources Management ─────────────────────────────────────────────
+  rss: router({
+    // List all RSS sources
+    listSources: publicProcedure.query(async () => {
+      const db = await getDb();
+      const { rssSources } = await import('../drizzle/schema');
+      return db!.select().from(rssSources).orderBy(rssSources.createdAt);
+    }),
+    // Add a new RSS source
+    addSource: protectedProcedure.input(z.object({
+      name: z.string().min(1),
+      url: z.string().url(),
+      description: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      const { rssSources } = await import('../drizzle/schema');
+      const [result] = await db!.insert(rssSources).values({
+        name: input.name,
+        url: input.url,
+        description: input.description,
+        tags: input.tags || [],
+        isActive: true,
+      });
+      return { id: (result as any).insertId };
+    }),
+    // Toggle RSS source active/inactive
+    toggleSource: protectedProcedure.input(z.object({
+      id: z.number(),
+      isActive: z.boolean(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      const { rssSources } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      await db!.update(rssSources).set({ isActive: input.isActive }).where(eq(rssSources.id, input.id));
+      return { success: true };
+    }),
+    // Delete RSS source
+    deleteSource: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      const { rssSources } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      await db!.delete(rssSources).where(eq(rssSources.id, input.id));
+      return { success: true };
+    }),
+    // Fetch RSS news for a client (Google News default + custom sources)
+    fetchNews: publicProcedure.input(z.object({
+      clientName: z.string(),
+      clientNameEn: z.string().optional(),
+      keywords: z.array(z.string()).optional(),
+      limit: z.number().default(20),
+    })).query(async ({ input }) => {
+      const fetch = (await import('node-fetch')).default;
+      const { XMLParser } = await import('fast-xml-parser');
+      const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+
+      const results: Array<{
+        title: string;
+        link: string;
+        pubDate: string;
+        description: string;
+        source: string;
+        sourceType: 'google_news' | 'custom';
+      }> = [];
+
+      // 1. Google News RSS (default, free)
+      const searchTerms = [input.clientName];
+      if (input.clientNameEn) searchTerms.push(input.clientNameEn);
+      if (input.keywords?.length) searchTerms.push(...input.keywords.slice(0, 2));
+      const query = searchTerms.join(' ');
+      const googleNewsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`;
+
+      try {
+        const res = await fetch(googleNewsUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RSS Reader)' },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.ok) {
+          const xml = await res.text();
+          const parsed = parser.parse(xml);
+          const items = parsed?.rss?.channel?.item || [];
+          const arr = Array.isArray(items) ? items : [items];
+          arr.slice(0, 15).forEach((item: any) => {
+            results.push({
+              title: String(item.title || '').replace(/<[^>]+>/g, '').replace(/\s*-\s*[^-]+$/, ''),
+              link: String(item.link || item.guid || ''),
+              pubDate: String(item.pubDate || ''),
+              description: String(item.description || '').replace(/<[^>]+>/g, '').slice(0, 200),
+              source: 'Google News',
+              sourceType: 'google_news',
+            });
+          });
+        }
+      } catch (e) {
+        // Google News failed, continue with custom sources
+      }
+
+      // 2. Custom RSS sources (active ones)
+      try {
+        const db = await getDb();
+        const { rssSources } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const customSources = await db!.select().from(rssSources).where(eq(rssSources.isActive, true));
+
+        for (const source of customSources) {
+          try {
+            const res = await fetch(source.url, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RSS Reader)' },
+              signal: AbortSignal.timeout(5000),
+            });
+            if (!res.ok) continue;
+            const xml = await res.text();
+            const parsed = parser.parse(xml);
+            const items = parsed?.rss?.channel?.item || parsed?.feed?.entry || [];
+            const arr = Array.isArray(items) ? items : [items];
+            // Filter by client name if possible
+            const filtered = arr.filter((item: any) => {
+              const text = `${item.title || ''} ${item.description || item.summary || ''}`.toLowerCase();
+              return text.includes(input.clientName.toLowerCase()) ||
+                (input.clientNameEn && text.includes(input.clientNameEn.toLowerCase()));
+            });
+            const toUse = filtered.length > 0 ? filtered : arr.slice(0, 5);
+            toUse.slice(0, 8).forEach((item: any) => {
+              results.push({
+                title: String(item.title || '').replace(/<[^>]+>/g, ''),
+                link: String(item.link?.['@_href'] || item.link || item.guid || ''),
+                pubDate: String(item.pubDate || item.updated || item.published || ''),
+                description: String(item.description || item.summary || '').replace(/<[^>]+>/g, '').slice(0, 200),
+                source: source.name,
+                sourceType: 'custom',
+              });
+            });
+          } catch (e) {
+            // Skip failed custom source
+          }
+        }
+      } catch (e) {
+        // Skip custom sources on error
+      }
+
+      // Sort by date, newest first
+      results.sort((a, b) => {
+        const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+        const db2 = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+        return db2 - da;
+      });
+
+      return results.slice(0, input.limit);
+    }),
+  }),
+
+  // ── Action Items ──────────────────────────────────────────────────────────
+  actions: router({
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(({ input }) =>
+      getActionsByClientId(input.clientId)
+    ),
+    listByRole: publicProcedure.input(z.object({ role: z.enum(["AD", "SAM", "SA", "RSM"]) })).query(({ input }) =>
+      getActionsByRole(input.role)
+    ),
+    generate: publicProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+      industry: z.string().optional(),
+      stage: z.string(),
+      hookTopic: z.string().optional(),
+      securityAngle: z.string().optional(),
+      meddpicc: z.object({
+        metricsScore: z.number(),
+        economicBuyerScore: z.number(),
+        economicBuyerName: z.string().nullable().optional(),
+        decisionCriteriaScore: z.number(),
+        decisionProcessScore: z.number(),
+        implicatePainScore: z.number(),
+        championScore: z.number(),
+        championName: z.string().nullable().optional(),
+        competitionScore: z.number(),
+      }),
+      recentSignals: z.array(z.object({
+        signalType: z.string(),
+        content: z.string().optional(),
+        aiInterpretation: z.string().nullable().optional(),
+      })).optional(),
+      visitCount: z.number().optional(),
+      lastVisitDate: z.string().nullable().optional(),
+    })).mutation(async ({ input }) => {
+      const meddpiccSummary = `
+- M(可量化价值): ${input.meddpicc.metricsScore}/100
+- E(预算决策人): ${input.meddpicc.economicBuyerScore}/100, 已识别: ${input.meddpicc.economicBuyerName || "未知"}
+- D(决策标准): ${input.meddpicc.decisionCriteriaScore}/100
+- D(决策流程): ${input.meddpicc.decisionProcessScore}/100
+- I(痛点牵连): ${input.meddpicc.implicatePainScore}/100
+- C(内部Champion): ${input.meddpicc.championScore}/100, 已识别: ${input.meddpicc.championName || "未找到"}
+- C(竞争态势): ${input.meddpicc.competitionScore}/100`;
+
+      const signalsSummary = input.recentSignals?.length
+        ? input.recentSignals.map((s, i) => {
+            const parts = [`[情报${i+1}][${s.signalType}]`];
+            if (s.content) parts.push(`原文：${s.content}`);
+            if (s.aiInterpretation) parts.push(`AI解读：${s.aiInterpretation}`);
+            return parts.join(' | ');
+          }).join("\n")
+        : "暂无最新信号";
+
+      const prompt = `你是一位顶级企业销售教练，专注于网络安全行业的战略大客户销售。
+
+客户：${input.clientName}（${input.industry || "科技企业"}）
+当前销售阶段：${input.stage}
+敲门砖话题：${input.hookTopic || "待定"}
+安全切入点：${input.securityAngle || "待定"}
+
+MEDDPICC完成度：
+${meddpiccSummary}
+
+最新情报信号：
+${signalsSummary}
+
+销售团队角色说明：
+- AD（Account Director）：负责C-Level关系建立和顶层破冰
+- SAM（Strategic Account Manager）：负责日常商机推进和MEDDPICC管理
+- SA（Solution Architect）：负责技术方案设计和POC执行
+- RSM（Regional Sales Manager / 省办）：负责属地化招投标支持、商务渠道打通和属地关系协同
+
+请基于以上信息，为四角色销售团队生成今日/本周优先行动清单（4-6条），每条行动必须非常具体可执行，且四个角色都应有对应的行动分配。
+返回JSON格式：
+{
+  "actions": [
+    {
+      "title": "行动标题（简洁，10字以内）",
+      "objective": "行动目标（具体说明要达成什么结果）",
+      "suggestedScript": "建议话术（可直接使用的开场白或关键话术，50-100字）",
+      "responsibleRole": "AD|SAM|SA|RSM",
+      "priority": "高|中|低",
+      "timeframe": "今日|本周|本月"
+    }
+  ]
+}`;
+
+      const res = await invokeLLM({
+        model: "gpt-5",
+        messages: [{ role: "user", content: prompt }],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "action_list",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                actions: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      title: { type: "string" },
+                      objective: { type: "string" },
+                      suggestedScript: { type: "string" },
+                      responsibleRole: { type: "string" },
+                      priority: { type: "string" },
+                      timeframe: { type: "string" },
+                    },
+                    required: ["title", "objective", "suggestedScript", "responsibleRole", "priority", "timeframe"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["actions"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const parsed = JSON.parse(String(res.choices[0].message.content) || '{"actions":[]}');
+
+      // Auto-append "安排拜访" action if client has never been visited or last visit > 30 days ago
+      const visitCount = input.visitCount ?? 0;
+      let needsVisitAction = false;
+      let visitActionNote = '';
+      if (visitCount === 0) {
+        needsVisitAction = true;
+        visitActionNote = '该客户从未建立拜访记录，建议尽快安排首次拜访以推进关系建立';
+      } else if (input.lastVisitDate) {
+        const daysSince = Math.floor((Date.now() - new Date(input.lastVisitDate).getTime()) / 86400000);
+        if (daysSince > 30) {
+          needsVisitAction = true;
+          visitActionNote = `距上次拜访已超过 ${daysSince} 天，建议尽快安排拜访以维持关系热度`;
+        }
+      }
+      if (needsVisitAction) {
+        parsed.actions.push({
+          title: '安排客户拜访',
+          objective: visitActionNote,
+          suggestedScript: `您好，我是亚信安全的 ${input.stage === '建图' ? 'SAM' : 'SAM'}，最近在关注贵司在网络安全方面的布局，希望安排一次面对面交流，分享一些行业最新实践，请问本周或下周是否有时间方便？`,
+          responsibleRole: 'SAM',
+          priority: visitCount === 0 ? '高' : '中',
+          timeframe: '本周',
+        });
+      }
+
+      const toInsert = parsed.actions.map((a: any) => ({
+        clientId: input.clientId,
+        title: a.title,
+        objective: a.objective,
+        suggestedScript: a.suggestedScript,
+        responsibleRole: a.responsibleRole as "AD" | "SAM" | "SA" | "RSM",
+        priority: a.priority as "高" | "中" | "低",
+        timeframe: a.timeframe as "今日" | "本周" | "本月",
+        aiGenerated: true,
+      }));
+      await insertActions(toInsert);
+      return parsed.actions;
+    }),
+    complete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+      completeAction(input.id)
+    ),
+    // Adopt a single action: push to POD task queue for the responsible role
+    adoptOne: publicProcedure.input(z.object({
+      actionId: z.number(),
+      clientId: z.number(),
+      clientName: z.string(),
+    })).mutation(async ({ input }) => {
+      const { getDb } = await import('./db.js');
+      const { actionItems: aiTable, podTasks: ptTable } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const [action] = await db.select().from(aiTable).where(eq(aiTable.id, input.actionId)).limit(1);
+      if (!action) throw new Error('Action not found');
+      // Insert into pod_tasks with sourceActionId for later linkback
+      await db.insert(ptTable).values({
+        clientId: input.clientId,
+        assignedRole: action.responsibleRole as 'AD' | 'SAM' | 'SA' | 'RSM',
+        title: `[${input.clientName}] ${action.title}`,
+        description: action.objective || undefined,
+        priority: (action.priority as '高' | '中' | '低') || '中',
+        dueDate: action.timeframe === '今日' ? new Date(Date.now() + 86400000)
+          : action.timeframe === '本周' ? new Date(Date.now() + 7 * 86400000)
+          : new Date(Date.now() + 30 * 86400000),
+        sourceActionId: action.id,
+      });
+      return { ok: true };
+    }),
+    // One-click adopt all: persist adopted actions as POD tasks for each role
+    deleteOne: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+      deleteActionById(input.id)
+    ),
+    clearPending: publicProcedure.input(z.object({ clientId: z.number() })).mutation(({ input }) =>
+      clearPendingActionsByClient(input.clientId)
+    ),
+    adoptAll: publicProcedure.input(z.object({
+      actionIds: z.array(z.number()),
+      clientId: z.number(),
+      clientName: z.string(),
+    })).mutation(async ({ input }) => {
+      const { actionIds, clientId, clientName } = input;
+      if (actionIds.length === 0) return { created: 0 };
+      // Fetch the actions to get their details
+      const allActions = await getActionsByClientId(clientId);
+      const toAdopt = allActions.filter(a => actionIds.includes(a.id) && !a.isCompleted);
+      // Insert as POD tasks for each role
+      const podTasks = toAdopt.map(a => ({
+        assignedRole: a.responsibleRole as 'AD' | 'SAM' | 'SA' | 'RSM',
+        title: `[${clientName}] ${a.title}`,
+        description: a.objective || undefined,
+        priority: a.priority as '高' | '中' | '低',
+        dueDate: a.timeframe === '今日' ? new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+          : a.timeframe === '本周' ? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+          : new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      }));
+      await insertPodTask(podTasks as any);
+      return { created: podTasks.length };
+    }),
+
+    // Generate internal resource coordination tasks (POD internal)
+    generateInternalCoord: publicProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+      stage: z.string(),
+      meddpiccSummary: z.string().optional(),
+      context: z.string().optional(), // e.g., "SA 需要确认 AI Pentest 能力"
+    })).mutation(async ({ input }) => {
+      const prompt = `你是亚信安全 AIStorm 的销售团队内部协作指挥师。
+
+客户：${input.clientName}
+当前销售阶段：${input.stage}
+MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
+背景信息：${input.context || '无'}
+
+请生成 3-5 条对内资源协调任务，帮助 SAM 将内部资源调动起来。
+典型场景：
+- 指派 SA 确认产品能力（如：确认 AI Pentest 模块是否支持 HKT 的 API 安全场景）
+- 申请内部资源（如：申请 POC 环境、申请技术驼居资源）
+- 协调 RSM 属地化支持（如：联系香港渠道伙伴确认报价资格）
+- 提醒 AD 层面关系运作（如：请 AD 确认是否有 C-Level 关系可利用）
+
+返回 JSON 格式：
+{
+  "tasks": [
+    {
+      "title": "任务标题（10字内）",
+      "description": "具体说明要完成什么、为什么重要，以及预期输出",
+      "assignedRole": "SA|AD|SAM|RSM",
+      "priority": "高|中|低",
+      "timeframe": "今日|本周|本月",
+      "taskType": "resource_coord",
+      "suggestedScript": "建议话术（对内沟通时可直接使用）"
+    }
+  ]
+}`;
+
+      const res = await invokeLLM({
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+      });
+      const parsed = JSON.parse(String(res.choices[0].message.content || '{}'));
+      const tasks = (parsed.tasks || []).map((t: any) => ({
+        clientId: input.clientId,
+        title: t.title,
+        objective: t.description,
+        suggestedScript: t.suggestedScript,
+        responsibleRole: t.assignedRole as 'AD' | 'SAM' | 'SA' | 'RSM',
+        priority: (t.priority || '中') as '高' | '中' | '低',
+        timeframe: (t.timeframe || '本周') as '今日' | '本周' | '本月',
+        aiGenerated: true,
+        taskType: 'resource_coord',
+      }));
+      await insertActions(tasks);
+      return tasks;
+    }),
+  }),
+
+  // ── AI Insights (1-Pager) ─────────────────────────────────────────────────
+  insights: router({
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(({ input }) =>
+      getOnePagersByClientId(input.clientId)
+    ),
+    generate: publicProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+      industry: z.string().optional(),
+      hookTopic: z.string().optional(),
+      securityAngle: z.string().optional(),
+      notes: z.string().optional(),
+      targetExecutive: z.string(),
+      targetTitle: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const prompt = `你是一位顶级企业销售战略顾问，专注于网络安全行业的C-Level高层拜访准备。
+
+请为以下拜访生成一份《高层会面简报（1-Pager）》，格式为Markdown，内容必须具体、可直接使用，不得使用空泛语言。
+
+客户：${input.clientName}（${input.industry || "科技企业"}）
+目标高管：${input.targetExecutive}（${input.targetTitle || "高管"}）
+敲门砖话题：${input.hookTopic || "待定"}
+安全切入点：${input.securityAngle || "待定"}
+客户背景备注：${input.notes || "无"}
+
+请生成包含以下四个部分的1-Pager：
+
+## 一、客户战略背景（3-4句话）
+（该高管近期最关注的战略议题、公开言论、业务压力）
+
+## 二、敲门砖建议（具体方案）
+（用哪个跨界资源/话题开场，为什么这个话题对该高管有吸引力，预期引发的反应）
+
+## 三、SPIN提问预演
+**S（现状问题）：** [具体问题]
+**P（困难问题）：** [具体问题]
+**I（影响问题）：** [具体问题，要能让高管感到刺痛]
+**N（价值问题）：** [具体问题，引导高管自述解决方案价值]
+
+## 四、会面目标与成功标准
+（本次会面要达成的具体目标，以及判断会面成功的标准）`;
+
+      const res = await invokeLLM({
+        model: "gpt-5",
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = String(res.choices[0].message.content || "");
+
+      // Second AI call: extract structured strategy summary for SAM reference
+      let hookTopicDraft = "";
+      let securityAngleDraft = "";
+      let hookTopicBasis = "";
+      let securityAngleBasis = "";
+      try {
+        const strategyPrompt = `根据以下客户拜访简报，提炼关键建议供 SAM 参考。
+
+简报内容：
+${content}
+
+请以JSON格式返回：
+{
+  "hookTopic": "一句话总结：建议的敲门砖话题（具体、有针对性，基于公开情报）",
+  "hookTopicBasis": "支撑该敲门砖建议的具体依据（引用简报中的具体事件、数据或公开言论，1-2句）",
+  "securityAngle": "一句话总结：建议的亚信安全产品切入角度（具体产品线或解决方案）",
+  "securityAngleBasis": "支撑该安全切入建议的具体依据（引用简报中的具体痛点、风险或行业案例，1-2句）"
+}
+
+只返回JSON，不要其他文字。`;
+        const sRes = await invokeLLM({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: strategyPrompt }],
+          response_format: { type: "json_object" },
+        });
+        const sParsed = JSON.parse(String(sRes.choices[0].message.content || "{}"));
+        hookTopicDraft = sParsed.hookTopic || "";
+        securityAngleDraft = sParsed.securityAngle || "";
+        hookTopicBasis = sParsed.hookTopicBasis || "";
+        securityAngleBasis = sParsed.securityAngleBasis || "";
+      } catch {
+        // Non-critical, continue without strategy summary
+      }
+
+      const id = await insertOnePager({
+        clientId: input.clientId,
+        targetExecutive: input.targetExecutive,
+        targetTitle: input.targetTitle,
+        content,
+      });
+      return { id, content, hookTopicDraft, securityAngleDraft, hookTopicBasis, securityAngleBasis };
+    }),
+    applyStrategy: publicProcedure.input(z.object({
+      clientId: z.number(),
+      hookTopic: z.string().optional(),
+      securityAngle: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const { clientId, ...data } = input;
+      await updateClient(clientId, data as any);
+      return { ok: true };
+    }),
+  }),
+
+  // ── Champion Ammo ─────────────────────────────────────────────────────────
+  champion: router({
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(({ input }) =>
+      getAmmoByClientId(input.clientId)
+    ),
+        generate: publicProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+      industry: z.string().optional(),
+      securityAngle: z.string().optional(),
+      notes: z.string().optional(),
+      championName: z.string(),
+      ammoType: z.enum(["竞品对标", "合规风险量化", "ROI测算"]),
+    })).mutation(async ({ input }) => {
+      // Load product docs from arsenal as primary knowledge source
+      const arsenalDocs = await (async () => {
+        try {
+          const { getDb } = await import('./db.js');
+          const db = await getDb();
+          if (!db) return [];
+          const { productDocs } = await import('../drizzle/schema');
+          return db.select({
+            title: productDocs.title,
+            productLine: productDocs.productLine,
+            description: productDocs.description,
+            extractedText: productDocs.extractedText,
+          }).from(productDocs).limit(8);
+        } catch { return []; }
+      })();
+      const docsSection = arsenalDocs.length > 0
+        ? `【武器库产品文档（第一知识来源，优先引用）】\n` +
+          arsenalDocs.map((d: any) => {
+            const content = d.extractedText ? d.extractedText.slice(0, 600) : (d.description || '');
+            return `[${d.productLine || '产品'}] ${d.title}\n${content}`;
+          }).join('\n---\n')
+        : `【武器库产品文档】\n暂无上传文档。请在武器库中上传产品资料以提升生成质量。`;
+      const knowledgeNote = arsenalDocs.length > 0
+        ? `\n\n⚠️ 知识来源说明：\n- 标注「📄 来自武器库」的内容来自已上传的产品文档，可直接使用\n- 标注「🌐 通用知识」的内容来自AI训练数据，请结合实际产品资料核实后使用`
+        : `\n\n⚠️ 知识来源说明：武器库暂无产品文档，本内容完全基于AI通用知识生成，请务必结合实际产品资料核实后再使用。`;
+      let prompt = "";
+      if (input.ammoType === "竞品对标") {
+        prompt = `你是一位网络安全行业资深竞争分析师。
+请为${input.clientName}的内部Champion（${input.championName}）生成一份《竞品对标分析》，用于其在内部推动立项时使用。
+安全切入点：${input.securityAngle || "综合安全方案"}
+客户背景：${input.notes || "无"}
+
+${docsSection}
+
+【生成规则】
+1. 优先从武器库文档中提取产品能力和差异化优势，引用时标注「📄 来自武器库」
+2. 武器库文档中没有的内容，使用AI通用行业知识补充，标注「🌐 通用知识（请核实）」
+3. 不要编造具体数字或案例，如无依据请用「[待补充]」占位
+
+格式为Markdown，包含：
+## 竞品对标分析
+### 主要竞争对手对比表
+（列出3个主要竞品，从功能覆盖、本地化支持、合规认证、价格、服务响应5个维度对比，标注每项数据来源）
+### 差异化优势总结
+（3条核心差异化，每条标注来源）
+### Champion内部推荐话术
+（Champion向决策层推荐时可直接使用的3句话）
+${knowledgeNote}`;
+      } else if (input.ammoType === "合规风险量化") {
+        prompt = `你是一位网络安全合规风险专家。
+请为${input.clientName}的内部Champion（${input.championName}）生成一份《合规风险量化分析》，用于其在内部推动立项时使用。
+行业：${input.industry || "科技"}
+客户背景：${input.notes || "无"}
+
+${docsSection}
+
+【生成规则】
+1. 优先从武器库文档中提取合规能力和认证信息，引用时标注「📄 来自武器库」
+2. 合规法规数据（罚款金额、监管要求等）来自通用知识，标注「🌐 通用知识（请核实）」
+3. 不要编造具体案例，如无依据请用「[待补充]」占位
+
+格式为Markdown，包含：
+## 合规风险量化分析
+### 当前面临的主要合规风险
+（列出3-4个具体合规风险，每个风险注明：监管来源、违规后果、量化损失估算，标注数据来源）
+### 不行动的代价
+（如果不采取安全措施，未来12个月内可能面临的具体风险事件和损失）
+### 合规投入ROI测算
+（安全投入 vs. 潜在损失的对比，给出明确的投资回报比）
+${knowledgeNote}`;
+      } else {
+        prompt = `你是一位企业IT投资分析师。
+请为${input.clientName}的内部Champion（${input.championName}）生成一份《ROI测算初稿》，用于其在内部申请预算时使用。
+安全切入点：${input.securityAngle || "综合安全方案"}
+客户背景：${input.notes || "无"}
+
+${docsSection}
+
+【生成规则】
+1. 优先从武器库文档中提取产品定价、实施周期等信息，引用时标注「📄 来自武器库」
+2. 行业基准数据来自通用知识，标注「🌐 通用知识（请核实）」
+3. 不要编造具体数字，如无依据请用「[待补充]」占位
+
+格式为Markdown，包含：
+## ROI测算分析
+### 投资假设
+（方案规模、实施周期、主要成本项，标注数据来源）
+### 收益量化
+（安全事件预防节省、合规罚款规避、运营效率提升，每项给出具体数字并标注来源）
+### 3年TCO对比
+（自建 vs. 采购AIStorm方案的总拥有成本对比）
+### 建议预算申请额度
+（给出具体数字和依据）
+${knowledgeNote}`;
+      }
+
+      const res = await invokeLLM({
+        model: "gpt-5",
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const content = String(res.choices[0].message.content || "");
+      const id = await insertAmmo({
+        clientId: input.clientId,
+        championName: input.championName,
+        ammoType: input.ammoType,
+        content,
+      });
+      return { id, content };
+    }),
+  }),
+
+  // ── Meeting Minutes ───────────────────────────────────────────────────────
+  meetings: router({
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(({ input }) =>
+      getMeetingsByClientId(input.clientId)
+    ),
+    generate: publicProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+      meetingDate: z.string(),
+      visitType: z.string().optional(),
+      attendees: z.string().optional(),
+      keyPoints: z.string(),
+      transcriptText: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      // Combine keyPoints + transcript as the main content source
+      const contentSource = input.transcriptText
+        ? `【飞书妙记/会议记录全文】\n${input.transcriptText}\n\n【SAM补充要点】\n${input.keyPoints}`
+        : `【关键信息点】\n${input.keyPoints}`;
+
+      const prompt = `你是一位专业的大客户销售顾问，擅长从拜访记录中提炼战略洞察，帮助销售团队推进大客户商机。
+
+客户：${input.clientName}
+拜访日期：${input.meetingDate}
+拜访类型：${input.visitType || '拜访'}
+参会人：${input.attendees || '未记录'}
+${contentSource}
+
+请生成一份结构化拜访作战日志，格式为Markdown：
+
+## 拜访作战日志
+
+**客户：** ${input.clientName}
+**拜访日期：** ${input.meetingDate}
+**拜访类型：** ${input.visitType || '拜访'}
+**参会人：** ${input.attendees || '待补充'}
+
+### 客户关键反应与信号
+（从记录中提炼客户的真实态度、关注点、疑虑、积极信号）
+
+### 已确认情报
+（本次拜访中确认的客户现状、痛点、决策信息、预算信号）
+
+### 关键人分析
+（识别参会人的角色、立场、影响力，是否具备Champion潜质）
+
+### Next Steps
+| 行动 | 责任人 | 截止时间 |
+|------|--------|----------|
+（每条行动必须有明确责任人和时间节点）
+
+### MEDDPICC更新建议
+（基于本次拜访，建议更新哪些MEDDPICC要素）
+
+### 风险与注意事项
+（本次拜访发现的潜在风险或需要注意的信号）`;
+
+            const res = await invokeLLM({
+        model: "gpt-5",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const aiMinutes = String(res.choices[0].message.content || "");
+
+      // Second AI call: extract structured MEDDPICC suggestions
+      const meddpiccDims = ["M","E","D1","D2","P","I","C1","C2"];
+      const meddpiccPrompt = `你是一位MEDDPICC销售方法论专家。根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。
+
+会议纪要：
+${aiMinutes}
+
+请以JSON数组格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：
+[
+  {
+    "dim": "C1",
+    "label": "Champion",
+    "suggestedScore": 50,
+    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",
+    "confidence": "medium"
+  }
+]
+
+维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点牵连, C1=Champion, C2=竞争态势
+分数档位：0, 25, 50, 75, 100
+置信度：high（有明确陈述）, medium（有间接证据）, low（推断）
+
+只返回JSON数组，不要其他文字。`;
+
+      let meddpiccSuggestions: Array<{dim: string; label: string; suggestedScore: number; reason: string; confidence: string}> = [];
+      try {
+        const mRes = await invokeLLM({
+          model: "gpt-5",
+          messages: [{ role: "user", content: meddpiccPrompt }],
+          response_format: { type: "json_object" },
+        });
+        const raw = String(mRes.choices[0].message.content || "");
+        // Try to parse as array directly or wrapped in object
+        const parsed = JSON.parse(raw);
+        meddpiccSuggestions = Array.isArray(parsed) ? parsed : (parsed.suggestions || parsed.data || []);
+      } catch {
+        meddpiccSuggestions = [];
+      }
+
+      // Third AI call: extract hookTopic and securityAngle suggestions
+      let hookTopicSuggestion = "";
+      let securityAngleSuggestion = "";
+      try {
+        const strategyPrompt = `你是一位大客户销售策略专家。根据以下拜访日志，提炼两个关键建议。
+
+拜访日志：
+${aiMinutes}
+
+请以JSON格式返回：
+{
+  "hookTopic": "基于本次拜访揭示的客户痛点和关注点，下次拜访最有效的敲门砖话题（一句话，具体、有针对性）",
+  "securityAngle": "基于客户痛点，建议的为信安全产品切入角度（具体产品线或解决方案）"
+}
+
+只返回JSON，不要其他文字。`;
+        const sRes = await invokeLLM({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: strategyPrompt }],
+          response_format: { type: "json_object" },
+        });
+        const sRaw = String(sRes.choices[0].message.content || "");
+        const sParsed = JSON.parse(sRaw);
+        hookTopicSuggestion = sParsed.hookTopic || "";
+        securityAngleSuggestion = sParsed.securityAngle || "";
+      } catch {
+        // Non-critical, continue without suggestions
+      }
+
+      // Fourth AI call: detect competitor names mentioned in the meeting
+      let detectedCompetitors: string[] = [];
+      try {
+        const compPrompt = `从以下会议记录中识别所有提到的竞品厂商名称。常见竞品包括：奇安信(QAX)、Palo Alto Networks、CrowdStrike、Fortinet、Check Point、深信服、天山信息、安恒天蹄、火眉安全、绣球网络、SentinelOne、Microsoft Defender、Trend Micro、Symantec、McAfee等。
+
+会议记录：
+${aiMinutes}
+
+请以JSON格式返回，只返回实际提到的竞品名称（如果没有提到竞品则返回空数组）：
+{ "competitors": ["QAX", "Palo Alto Networks"] }`;
+        const cRes = await invokeLLM({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: compPrompt }],
+          response_format: { type: 'json_object' },
+        });
+        const cParsed = JSON.parse(String(cRes.choices[0].message.content || '{}'));
+        detectedCompetitors = Array.isArray(cParsed.competitors) ? cParsed.competitors : [];
+      } catch {
+        detectedCompetitors = [];
+      }
+
+      const id = await insertMeeting({
+        clientId: input.clientId,
+        meetingDate: new Date(input.meetingDate),
+        visitType: input.visitType,
+        attendees: input.attendees,
+        keyPoints: input.keyPoints,
+        transcriptText: input.transcriptText,
+        aiMinutes,
+        hookTopicSuggestion,
+        securityAngleSuggestion,
+      });
+      return { id, aiMinutes, meddpiccSuggestions, hookTopicSuggestion, securityAngleSuggestion, detectedCompetitors };
+    }),
+    quickLog: publicProcedure.input(z.object({
+      clientId: z.number(),
+      meetingDate: z.string(),
+      visitType: z.string().optional(),
+      attendees: z.string().optional(),
+      keyPoints: z.string(),
+    })).mutation(async ({ input }) => {
+      const id = await insertMeeting({
+        clientId: input.clientId,
+        meetingDate: new Date(input.meetingDate),
+        visitType: input.visitType,
+        attendees: input.attendees,
+        keyPoints: input.keyPoints,
+        transcriptText: undefined,
+        aiMinutes: undefined,
+        hookTopicSuggestion: undefined,
+        securityAngleSuggestion: undefined,
+      });
+      return { id };
+    }),
+  }),
+
+  // ── POD Tasks ─────────────────────────────────────────────────────────────
+  pod: router({
+    listByRole: publicProcedure.input(z.object({ role: z.enum(["AD", "SAM", "SA", "RSM"]) })).query(({ input }) =>
+      getPodTasksByRole(input.role)
+    ),
+    addTask: publicProcedure.input(z.object({
+      clientId: z.number(),
+      assignedRole: z.enum(["AD", "SAM", "SA", "RSM"]),
+      title: z.string(),
+      description: z.string().optional(),
+      dueDate: z.string().optional(),
+      opportunityId: z.number().optional(),
+    })).mutation(({ input }) =>
+      insertPodTask({
+        clientId: input.clientId,
+        assignedRole: input.assignedRole,
+        title: input.title,
+        description: input.description,
+        dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
+        opportunityId: input.opportunityId,
+      })
+    ),
+    complete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+      completePodTask(input.id)
+    ),
+    deleteOne: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+      deletePodTask(input.id)
+    ),
+    clearCompleted: publicProcedure.mutation(() =>
+      clearCompletedPodTasks()
+    ),
+    clearByRole: publicProcedure.input(z.object({ role: z.enum(["AD", "SAM", "SA", "RSM"]) })).mutation(({ input }) =>
+      clearPodTasksByRole(input.role)
+    ),
+    updateTaskStatus: publicProcedure.input(z.object({
+      id: z.number(),
+      taskStatus: z.enum(["pending", "in_progress", "done"]),
+    })).mutation(async ({ input }) => {
+      const { getDb } = await import('./db.js');
+      const { podTasks } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const updates: any = { taskStatus: input.taskStatus };
+      if (input.taskStatus === 'done') {
+        updates.isCompleted = true;
+        updates.completedAt = new Date();
+      } else {
+        updates.isCompleted = false;
+        updates.completedAt = null;
+      }
+      await db.update(podTasks).set(updates).where(eq(podTasks.id, input.id));
+      return { ok: true };
+    }),
+    listDealReviews: publicProcedure.query(() => getDealReviews()),
+    weeklyReport: publicProcedure.mutation(async () => {
+      const data = await getWeeklyReportData();
+      if (!data) return { summary: "数据暂时无法读取，请稍后重试。" };
+
+      const { recentSignals, completedTasks, pendingTasks, allClients, meddpiccData, latestScores } = data;
+
+      const clientSummaries = allClients.map(c => {
+        const m = meddpiccData.find(md => md.clientId === c.id);
+        const avgScore = m ? Math.round((
+          m.metricsScore + m.economicBuyerScore + m.decisionCriteriaScore +
+          m.decisionProcessScore + m.paperProcessScore + m.implicatePainScore +
+          m.championScore + m.competitionScore
+        ) / 8) : 0;
+        const signals = recentSignals.filter(s => s.clientId === c.id);
+        const completed = completedTasks.filter(t => t.clientId === c.id);
+        const pending = pendingTasks.filter(t => t.clientId === c.id);
+        const latestScore = latestScores.find(s => s.clientId === c.id);
+        return `${c.name}(${c.stage}): MEDDPICC平均${avgScore}分, 本周新增信号${signals.length}条, 完成行动${completed.length}个, 待处理${pending.length}个, AI商机温度${latestScore ? latestScore.overallScore : '未评分'}`;
+      }).join('\n');
+
+      const prompt = `你是一个企业级大客户销售作战参谋。以下是大湾区T100专项上周的战场数据：
+
+${clientSummaries}
+
+整体数据：本周共收到${recentSignals.length}条客户情报信号，完成${completedTasks.length}个作战行动，待处理${pendingTasks.length}个任务。
+
+请以总经理视角写一段简洁的本周战报摘要（200字内），要求：
+1. 先说整体战场态势和重点进展
+2. 指出最需要关注的风险或机遇
+3. 给出下周最重要的一个行动建议
+语气要直接、具体，不要空话套话。`;
+
+      const response = await invokeLLM({ messages: [{ role: "user", content: prompt }], model: "gpt-4o-mini" });
+      const summary = String((response.choices?.[0]?.message?.content) ?? "未能生成战报，请重试。");
+      return { summary, stats: { signals: recentSignals.length, completed: completedTasks.length, pending: pendingTasks.length } };
+    }),
+    addDealReview: publicProcedure.input(z.object({
+      clientId: z.number(),
+      content: z.string(),
+      nextSteps: z.string().optional(),
+      reviewDate: z.string().optional(),
+    })).mutation(({ input }) =>
+      insertDealReview({
+        clientId: input.clientId,
+        content: input.content,
+        nextSteps: input.nextSteps,
+        reviewDate: input.reviewDate ? new Date(input.reviewDate) : new Date(),
+      })
+    ),
+  }),
+
+  // ── Opportunity Score ─────────────────────────────────────────────────────
+  prediction: router({
+    getLatest: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const result = await getLatestScoreByClientId(input.clientId);
+      return result ?? null;
+    }),
+    analyze: publicProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+      industry: z.string().optional(),
+      stage: z.string(),
+      meddpicc: z.object({
+        metricsScore: z.number(),
+        economicBuyerScore: z.number(),
+        decisionCriteriaScore: z.number(),
+        decisionProcessScore: z.number(),
+        paperProcessScore: z.number(),
+        implicatePainScore: z.number(),
+        championScore: z.number(),
+        competitionScore: z.number(),
+      }),
+      visitCount: z.number().optional(),
+      lastVisitDate: z.string().nullable().optional(),
+      visitQuality: z.object({
+        totalVisits: z.number(),
+        aiMinutesCount: z.number(),
+        transcriptCount: z.number(),
+        recentKeyPoints: z.string().optional(),
+      }).optional(),
+      // 进入商机阶段额外字段
+      oppStageDistribution: z.record(z.string(), z.number()).optional(), // { 'Qualified': 2, 'POC': 1 }
+      oppCount: z.number().optional(),
+      // 0→1 阶段额外字段
+      stageDwellDays: z.number().optional(), // 当前阶段停留天数
+    })).mutation(async ({ input }) => {
+      const m = input.meddpicc;
+      const meddpiccAvg = Math.round(
+        (m.metricsScore + m.economicBuyerScore + m.decisionCriteriaScore +
+          m.decisionProcessScore + m.paperProcessScore + m.implicatePainScore +
+          m.championScore + m.competitionScore) / 8
+      );
+
+      const visitCount = input.visitCount ?? 0;
+      let visitFrequencyScore = 0;
+      if (visitCount === 0) {
+        visitFrequencyScore = 0;
+      } else if (input.lastVisitDate) {
+        const daysSinceLastVisit = Math.floor((Date.now() - new Date(input.lastVisitDate).getTime()) / (1000 * 60 * 60 * 24));
+        if (daysSinceLastVisit <= 14) visitFrequencyScore = 100;
+        else if (daysSinceLastVisit <= 30) visitFrequencyScore = 75;
+        else if (daysSinceLastVisit <= 60) visitFrequencyScore = 50;
+        else visitFrequencyScore = 25;
+      }
+
+      const vq = input.visitQuality;
+      let visitQualityScore = 0;
+      let visitQualityDesc = '';
+      if (vq && vq.totalVisits > 0) {
+        const aiRatio = vq.aiMinutesCount / vq.totalVisits;
+        const transcriptRatio = vq.transcriptCount / vq.totalVisits;
+        visitQualityScore = Math.round(aiRatio * 60 + transcriptRatio * 40);
+        visitQualityDesc = `总拜访${vq.totalVisits}次，其中${vq.aiMinutesCount}次有AI纪要，${vq.transcriptCount}次有飞书妙记全文，日志质量得分${visitQualityScore}/100`;
+      } else if (vq && vq.totalVisits === 0) {
+        visitQualityScore = 0;
+        visitQualityDesc = '从未拜访，日志质量得分 0/100';
+      }
+
+      const isOpportunityStage = input.stage === '进入商机';
+
+      // 商机阶段分布分（进入商机阶段用）
+      let oppProgressScore = 0;
+      let oppDistDesc = '';
+      if (isOpportunityStage && input.oppStageDistribution) {
+        const dist = input.oppStageDistribution;
+        const stageWeights: Record<string, number> = {
+          'Qualified': 25, 'POC': 50, '商务谈判': 75, '签约': 90, '交付': 100,
+        };
+        const entries = Object.entries(dist);
+        if (entries.length > 0) {
+          const weightedSum = entries.reduce((sum, [stage, count]) => sum + (stageWeights[stage] ?? 25) * count, 0);
+          const totalOpps = entries.reduce((sum, [, count]) => sum + count, 0);
+          oppProgressScore = totalOpps > 0 ? Math.round(weightedSum / totalOpps) : 0;
+          oppDistDesc = entries.map(([s, c]) => `${s}:${c}条`).join('、');
+        }
+      }
+
+      // 阶段停留分（0→1 阶段用）
+      let stageDwellScore = 100;
+      let stageDwellDesc = '';
+      if (!isOpportunityStage && input.stageDwellDays !== undefined) {
+        const days = input.stageDwellDays;
+        if (days <= 30) { stageDwellScore = 100; stageDwellDesc = `当前阶段停留${days}天，进展正常`; }
+        else if (days <= 60) { stageDwellScore = 75; stageDwellDesc = `当前阶段停留${days}天，需加快推进`; }
+        else if (days <= 90) { stageDwellScore = 50; stageDwellDesc = `当前阶段停留${days}天，推进较慢`; }
+        else { stageDwellScore = 20; stageDwellDesc = `当前阶段停留${days}天，高风险——长期停滞`; }
+      }
+
+      // 分阶段加权综合分
+      let overallScore: number;
+      let scoreBreakdown: string;
+      if (isOpportunityStage) {
+        // 进入商机：MEDDPICC 60% + 商机推进 20% + 拜访频率 15% + 日志质量 5%
+        overallScore = Math.round(meddpiccAvg * 0.6 + oppProgressScore * 0.2 + visitFrequencyScore * 0.15 + visitQualityScore * 0.05);
+        scoreBreakdown = `MEDDPICC ${meddpiccAvg}分×60%，商机推进 ${oppProgressScore}分×20%，拜访频率 ${visitFrequencyScore}分×15%，日志质量 ${visitQualityScore}分×5%`;
+      } else {
+        // 0→1 阶段：拜访频率 35% + MEDDPICC 40% + 日志质量 15% + 阶段推进速度 10%
+        overallScore = Math.round(visitFrequencyScore * 0.35 + meddpiccAvg * 0.40 + visitQualityScore * 0.15 + stageDwellScore * 0.10);
+        scoreBreakdown = `拜访频率 ${visitFrequencyScore}分×35%， MEDDPICC ${meddpiccAvg}分×40%，日志质量 ${visitQualityScore}分×15%，阶段推进 ${stageDwellScore}分×10%`;
+      }
+
+      const riskLevel = overallScore >= 50 ? "低风险" : overallScore >= 25 ? "中风险" : "高风险";
+
+      // 根据阶段分别构建 prompt
+      let prompt: string;
+      if (isOpportunityStage) {
+        prompt = `你是一位顶级销售预测分析师，专注于企业级网络安全大客户销售。
+
+客户：${input.clientName}（${input.industry || "科技企业"}）
+当前阶段：进入商机（共${input.oppCount ?? 0}条并行商机，MEDDPICC为各商机评分的加权均值）
+商机组合健康度：${overallScore}/100（${riskLevel}）
+得分构成：${scoreBreakdown}
+
+MEDDPICC各要素得分（商机级均值）：
+- M(可量化价值): ${m.metricsScore}/100
+- E(预算决策人): ${m.economicBuyerScore}/100
+- D(决策标准): ${m.decisionCriteriaScore}/100
+- D(决策流程): ${m.decisionProcessScore}/100
+- P(采购流程): ${m.paperProcessScore}/100
+- I(痛点牵连): ${m.implicatePainScore}/100
+- C(内部Champion): ${m.championScore}/100
+- C(竞争态势): ${m.competitionScore}/100
+
+${oppDistDesc ? `商机子阶段分布：${oppDistDesc}（商机推进得分 ${oppProgressScore}/100）` : ''}
+拜访频率：${visitFrequencyScore}/100（拜访${visitCount}次，${visitCount === 0 ? '从未拜访' : input.lastVisitDate ? `最近${Math.floor((Date.now() - new Date(input.lastVisitDate).getTime()) / 86400000)}天前` : ''}）
+${visitQualityDesc ? `日志质量：${visitQualityDesc}` : ''}
+${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
+
+请提供：
+1. 对该客户商机组合的专业判断（2-3句，重点分析赢单概率和最大风险）
+2. 最需立即解决的2-3个风险点（具体说明风险原因和应对方法）
+
+返回JSON：
+{ "analysis": "判断文本", "warnings": ["风险点1", "风险点2"] }`;
+      } else {
+        prompt = `你是一位顶级销售预测分析师，专注于企业级网络安全大客户销售。
+
+客户：${input.clientName}（${input.industry || "科技企业"}）
+当前阶段：${input.stage}（客户开发阶段，尚未进入正式商机）
+客户健康度：${overallScore}/100（${riskLevel}）
+得分构成：${scoreBreakdown}
+
+MEDDPICC方向性评分（客户级手动评分，早期阶段分数偏低属正常）：
+- M(可量化价值): ${m.metricsScore}/100
+- E(预算决策人): ${m.economicBuyerScore}/100
+- D(决策标准): ${m.decisionCriteriaScore}/100
+- D(决策流程): ${m.decisionProcessScore}/100
+- P(采购流程): ${m.paperProcessScore}/100
+- I(痛点牵连): ${m.implicatePainScore}/100
+- C(内部Champion): ${m.championScore}/100
+- C(竞争态势): ${m.competitionScore}/100
+
+拜访频率：${visitFrequencyScore}/100（拜访${visitCount}次，${visitCount === 0 ? '从未拜访，高风险' : input.lastVisitDate ? `最近${Math.floor((Date.now() - new Date(input.lastVisitDate).getTime()) / 86400000)}天前拜访` : ''}）
+${stageDwellDesc ? `阶段推进：${stageDwellDesc}` : ''}
+${visitQualityDesc ? `日志质量：${visitQualityDesc}` : ''}
+${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
+
+请提供：
+1. 对该客户当前开发状态的判断（2-3句，重点分析关系建立和阶段推进状况）
+2. 最需立即解决的2-3个风险点（具体说明风险原因和应对方法）
+
+返回JSON：
+{ "analysis": "判断文本", "warnings": ["风险点1", "风险点2"] }`;
+      }
+
+      const res = await invokeLLM({
+        model: "gpt-5-mini",
+        messages: [{ role: "user", content: prompt }],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "prediction",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                analysis: { type: "string" },
+                warnings: { type: "array", items: { type: "string" } },
+              },
+              required: ["analysis", "warnings"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const parsed = JSON.parse(String(res.choices[0].message.content) || "{}");
+      const aiAnalysis: string = parsed.analysis ?? '';
+      const warnings: string[] = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+      await insertScore({
+        clientId: input.clientId,
+        overallScore,
+        meddpiccScore: meddpiccAvg,
+        signalScore: 0,
+        visitFrequencyScore,
+        riskLevel: riskLevel as any,
+        aiAnalysis,
+        warnings,
+      });
+      // Return with aiAnalysis key to match OpportunityScore type used by frontend
+      return { overallScore, meddpiccScore: meddpiccAvg, visitFrequencyScore, riskLevel, scoreBreakdown, aiAnalysis, warnings };
+    }),
+  }),
+  // ── Key Contacts ──────────────────────────────────────────────────────────────────────
+  contacts: router({
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(({ input }) =>
+      getContactsByClientId(input.clientId)
+    ),
+    update: publicProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      title: z.string().optional(),
+      department: z.string().optional(),
+      influence: z.enum(['决策者', '影响者', 'Champion候选', '技术评估者', '信息来源']).optional(),
+      relationship: z.enum(['待接触', '已识别', '初步接触', '已接触', '建立关系', 'Champion', '已拒绝']).optional(),
+      linkedinUrl: z.string().optional(),
+      email: z.string().optional(),
+      notes: z.string().optional(),
+      reportingTo: z.string().optional(),
+      persona: z.string().optional(),
+      breakthroughTip: z.string().optional(),
+      stance: z.enum(['支持', '中立', '反对', '未知']).optional(),
+    })).mutation(({ input }) => {
+      const { id, ...data } = input;
+      return updateContact(id, data as any);
+    }),
+    add: publicProcedure.input(z.object({
+      clientId: z.number(),
+      name: z.string(),
+      title: z.string().optional(),
+      department: z.string().optional(),
+      influence: z.enum(['决策者', '影响者', 'Champion候选', '技术评估者', '信息来源']).optional(),
+      relationship: z.enum(['待接触', '已识别', '初步接触', '已接触', '建立关系', 'Champion', '已拒绝']).optional(),
+      linkedinUrl: z.string().optional(),
+      email: z.string().optional(),
+      notes: z.string().optional(),
+      reportingTo: z.string().optional(),
+    })).mutation(({ input }) => insertContact(input as any)),
+    delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+      deleteContact(input.id)
+    ),
+    // AI 分析关键人汇报链路，生成突破建议
+    analyzeChain: publicProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+    })).mutation(async ({ input }) => {
+      const contacts = await getContactsByClientId(input.clientId);
+      if (contacts.length === 0) return { reportingChain: '', tips: [] };
+
+      const contactList = contacts.map((c: any) =>
+        `- ${c.name}（${c.title || '职位未知'}，${c.department || '部门未知'}，影响力：${c.influence}，关系：${c.relationship}${c.reportingTo ? `，汇报给：${c.reportingTo}` : ''}）`
+      ).join('\n');
+
+      const prompt = `你是一位顶级大客户销售教练，专注于帮助 SAM 突破关键人认知壁垒。
+
+客户：${input.clientName}
+关键人列表：
+${contactList}
+
+请完成两项任务：
+1. 分析汇报链路：识别组织层级（决策层→管理层→执行层），画出汇报关系
+2. 为每位关键人生成「快速认知对齐话术」：一段 2-3 句话的开场白，帮助 SAM 在 3 分钟内让该关键人理解我方价值主张
+
+返回JSON格式：
+{
+  "reportingChain": "汇报链路描述（如：Ronald（决策层）→ Ray（管理层）→ Tracy/Ryan（执行层））",
+  "tips": [
+    {
+      "contactName": "关键人姓名",
+      "persona": "人物画像（3句话：职责重心、决策风格、核心关切）",
+      "breakthroughTip": "快速认知对齐话术（2-3句，可直接使用的开场白）",
+      "approachStrategy": "接触策略（如：通过Ray引荐、直接邮件、技术演示切入）"
+    }
+  ]
+}`;
+
+      const res = await invokeLLM({
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+      });
+      const parsed = JSON.parse(String(res.choices[0].message.content || '{}'));
+
+      // Save breakthroughTip and persona back to each contact
+      const db = await getDb();
+      if (db) {
+        const { keyContacts } = await import('../drizzle/schema.js');
+        const { eq } = await import('drizzle-orm');
+        for (const tip of (parsed.tips || [])) {
+          const contact = contacts.find((c: any) => c.name === tip.contactName);
+          if (contact) {
+            await db.update(keyContacts).set({
+              persona: tip.persona,
+              breakthroughTip: tip.breakthroughTip,
+            }).where(eq(keyContacts.id, contact.id));
+          }
+        }
+      }
+
+      return parsed;
+    }),
+  }),
+
+  // ── Opportunities (Active Fronts 活跃战线) ──────────────────────────────────
+  opportunities: router({
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { opportunities } = await import('../drizzle/schema.js');
+      const { eq, desc } = await import('drizzle-orm');
+      return db.select().from(opportunities).where(eq(opportunities.clientId, input.clientId)).orderBy(desc(opportunities.createdAt));
+    }),
+    create: publicProcedure.input(z.object({
+      clientId: z.number(),
+      name: z.string(),
+      stage: z.enum(['初步需求', '需求挖掘', '技术验证', '方案提案', '商务谈判', '赢单', '丢单']).optional(),
+      status: z.enum(['活跃', '暂停', '赢单', '丢单']).optional(),
+      competitorName: z.string().optional(),
+      contactName: z.string().optional(),
+      estimatedValue: z.string().optional(),
+      expectedCloseDate: z.string().optional(),
+      notes: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { opportunities } = await import('../drizzle/schema.js');
+      const [result] = await db.insert(opportunities).values(input as any);
+      return { id: (result as any).insertId };
+    }),
+    update: publicProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      stage: z.enum(['初步需求', '需求挖掘', '技术验证', '方案提案', '商务谈判', '赢单', '丢单']).optional(),
+      status: z.enum(['活跃', '暂停', '赢单', '丢单']).optional(),
+      competitorName: z.string().optional(),
+      contactName: z.string().optional(),
+      estimatedValue: z.string().optional(),
+      expectedCloseDate: z.string().optional(),
+      notes: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { opportunities } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const { id, ...data } = input;
+      await db.update(opportunities).set(data as any).where(eq(opportunities.id, id));
+      return { success: true };
+    }),
+    delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { opportunities } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      await db.delete(opportunities).where(eq(opportunities.id, input.id));
+      return { success: true };
+    }),
+
+    // 更新 Blue Sheet 字段
+    updateBlueSheet: publicProcedure.input(z.object({
+      id: z.number(),
+      bizObjective: z.string().optional(),
+      valueProposition: z.string().optional(),
+      champion: z.string().optional(),
+      championStance: z.enum(['支持', '中立', '反对', '未知']).optional(),
+      blueSheetCompetitor: z.string().optional(),
+      winStrategy: z.string().optional(),
+      keyMilestones: z.string().optional(),
+      riskAndMitigation: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { opportunities } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const { id, ...data } = input;
+      await db.update(opportunities).set(data as any).where(eq(opportunities.id, id));
+      return { success: true };
+    }),
+
+    // 获取商机级 MEDDPICC 评分
+    getMeddpicc: publicProcedure.input(z.object({ opportunityId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const { opportunityMeddpicc } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const [result] = await db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId));
+      return result ?? null;
+    }),
+
+    // 创建或更新商机级 MEDDPICC 评分
+    upsertMeddpicc: publicProcedure.input(z.object({
+      opportunityId: z.number(),
+      clientId: z.number(),
+      metricsScore: z.number().min(0).max(4).optional(),
+      metricsNotes: z.string().optional(),
+      economicBuyerScore: z.number().min(0).max(4).optional(),
+      economicBuyerNotes: z.string().optional(),
+      decisionCriteriaScore: z.number().min(0).max(4).optional(),
+      decisionCriteriaNotes: z.string().optional(),
+      decisionProcessScore: z.number().min(0).max(4).optional(),
+      decisionProcessNotes: z.string().optional(),
+      paperProcessScore: z.number().min(0).max(4).optional(),
+      paperProcessNotes: z.string().optional(),
+      implicatePainScore: z.number().min(0).max(4).optional(),
+      implicatePainNotes: z.string().optional(),
+      championScore: z.number().min(0).max(4).optional(),
+      championNotes: z.string().optional(),
+      competitionScore: z.number().min(0).max(4).optional(),
+      competitionNotes: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { opportunityMeddpicc } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const { opportunityId, clientId, ...scores } = input;
+      // 尝试更新，如果不存在则插入
+      const [existing] = await db.select({ id: opportunityMeddpicc.id })
+        .from(opportunityMeddpicc)
+        .where(eq(opportunityMeddpicc.opportunityId, opportunityId));
+      if (existing) {
+        await db.update(opportunityMeddpicc).set(scores as any).where(eq(opportunityMeddpicc.opportunityId, opportunityId));
+      } else {
+        await db.insert(opportunityMeddpicc).values({ opportunityId, clientId, ...scores } as any);
+      }
+      const [result] = await db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, opportunityId));
+      return result;
+    }),
+
+    // 获取客户所有商机的 MEDDPICC 汇总（用于 AD 指挥台）
+    listMeddpiccByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { opportunityMeddpicc, opportunities } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      // 联合查询：商机信息 + MEDDPICC 分数
+      const results = await db
+        .select({
+          opportunityId: opportunities.id,
+          opportunityName: opportunities.name,
+          stage: opportunities.stage,
+          status: opportunities.status,
+          meddpicc: {
+            metricsScore: opportunityMeddpicc.metricsScore,
+            economicBuyerScore: opportunityMeddpicc.economicBuyerScore,
+            decisionCriteriaScore: opportunityMeddpicc.decisionCriteriaScore,
+            decisionProcessScore: opportunityMeddpicc.decisionProcessScore,
+            paperProcessScore: opportunityMeddpicc.paperProcessScore,
+            implicatePainScore: opportunityMeddpicc.implicatePainScore,
+            championScore: opportunityMeddpicc.championScore,
+            competitionScore: opportunityMeddpicc.competitionScore,
+          }
+        })
+        .from(opportunities)
+        .leftJoin(opportunityMeddpicc, eq(opportunities.id, opportunityMeddpicc.opportunityId))
+        .where(eq(opportunities.clientId, input.clientId));
+      return results;
+    }),
+  }),
+
+  // ── Kill Sheets (竞品阻击包) ────────────────────────────────────────────────
+  killSheets: router({
+    list: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const { killSheets } = await import('../drizzle/schema.js');
+      const { desc } = await import('drizzle-orm');
+      return db.select().from(killSheets).orderBy(desc(killSheets.createdAt));
+    }),
+    create: publicProcedure.input(z.object({
+      competitorName: z.string(),
+      competitorType: z.string().optional(),
+      productLine: z.string().optional(),
+      ourProduct: z.string().optional(),
+      keyDifferentiators: z.array(z.string()).optional(),
+      weaknesses: z.array(z.string()).optional(),
+      weaknessesText: z.string().optional(),
+      ourAdvantages: z.string().optional(),
+      keyDiffs: z.string().optional(),
+      battleNotes: z.string().optional(),
+      clientId: z.number().optional(),
+      sourceClientId: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { killSheets } = await import('../drizzle/schema.js');
+      const [result] = await db.insert(killSheets).values(input as any);
+      return { id: (result as any).insertId };
+    }),
+    update: publicProcedure.input(z.object({
+      id: z.number(),
+      competitorName: z.string().optional(),
+      competitorType: z.string().optional(),
+      productLine: z.string().optional(),
+      ourProduct: z.string().optional(),
+      weaknessesText: z.string().optional(),
+      ourAdvantages: z.string().optional(),
+      keyDiffs: z.string().optional(),
+      battleNotes: z.string().optional(),
+      clientId: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { killSheets } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const { id, ...data } = input;
+      await db.update(killSheets).set(data as any).where(eq(killSheets.id, id));
+      return { success: true };
+    }),
+    generateTalk: publicProcedure.input(z.object({
+      id: z.number(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { killSheets } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const [ks] = await db.select().from(killSheets).where(eq(killSheets.id, input.id));
+      if (!ks) throw new Error('Kill sheet not found');
+
+      const prompt = `你是亚信安全（AIStorm/AsiaInfo Security）的竞品对抗专家。
+
+竞品：${ks.competitorName}
+竞品类型：${ks.competitorType || '未指定'}
+我方对应产品：${ks.ourProduct || '亚信安全全线产品'}
+竞品弱点：${ks.weaknessesText || ''}
+我方优势：${ks.ourAdvantages || ''}
+关键差异点：${ks.keyDiffs || ''}
+作战备注：${ks.battleNotes || ''}
+
+请基于以上信息，生成一份简洁、可直接对客户使用的「差异化话术卡」，包含：
+
+### 开场定位话术
+（1-2句，强调我方核心优势）
+
+### 竞品弱点应对话术
+（针对客户可能提到竞品时的应对话术，2-3条）
+
+### 关键差异化优势话术
+（将差异点转化为客户语言，3-4条）
+
+### 技术对标应对
+（SA 在 POC 中应重点展示的指标，2-3条）
+
+内容要具体、可操作，适合在客户会议中直接使用。`;
+
+      const res = await invokeLLM({
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const aiGeneratedTalk = String(res.choices[0].message.content || '');
+      await db.update(killSheets).set({ aiGeneratedTalk } as any).where(eq(killSheets.id, input.id));
+      return { success: true, aiGeneratedTalk };
+    }),
+    generate: publicProcedure.input(z.object({
+      competitorName: z.string(),
+      productLine: z.string().optional(),
+      ourProduct: z.string().optional(),
+      clientContext: z.string().optional(),
+      sourceClientId: z.number().optional(),
+    })).mutation(async ({ input }) => {
+      const prompt = `你是亚信安全（AsiaInfo Security）的竞品对抗专家，擅长帮助销售团队在竞争性销售场景中击败对手。
+
+竞品：${input.competitorName}
+竞品产品线：${input.productLine || '未指定'}
+我方对应产品：${input.ourProduct || '亚信安全全线产品'}
+客户背景：${input.clientContext || '未提供'}
+
+请生成一份完整的「竞品阻击包（Kill Sheet）」，包含：
+
+## 竞品阻击包：vs ${input.competitorName}
+
+### 核心差异化优势（我方 vs 竞品）
+（3-5条，每条说明具体场景和证据）
+
+### 竞品已知弱点
+（3-4条，基于市场公开信息和客户反馈）
+
+### 客户常见质疑与应对话术
+| 客户质疑 | 应对话术 |
+|---------|----------|
+（3-4条最常见质疑）
+
+### 技术对标澄清
+（关键技术指标对比，帮助 SA 在 POC 中占据主动）
+
+### 赢单策略建议
+（针对该竞品的 3 步赢单策略）
+
+请确保内容具体、可操作，避免空泛描述。`;
+
+      const res = await invokeLLM({
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const aiContent = String(res.choices[0].message.content || '');
+
+      // Save to database
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { killSheets } = await import('../drizzle/schema.js');
+      const [result] = await db.insert(killSheets).values({
+        competitorName: input.competitorName,
+        productLine: input.productLine,
+        ourProduct: input.ourProduct,
+        aiContent,
+        sourceClientId: input.sourceClientId,
+      } as any);
+      return { id: (result as any).insertId, aiContent };
+    }),
+    delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { killSheets } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      await db.delete(killSheets).where(eq(killSheets.id, input.id));
+      return { success: true };
+    }),
+    // List kill sheets matching detected competitor names (for meeting log auto-match)
+    listByCompetitors: publicProcedure.input(z.object({
+      competitorNames: z.array(z.string()),
+    })).query(async ({ input }) => {
+      if (!input.competitorNames.length) return [];
+      const db = await getDb();
+      if (!db) return [];
+      const { killSheets } = await import('../drizzle/schema.js');
+      const { or, like } = await import('drizzle-orm');
+      const conditions = input.competitorNames.map(name => like(killSheets.competitorName, `%${name}%`));
+      return db.select().from(killSheets).where(or(...conditions));
+    }),
+  }),
+
+  // CRM Integration (销售易 Xiaoshouyi OpenAPI v2.0)
+  // 认证：密码模式 POST https://api.xiaoshouyi.com/oauth2/token.action
+  // 接口：REST v2.0 https://api.xiaoshouyi.com/rest/data/v2.0/xobjects/<object>
+  // password = 账号密码 + 8位安全令牌（直接拼接，如：123456ABCDEFGH）
+  crm: router({
+    // 测试连接并获取 access_token
+    testConnection: publicProcedure
+      .input(z.object({
+        clientId: z.string(),
+        clientSecret: z.string(),
+        redirectUri: z.string().default('https://api.xiaoshouyi.com'),
+        username: z.string(),
+        password: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const tokenUrl = 'https://api.xiaoshouyi.com/oauth2/token.action';
+          const params = new URLSearchParams({
+            grant_type: 'password',
+            client_id: input.clientId,
+            client_secret: input.clientSecret,
+            redirect_uri: input.redirectUri,
+            username: input.username,
+            password: input.password,
+          });
+          const res = await fetch(tokenUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: params.toString(),
+          });
+          if (!res.ok) {
+            const err = await res.text();
+            return { success: false, error: `认证失败: ${res.status} ${err.slice(0, 200)}` };
+          }
+          const data = await res.json() as { access_token: string; token_type: string; id: number };
+          return { success: true, accessToken: data.access_token, userId: data.id };
+        } catch (e: any) {
+          return { success: false, error: e.message || '连接失败' };
+        }
+      }),
+
+    // 推送商机到销售易（销售机会对象）
+    pushOpportunity: publicProcedure
+      .input(z.object({
+        accessToken: z.string(),
+        clientName: z.string(),
+        stage: z.string(),
+        amount: z.number().optional(),
+        closeDate: z.string(),
+        description: z.string().optional(),
+        ownerId: z.number().optional(),
+        entityType: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const apiUrl = 'https://api.xiaoshouyi.com/rest/data/v2.0/xobjects/opportunity';
+          const body: Record<string, unknown> = {
+            data: {
+              name: `${input.clientName} - T100专项商机`,
+              stage: input.stage,
+              closeDate: input.closeDate,
+              description: input.description || 'T100专项作战指挥系统同步',
+              ...(input.amount && { amount: input.amount }),
+              ...(input.ownerId && { owner: input.ownerId }),
+              ...(input.entityType && { entityType: input.entityType }),
+            }
+          };
+          const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${input.accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const err = await res.text();
+            return { success: false, error: `推送失败: ${res.status} ${err.slice(0, 300)}` };
+          }
+          const data = await res.json() as { code: number; msg: string; data: { id: number } };
+          if (data.code !== 200) return { success: false, error: data.msg };
+          return { success: true, crmId: String(data.data.id) };
+        } catch (e: any) {
+          return { success: false, error: e.message || '推送失败' };
+        }
+      }),
+
+    // 推送联系人到销售易（联系人对象）
+    pushContact: publicProcedure
+      .input(z.object({
+        accessToken: z.string(),
+        fullName: z.string(),
+        title: z.string().optional(),
+        email: z.string().optional(),
+        phone: z.string().optional(),
+        department: z.string().optional(),
+        notes: z.string().optional(),
+        ownerId: z.number().optional(),
+        entityType: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const apiUrl = 'https://api.xiaoshouyi.com/rest/data/v2.0/xobjects/contact';
+          const body: Record<string, unknown> = {
+            data: {
+              fullName: input.fullName,
+              ...(input.title && { title: input.title }),
+              ...(input.email && { email: input.email }),
+              ...(input.phone && { phone: input.phone }),
+              ...(input.department && { department: input.department }),
+              ...(input.notes && { description: input.notes }),
+              ...(input.ownerId && { owner: input.ownerId }),
+              ...(input.entityType && { entityType: input.entityType }),
+            }
+          };
+          const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${input.accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const err = await res.text();
+            return { success: false, error: `推送失败: ${res.status} ${err.slice(0, 300)}` };
+          }
+          const data = await res.json() as { code: number; msg: string; data: { id: number } };
+          if (data.code !== 200) return { success: false, error: data.msg };
+          return { success: true, crmId: String(data.data.id) };
+        } catch (e: any) {
+          return { success: false, error: e.message || '推送失败' };
+        }
+      }),
+
+    // 从销售易拉取商机列表
+    pullOpportunities: publicProcedure
+      .input(z.object({
+        accessToken: z.string(),
+        pageSize: z.number().default(20),
+        pageNo: z.number().default(1),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          const apiUrl = `https://api.xiaoshouyi.com/rest/data/v2.0/xobjects/opportunity?pageSize=${input.pageSize}&pageNo=${input.pageNo}`;
+          const res = await fetch(apiUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${input.accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (!res.ok) {
+            const err = await res.text();
+            return { success: false, error: `拉取失败: ${res.status} ${err.slice(0, 300)}`, opportunities: [] };
+          }
+          const data = await res.json() as {
+            code: number;
+            msg: string;
+            data: {
+              total: number;
+              records: Array<{
+                id: number;
+                name: string;
+                stage: string;
+                amount?: number;
+                closeDate?: string;
+                description?: string;
+                owner?: { id: number; name: string };
+                createdDate?: string;
+                lastModifiedDate?: string;
+              }>;
+            };
+          };
+          if (data.code !== 200) return { success: false, error: data.msg, opportunities: [] };
+          return {
+            success: true,
+            total: data.data.total,
+            opportunities: data.data.records.map(r => ({
+              id: String(r.id),
+              name: r.name,
+              stage: r.stage,
+              amount: r.amount,
+              closeDate: r.closeDate,
+              description: r.description,
+              ownerName: r.owner?.name,
+              createdDate: r.createdDate,
+              lastModifiedDate: r.lastModifiedDate,
+            })),
+          };
+        } catch (e: any) {
+          return { success: false, error: e.message || '拉取失败', opportunities: [] };
+        }
+      }),
+    }),
+
+  // ── 产品文档仓库 ──────────────────────────────────────────────────────────
+  productDocs: router({
+    // 获取所有产品文档
+    list: publicProcedure
+      .input(z.object({ productLine: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { productDocs } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        if (input?.productLine) {
+          return db.select().from(productDocs).where(eq(productDocs.productLine, input.productLine)).orderBy(productDocs.createdAt);
+        }
+        return db.select().from(productDocs).orderBy(productDocs.createdAt);
+      }),
+
+    // 上传产品文档
+    upload: protectedProcedure
+      .input(z.object({
+        title: z.string().min(1),
+        description: z.string().optional(),
+        productLine: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        filename: z.string(),
+        mimeType: z.string(),
+        base64Data: z.string(),
+        fileSize: z.number().optional(),
+        extractedText: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const { storagePut } = await import('./storage');
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const buffer = Buffer.from(input.base64Data, 'base64');
+        const fileKey = `product-docs/${Date.now()}-${input.filename}`;
+        const { key, url } = await storagePut(fileKey, buffer, input.mimeType);
+        const [result] = await db.insert(productDocs).values({
+          title: input.title,
+          description: input.description,
+          productLine: input.productLine,
+          tags: input.tags,
+          filename: input.filename,
+          fileKey: key,
+          fileUrl: url,
+          mimeType: input.mimeType,
+          fileSize: input.fileSize,
+          extractedText: input.extractedText,
+          uploadedBy: ctx.user?.name || 'unknown',
+        });
+        return { id: (result as any).insertId, fileKey: key, fileUrl: url };
+      }),
+
+    // 删除产品文档
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.delete(productDocs).where(eq(productDocs.id, input.id));
+        return { success: true };
+      }),
+  }),
+
+  // ── AI方案定制 ──────────────────────────────────────────────────────────
+  arsenalAI: router({
+    // 获取AI生成历史
+    list: publicProcedure
+      .input(z.object({ clientId: z.number().optional() }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { arsenalGenerated } = await import('../drizzle/schema');
+        const { eq, desc } = await import('drizzle-orm');
+        if (input?.clientId) {
+          return db.select().from(arsenalGenerated).where(eq(arsenalGenerated.clientId, input.clientId)).orderBy(desc(arsenalGenerated.createdAt));
+        }
+        return db.select().from(arsenalGenerated).orderBy(desc(arsenalGenerated.createdAt)).limit(50);
+      }),
+
+    // AI生成方案定制内容
+    generate: protectedProcedure
+      .input(z.object({
+        category: z.enum(['方案类', '弹药类', '话术类']),
+        prompt: z.string().min(1),
+        docIds: z.array(z.number()).optional(),
+        clientId: z.number().optional(),
+        targetContact: z.string().optional(),
+        title: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { arsenalGenerated, productDocs } = await import('../drizzle/schema');
+        const { inArray } = await import('drizzle-orm');
+
+        // 读取参考文档内容
+        let docContext = '';
+        if (input.docIds && input.docIds.length > 0) {
+          const docs = await db.select().from(productDocs).where(inArray(productDocs.id, input.docIds));
+          docContext = docs.map((d: any) =>
+            `【文档：${d.title}】\n${d.extractedText || d.description || '（无提取文本）'}`
+          ).join('\n\n---\n\n');
+        }
+
+        const categoryGuide: Record<string, string> = {
+          '方案类': '请生成一份专业的技术方案文档，包含：客户痛点分析、解决方案架构、核心功能说明、技术优势、实施路径、预期价值。',
+          '弹药类': '请生成竞争弹药材料，包含：产品核心差异化亮点、竞争对比优势、关键技术指标、客户成功案例要点、常见异议处理话术。',
+          '话术类': '请生成销售沟通话术，包含：开场白/破冰话术、痛点引导问题、价值主张陈述、异议处理回应、推进下一步行动的话术。',
+        };
+
+        const guide = categoryGuide[input.category] || '';
+        const systemMsg = `你是AIStorm（亚信安全）的资深解决方案架构师，专注于网络安全产品的销售支持。你的任务是根据销售的需求描述，结合提供的产品文档，生成高质量的${input.category}材料。\n\n${guide}\n\n输出要求：\n- 使用Markdown格式，结构清晰\n- 语言专业但易懂，适合销售使用\n- 突出AIStorm产品的核心价值\n- 内容要具体，避免空话套话\n- 如有具体数据（来自文档），请引用`;
+
+        const userMsg = `销售需求描述：\n${input.prompt}\n\n${docContext ? `参考产品文档：\n${docContext}` : '（未选择参考文档，请基于AIStorm产品通用知识生成）'}`;
+
+        const llmResult = await invokeLLM({
+          messages: [
+            { role: 'system', content: systemMsg },
+            { role: 'user', content: userMsg },
+          ],
+          model: 'claude-sonnet-4-5',
+          maxTokens: 4000,
+        });
+        const generatedContent = llmResult.choices?.[0]?.message?.content as string || '';
+
+        // 保存生成记录
+        const title = input.title || `${input.category} - ${new Date().toLocaleDateString('zh-CN')}`;
+        const [result] = await db.insert(arsenalGenerated).values({
+          category: input.category,
+          title,
+          prompt: input.prompt,
+          docIds: input.docIds,
+          generatedContent,
+          clientId: input.clientId,
+          targetContact: input.targetContact,
+          createdBy: ctx.user?.name || 'unknown',
+        });
+        return { id: (result as any).insertId, content: generatedContent, title };
+      }),
+
+    // 删除生成记录
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { arsenalGenerated } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.delete(arsenalGenerated).where(eq(arsenalGenerated.id, input.id));
+        return { success: true };
+      }),
+  }),
+
+  // ── ListPrice 报价数据 ──────────────────────────────────────────────────────────
+  listprice: router({
+    // 搜索产品（支持关键词和产品线过滤）
+    search: publicProcedure
+      .input(z.object({
+        keyword: z.string().optional(),
+        productLine: z.string().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { listpriceItems } = await import('../drizzle/schema');
+        const { like, eq, and, or } = await import('drizzle-orm');
+        const conditions: any[] = [];
+        if (input?.productLine) {
+          conditions.push(eq(listpriceItems.productLine, input.productLine));
+        }
+        if (input?.keyword) {
+          conditions.push(or(
+            like(listpriceItems.productName, `%${input.keyword}%`),
+            like(listpriceItems.model || '', `%${input.keyword}%`),
+            like(listpriceItems.specs || '', `%${input.keyword}%`),
+          ));
+        }
+        const query = conditions.length > 0
+          ? db.select().from(listpriceItems).where(and(...conditions))
+          : db.select().from(listpriceItems);
+        return query.orderBy(listpriceItems.productLine, listpriceItems.productName);
+      }),
+
+    // 获取所有产品线
+    getProductLines: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const { listpriceItems } = await import('../drizzle/schema');
+      const rows = await db.selectDistinct({ productLine: listpriceItems.productLine }).from(listpriceItems);
+      return rows.map((r: any) => r.productLine);
+    }),
+  }),
+
+  // ── 报价单 ──────────────────────────────────────────────────────────
+  quotes: router({
+    // 获取所有报价单
+    list: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const { quotes } = await import('../drizzle/schema');
+      const { desc } = await import('drizzle-orm');
+      return db.select().from(quotes).orderBy(desc(quotes.createdAt));
+    }),
+
+    // 获取报价单详情（含明细）
+    getById: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return null;
+        const { quotes, quoteItems } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const [quote] = await db.select().from(quotes).where(eq(quotes.id, input.id));
+        const items = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, input.id)).orderBy(quoteItems.sortOrder);
+        return { quote, items };
+      }),
+
+    // 创建报价单
+    create: protectedProcedure
+      .input(z.object({
+        clientName: z.string().optional(),
+        clientId: z.number().optional(),
+        contactName: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { quotes } = await import('../drizzle/schema');
+        const quoteNumber = `QT-${Date.now().toString().slice(-8)}`;
+        const [result] = await db.insert(quotes).values({
+          quoteNumber,
+          clientName: input.clientName,
+          clientId: input.clientId,
+          contactName: input.contactName,
+          notes: input.notes,
+          createdBy: ctx.user?.name || 'unknown',
+        });
+        return { id: (result as any).insertId, quoteNumber };
+      }),
+
+    // 更新报价单
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        clientName: z.string().optional(),
+        contactName: z.string().optional(),
+        notes: z.string().optional(),
+        status: z.enum(['草稿', '已发送', '已接受', '已拒绝', '已过期']).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { quotes } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const { id, ...data } = input;
+        await db.update(quotes).set(data as any).where(eq(quotes.id, id));
+        return { success: true };
+      }),
+
+    // 删除报价单
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { quotes, quoteItems } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.delete(quoteItems).where(eq(quoteItems.quoteId, input.id));
+        await db.delete(quotes).where(eq(quotes.id, input.id));
+        return { success: true };
+      }),
+
+    // 添加报价明细
+    addItem: protectedProcedure
+      .input(z.object({
+        quoteId: z.number(),
+        listpriceItemId: z.number().optional(),
+        productName: z.string(),
+        model: z.string().optional(),
+        unit: z.string().optional(),
+        quantity: z.number().min(1),
+        listPriceUsd: z.number(),
+        discountPct: z.number().min(0).max(100),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { quotes, quoteItems } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        // 折扣逻辑：discountPct=40 表示 40% off，实际价格 = listPrice × (1 - 40/100) = listPrice × 60%
+        const discountedPriceUsd = input.listPriceUsd * (1 - input.discountPct / 100);
+        const subtotalListPrice = input.listPriceUsd * input.quantity;
+        const subtotalDiscounted = discountedPriceUsd * input.quantity;
+        const [result] = await db.insert(quoteItems).values({
+          quoteId: input.quoteId,
+          listpriceItemId: input.listpriceItemId,
+          productName: input.productName,
+          model: input.model,
+          unit: input.unit,
+          quantity: input.quantity,
+          listPriceUsd: input.listPriceUsd,
+          discountPct: input.discountPct,
+          discountedPriceUsd,
+          subtotalListPrice,
+          subtotalDiscounted,
+          notes: input.notes,
+        });
+        const allItems = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, input.quoteId));
+        const totalListPrice = allItems.reduce((s: number, i: any) => s + i.subtotalListPrice, 0);
+        const totalDiscountedPrice = allItems.reduce((s: number, i: any) => s + i.subtotalDiscounted, 0);
+        await db.update(quotes).set({ totalListPrice, totalDiscountedPrice }).where(eq(quotes.id, input.quoteId));
+        return { id: (result as any).insertId, discountedPriceUsd, subtotalDiscounted };
+      }),
+
+    // 更新报价明细（折扣/数量）
+    updateItem: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        quoteId: z.number(),
+        quantity: z.number().min(1).optional(),
+        discountPct: z.number().min(0).max(100).optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { quotes, quoteItems } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const [existing] = await db.select().from(quoteItems).where(eq(quoteItems.id, input.id));
+        if (!existing) throw new Error('Item not found');
+        const quantity = input.quantity ?? existing.quantity;
+        const discountPct = input.discountPct ?? existing.discountPct;
+        const discountedPriceUsd = existing.listPriceUsd * (1 - discountPct / 100);
+        const subtotalListPrice = existing.listPriceUsd * quantity;
+        const subtotalDiscounted = discountedPriceUsd * quantity;
+        await db.update(quoteItems).set({
+          quantity,
+          discountPct,
+          discountedPriceUsd,
+          subtotalListPrice,
+          subtotalDiscounted,
+          notes: input.notes ?? existing.notes,
+        }).where(eq(quoteItems.id, input.id));
+        const allItems = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, input.quoteId));
+        const totalListPrice = allItems.reduce((s: number, i: any) => s + i.subtotalListPrice, 0);
+        const totalDiscountedPrice = allItems.reduce((s: number, i: any) => s + i.subtotalDiscounted, 0);
+        await db.update(quotes).set({ totalListPrice, totalDiscountedPrice }).where(eq(quotes.id, input.quoteId));
+        return { success: true };
+      }),
+
+    // 删除报价明细
+    deleteItem: protectedProcedure
+      .input(z.object({ id: z.number(), quoteId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { quotes, quoteItems } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.delete(quoteItems).where(eq(quoteItems.id, input.id));
+        const allItems = await db.select().from(quoteItems).where(eq(quoteItems.quoteId, input.quoteId));
+        const totalListPrice = allItems.reduce((s: number, i: any) => s + i.subtotalListPrice, 0);
+        const totalDiscountedPrice = allItems.reduce((s: number, i: any) => s + i.subtotalDiscounted, 0);
+        await db.update(quotes).set({ totalListPrice, totalDiscountedPrice }).where(eq(quotes.id, input.quoteId));
+        return { success: true };
+      }),
+  }),
+
+  // ── System Config ─────────────────────────────────────────────────────────────
+  systemConfig: router({
+    getAll: publicProcedure.query(() => getAllSystemConfigs()),
+    get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => getSystemConfig(input.key)),
+    set: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ input }) =>
+      setSystemConfig(input.key, input.value)
+    ),
+  }),
+
+  // ── Email Auth (仅允许 @aistorm.com 邮箱) ────────────────────────────────────────────
+  emailAuth: router({
+    register: publicProcedure
+      .input(z.object({
+        email: z.string().email().refine(e => e.toLowerCase().endsWith('@aistorm.com'), {
+          message: '仅允许使用 @aistorm.com 邮箱注册'
+        }),
+        password: z.string().min(8, '密码至少 8 个字符'),
+        name: z.string().min(1, '请输入姓名'),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { emailUsers } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const existing = await db.select().from(emailUsers).where(eq(emailUsers.email, input.email.toLowerCase())).limit(1);
+        if (existing.length > 0) throw new Error('该邮箱已注册，请直接登录');
+        const passwordHash = await bcrypt.hash(input.password, 12);
+        await db.insert(emailUsers).values({ email: input.email.toLowerCase(), passwordHash, name: input.name });
+        return { success: true };
+      }),
+
+    login: publicProcedure
+      .input(z.object({ email: z.string().email(), password: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { emailUsers, emailSessions } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        if (!input.email.toLowerCase().endsWith('@aistorm.com')) throw new Error('仅允许使用 @aistorm.com 邮箱登录');
+        const rows = await db.select().from(emailUsers).where(eq(emailUsers.email, input.email.toLowerCase())).limit(1);
+        if (rows.length === 0) throw new Error('邮箱或密码错误');
+        const user = rows[0];
+        if (!user.isActive) throw new Error('账号已禁用，请联系管理员');
+        const valid = await bcrypt.compare(input.password, user.passwordHash);
+        if (!valid) throw new Error('邮箱或密码错误');
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        await db.insert(emailSessions).values({ token, userId: user.id, expiresAt });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie('email_session', token, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });
+        return { success: true, user: { id: user.id, email: user.email, name: user.name, role: user.role, podRole: user.podRole } };
+      }),
+
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      const token = ctx.req.cookies?.email_session;
+      if (token) {
+        const db = await getDb();
+        if (db) {
+          const { emailSessions } = await import('../drizzle/schema');
+          const { eq } = await import('drizzle-orm');
+          await db.delete(emailSessions).where(eq(emailSessions.token, token));
+        }
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.clearCookie('email_session', { ...cookieOptions, maxAge: -1 });
+      }
+      return { success: true };
+    }),
+
+    me: publicProcedure.query(async ({ ctx }) => {
+      const token = ctx.req.cookies?.email_session;
+      if (!token) return null;
+      const db = await getDb();
+      if (!db) return null;
+      const { emailUsers, emailSessions } = await import('../drizzle/schema');
+      const { eq, and, gt } = await import('drizzle-orm');
+      const sessions = await db.select().from(emailSessions).where(
+        and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+      ).limit(1);
+      if (sessions.length === 0) return null;
+      const userRows = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+      if (userRows.length === 0 || !userRows[0].isActive) return null;
+      const u = userRows[0];
+      return { id: u.id, email: u.email, name: u.name, role: u.role, podRole: u.podRole };
+    }),
+
+    changePassword: publicProcedure
+      .input(z.object({ currentPassword: z.string(), newPassword: z.string().min(8) }))
+      .mutation(async ({ input, ctx }) => {
+        const token = ctx.req.cookies?.email_session;
+        if (!token) throw new Error('未登录');
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { emailUsers, emailSessions } = await import('../drizzle/schema');
+        const { eq, and, gt } = await import('drizzle-orm');
+        const sessions = await db.select().from(emailSessions).where(
+          and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+        ).limit(1);
+        if (sessions.length === 0) throw new Error('会话已过期');
+        const userRows = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+        if (userRows.length === 0) throw new Error('用户不存在');
+        const valid = await bcrypt.compare(input.currentPassword, userRows[0].passwordHash);
+        if (!valid) throw new Error('当前密码错误');
+        const newHash = await bcrypt.hash(input.newPassword, 12);
+        await db.update(emailUsers).set({ passwordHash: newHash }).where(eq(emailUsers.id, userRows[0].id));
+        return { success: true };
+      }),
+  }),
+
+  // ── Win Strategy (IBM Blue Sheet 简化版) ─────────────────────────────────
+  winStrategy: router({
+    get: publicProcedure
+      .input(z.object({ clientId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return null;
+        const { winStrategies } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const rows = await db.select().from(winStrategies).where(eq(winStrategies.clientId, input.clientId)).limit(1);
+        return rows[0] ?? null;
+      }),
+    upsert: publicProcedure
+      .input(z.object({
+        clientId: z.number(),
+        bizObjective: z.string().optional(),
+        valueProposition: z.string().optional(),
+        competitorSummary: z.string().optional(),
+        winStrategy: z.string().optional(),
+        keyMilestones: z.string().optional(),
+        riskAndMitigation: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { winStrategies } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const existing = await db.select({ id: winStrategies.id }).from(winStrategies).where(eq(winStrategies.clientId, input.clientId)).limit(1);
+        if (existing.length > 0) {
+          await db.update(winStrategies).set({ ...input }).where(eq(winStrategies.clientId, input.clientId));
+        } else {
+          await db.insert(winStrategies).values({ ...input });
+        }
+        const rows = await db.select().from(winStrategies).where(eq(winStrategies.clientId, input.clientId)).limit(1);
+        return rows[0];
+      }),
+    generateAI: publicProcedure
+      .input(z.object({
+        clientId: z.number(),
+        clientName: z.string(),
+        stage: z.string(),
+        meddpiccSummary: z.string().optional(),
+        contactsSummary: z.string().optional(),
+        bizObjective: z.string().optional(),
+        valueProposition: z.string().optional(),
+        competitorSummary: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { invokeLLM } = await import('./_core/llm');
+        const prompt = `你是一位顶级大客户销售顾问，请基于以下信息，为 SAM 生成一份 IBM Blue Sheet 风格的 Win Strategy 建议。
+
+客户：${input.clientName}
+当前阶段：${input.stage}
+MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
+关键人摘要：${input.contactsSummary || '暂无'}
+客户业务目标（SAM填写）：${input.bizObjective || '暂未填写'}
+我方价值主张（SAM填写）：${input.valueProposition || '暂未填写'}
+竞争态势（SAM填写）：${input.competitorSummary || '暂未填写'}
+
+请生成：
+1. **赢单关键因素**：我们凭什么赢？（2-3条核心优势）
+2. **最大风险点**：当前最可能失单的原因是什么？
+3. **下一步关键行动**：基于当前阶段，最重要的3件事是什么？
+4. **Champion 策略**：如何强化内部推动力？
+5. **差异化定位**：针对竞品，如何在客户心中建立独特认知？
+
+请用简洁的中文输出，每项不超过3句话，直接可用于 SAM 作战指导。`;
+        const result = await invokeLLM({ messages: [{ role: 'user', content: prompt }], maxTokens: 1200 });
+        const rawContent = result.choices?.[0]?.message?.content;
+        const aiSuggestion = typeof rawContent === 'string' ? rawContent : '';
+        // Save to DB
+        const db = await getDb();
+        if (db) {
+          const { winStrategies } = await import('../drizzle/schema');
+          const { eq } = await import('drizzle-orm');
+          const existing = await db.select({ id: winStrategies.id }).from(winStrategies).where(eq(winStrategies.clientId, input.clientId)).limit(1);
+          if (existing.length > 0) {
+            await db.update(winStrategies).set({ aiSuggestion }).where(eq(winStrategies.clientId, input.clientId));
+          } else {
+            await db.insert(winStrategies).values({ clientId: input.clientId, aiSuggestion });
+          }
+        }
+        return { aiSuggestion };
+      }),
+  }),
+
+  // ── AD 指挥台聚合接口 ─────────────────────────────────────────────────────
+  dashboard: router({
+    summary: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return null;
+      const { clients, meddpicc, meetingMinutes, podTasks, opportunities, opportunityMeddpicc } = await import('../drizzle/schema');
+      const { and, gte, count, sql, eq } = await import('drizzle-orm');
+
+      // 1. 所有客户基本信息
+      const allClients = await db.select({
+        id: clients.id,
+        name: clients.name,
+        stage: clients.stage,
+        priority: clients.priority,
+        industry: clients.industry,
+        updatedAt: clients.updatedAt,
+      }).from(clients);
+
+      // 2. MEDDPICC 评分
+      const allMeddpicc = await db.select({
+        clientId: meddpicc.clientId,
+        metricsScore: meddpicc.metricsScore,
+        economicBuyerScore: meddpicc.economicBuyerScore,
+        decisionCriteriaScore: meddpicc.decisionCriteriaScore,
+        decisionProcessScore: meddpicc.decisionProcessScore,
+        paperProcessScore: meddpicc.paperProcessScore,
+        implicatePainScore: meddpicc.implicatePainScore,
+        championScore: meddpicc.championScore,
+        competitionScore: meddpicc.competitionScore,
+      }).from(meddpicc);
+
+      // 3. 本周拜访统计（7天内）
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const recentMeetings = await db.select({
+        clientId: meetingMinutes.clientId,
+        visitDate: meetingMinutes.meetingDate,
+      }).from(meetingMinutes).where(gte(meetingMinutes.meetingDate, weekAgo));
+
+      // 3b. 所有拜访记录（用于 visitCount + lastVisitDate + 日志质量）
+      const allMeetings = await db.select({
+        clientId: meetingMinutes.clientId,
+        visitDate: meetingMinutes.meetingDate,
+        aiMinutes: meetingMinutes.aiMinutes,
+        transcriptText: meetingMinutes.transcriptText,
+        keyPoints: meetingMinutes.keyPoints,
+      }).from(meetingMinutes).orderBy(sql`${meetingMinutes.meetingDate} DESC`);
+
+      // 4. POD 任务概览（待处理数量）
+      const pendingTasks = await db.select({
+        assignedRole: podTasks.assignedRole,
+        count: count(),
+      }).from(podTasks)
+        .where(and(
+          sql`(${podTasks.isCompleted} = 0 OR ${podTasks.isCompleted} IS NULL)`,
+          sql`(${podTasks.taskStatus} = 'pending' OR ${podTasks.taskStatus} IS NULL)`
+        ))
+        .groupBy(podTasks.assignedRole);
+
+      // 5. 计算每个客户的 MEDDPICC 平均分
+      // 规则：建图/进门/定痛/找人 使用客户级手动评分；进入商机 自动聚合商机级均值
+      const ONE_TO_N_STAGES = ['进入商机'];
+
+      // 预先加载商机级 MEDDPICC（用于展示和聚合）
+      const allOpps = await db.select().from(opportunities);
+      const allOppMeddpicc = await db.select().from(opportunityMeddpicc);
+      const oppMeddpiccMap = new Map(allOppMeddpicc.map(m => [m.opportunityId, m]));
+
+      // 先计算每个客户的商机级 MEDDPICC 均值（进入商机阶段用）
+      // 同时计算各维度的聚合均值，供 AI 分析使用
+      const oppMeddpiccByClient = new Map<number, number[]>();
+      // 每个客户各维度的聚合均值（0-100 scale）
+      const oppMeddpiccDimsByClient = new Map<number, {
+        metricsScore: number; economicBuyerScore: number; decisionCriteriaScore: number;
+        decisionProcessScore: number; paperProcessScore: number; implicatePainScore: number;
+        championScore: number; competitionScore: number;
+      }>();
+      // 先按客户分组所有商机 MEDDPICC
+      const oppMeddpiccListByClient = new Map<number, typeof allOppMeddpicc[0][]>();
+      allOppMeddpicc.forEach(om => {
+        const list = oppMeddpiccListByClient.get(om.clientId) || [];
+        list.push(om);
+        oppMeddpiccListByClient.set(om.clientId, list);
+      });
+      oppMeddpiccListByClient.forEach((oms, clientId) => {
+        const dimKeys = ['metricsScore', 'economicBuyerScore', 'decisionCriteriaScore',
+          'decisionProcessScore', 'paperProcessScore', 'implicatePainScore',
+          'championScore', 'competitionScore'] as const;
+        const dimAvgs = {} as Record<string, number>;
+        dimKeys.forEach(key => {
+          const vals = oms.map(om => om[key]).filter(v => v !== null) as number[];
+          // 0-4 分制转换为 0-100
+          dimAvgs[key] = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 25) : 0;
+        });
+        oppMeddpiccDimsByClient.set(clientId, dimAvgs as any);
+        // 整体均值
+        const allDimVals = Object.values(dimAvgs);
+        const oppAvg = allDimVals.length > 0 ? Math.round(allDimVals.reduce((a, b) => a + b, 0) / allDimVals.length) : 0;
+        oppMeddpiccByClient.set(clientId, [oppAvg]);
+      });
+
+      const meddpiccMap = new Map(allClients.map(c => {
+        const isOneToN = ONE_TO_N_STAGES.includes(c.stage);
+        let avg = 0;
+        let details: any = null;
+
+        if (isOneToN) {
+          // 进入商机：自动聚合商机级各维度均值
+          const oppAvgs = oppMeddpiccByClient.get(c.id) || [];
+          avg = oppAvgs.length > 0 ? Math.round(oppAvgs.reduce((a, b) => a + b, 0) / oppAvgs.length) : 0;
+          // details 返回真实 8 维聚合分，供 AI 分析使用
+          const dimAvgs = oppMeddpiccDimsByClient.get(c.id);
+          details = dimAvgs ? {
+            ...dimAvgs,
+            _source: 'opportunity_aggregate',
+            _oppCount: (oppMeddpiccListByClient.get(c.id) || []).length,
+          } : { _source: 'opportunity_aggregate', _oppCount: 0,
+            metricsScore: 0, economicBuyerScore: 0, decisionCriteriaScore: 0,
+            decisionProcessScore: 0, paperProcessScore: 0, implicatePainScore: 0,
+            championScore: 0, competitionScore: 0 };
+        } else {
+          // 0→1：使用客户级手动评分
+          const m = allMeddpicc.find(m => m.clientId === c.id);
+          if (m) {
+            const scores = [m.metricsScore, m.economicBuyerScore, m.decisionCriteriaScore,
+              m.decisionProcessScore, m.paperProcessScore, m.implicatePainScore,
+              m.championScore, m.competitionScore].filter(s => s !== null) as number[];
+            avg = scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+            details = m;
+          }
+        }
+        return [c.id, { avg, details, isOneToN }];
+      }));
+
+      // 6. 本周拜访客户 ID 集合
+      const visitedThisWeek = new Set(recentMeetings.map(m => m.clientId));
+
+      // 6b. 每个客户的 visitCount、lastVisitDate、日志质量指标
+      const visitStatsByClient = new Map<number, {
+        visitCount: number;
+        lastVisitDate: Date | null;
+        aiMinutesCount: number;
+        transcriptCount: number;
+        recentKeyPoints: string | null;
+      }>();
+      allMeetings.forEach(m => {
+        const existing = visitStatsByClient.get(m.clientId);
+        if (!existing) {
+          visitStatsByClient.set(m.clientId, {
+            visitCount: 1,
+            lastVisitDate: m.visitDate,
+            aiMinutesCount: m.aiMinutes ? 1 : 0,
+            transcriptCount: m.transcriptText ? 1 : 0,
+            recentKeyPoints: m.keyPoints ? m.keyPoints.slice(0, 200) : null,
+          });
+        } else {
+          existing.visitCount += 1;
+          if (m.aiMinutes) existing.aiMinutesCount += 1;
+          if (m.transcriptText) existing.transcriptCount += 1;
+          // allMeetings 已按日期降序，第一条就是最新的，recentKeyPoints 不需要更新
+          if (m.visitDate && (!existing.lastVisitDate || m.visitDate > existing.lastVisitDate)) {
+            existing.lastVisitDate = m.visitDate;
+          }
+        }
+      });
+
+      // 7. 阶段分布
+      const stageDistribution: Record<string, number> = {};
+      allClients.forEach(c => {
+        stageDistribution[c.stage] = (stageDistribution[c.stage] || 0) + 1;
+      });
+
+      // 8. 按客户 ID 分组商机（需在 riskClients 之前声明）
+      const oppsByClient = new Map<number, any[]>();
+      allOpps.forEach(opp => {
+        const list = oppsByClient.get(opp.clientId) || [];
+        list.push({
+          id: opp.id,
+          name: opp.name,
+          stage: opp.stage,
+          status: opp.status,
+          estimatedValue: opp.estimatedValue,
+          meddpicc: oppMeddpiccMap.get(opp.id) ?? null,
+        });
+        oppsByClient.set(opp.clientId, list);
+      });
+
+      // 9. 高风险客户（MEDDPICC < 30 或 P0 且本周未拜访）
+      const riskClients = allClients.filter(c => {
+        const mScore = meddpiccMap.get(c.id)?.avg ?? 0;
+        const notVisited = !visitedThisWeek.has(c.id);
+        return mScore < 30 || (c.priority === 'P0' && notVisited);
+      }).map(c => ({
+        ...c,
+        meddpiccAvg: meddpiccMap.get(c.id)?.avg ?? 0,
+        meddpiccDetails: meddpiccMap.get(c.id)?.details ?? null,
+        visitedThisWeek: visitedThisWeek.has(c.id),
+        visitCount: visitStatsByClient.get(c.id)?.visitCount ?? 0,
+        lastVisitDate: visitStatsByClient.get(c.id)?.lastVisitDate ?? null,
+        riskReason: (meddpiccMap.get(c.id)?.avg ?? 0) < 30 ? 'MEDDPICC偏低' : 'P0未拜访',
+        visitQuality: {
+          totalVisits: visitStatsByClient.get(c.id)?.visitCount ?? 0,
+          aiMinutesCount: visitStatsByClient.get(c.id)?.aiMinutesCount ?? 0,
+          transcriptCount: visitStatsByClient.get(c.id)?.transcriptCount ?? 0,
+          recentKeyPoints: visitStatsByClient.get(c.id)?.recentKeyPoints ?? undefined,
+        },
+        // 0→1 阶段：阶段停留天数（用 updatedAt 估算）
+        stageDwellDays: Math.floor((Date.now() - new Date(c.updatedAt).getTime()) / 86400000),
+        // 进入商机阶段：商机子阶段分布
+        oppStageDistribution: (() => {
+          if (c.stage !== '进入商机') return undefined;
+          const opps = (oppsByClient.get(c.id) || []);
+          const dist: Record<string, number> = {};
+          opps.forEach((o: any) => { if (o.stage) dist[o.stage] = (dist[o.stage] || 0) + 1; });
+          return dist;
+        })(),
+        oppCount: c.stage === '进入商机' ? (oppsByClient.get(c.id) || []).length : undefined,
+      }));
+
+      return {
+        clientCount: allClients.length,
+        stageDistribution,
+        clients: allClients.map(c => ({
+          ...c,
+          meddpiccAvg: meddpiccMap.get(c.id)?.avg ?? 0,
+          meddpiccDetails: meddpiccMap.get(c.id)?.details ?? null,
+          meddpiccIsAggregated: meddpiccMap.get(c.id)?.isOneToN ?? false,
+          visitedThisWeek: visitedThisWeek.has(c.id),
+          visitCount: visitStatsByClient.get(c.id)?.visitCount ?? 0,
+          lastVisitDate: visitStatsByClient.get(c.id)?.lastVisitDate ?? null,
+          opportunities: oppsByClient.get(c.id) ?? [],
+        })),
+        visitedThisWeekCount: visitedThisWeek.size,
+        riskClients,
+        pendingTasksByRole: pendingTasks.map(t => ({ role: t.assignedRole, count: t.count })),
+      };
+    }),
+  }),
+
+  admin: router({
+    listUsers: publicProcedure.query(async ({ ctx }) => {
+      // Verify admin session
+      const token = ctx.req.cookies?.email_session;
+      if (!token) throw new Error('未登录');
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { emailUsers, emailSessions } = await import('../drizzle/schema');
+      const { eq, and, gt } = await import('drizzle-orm');
+      const sessions = await db.select().from(emailSessions).where(
+        and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+      ).limit(1);
+      if (sessions.length === 0) throw new Error('会话已过期');
+      const caller = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+      if (caller.length === 0 || caller[0].role !== 'admin') throw new Error('无权限：仅管理员可访问');
+      const rows = await db.select({
+        id: emailUsers.id,
+        email: emailUsers.email,
+        name: emailUsers.name,
+        role: emailUsers.role,
+        podRole: emailUsers.podRole,
+        isActive: emailUsers.isActive,
+        createdAt: emailUsers.createdAt,
+      }).from(emailUsers).orderBy(emailUsers.createdAt);
+      return rows;
+    }),
+
+    toggleUser: publicProcedure
+      .input(z.object({ userId: z.number(), isActive: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        const token = ctx.req.cookies?.email_session;
+        if (!token) throw new Error('未登录');
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { emailUsers, emailSessions } = await import('../drizzle/schema');
+        const { eq, and, gt } = await import('drizzle-orm');
+        const sessions = await db.select().from(emailSessions).where(
+          and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+        ).limit(1);
+        if (sessions.length === 0) throw new Error('会话已过期');
+        const caller = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+        if (caller.length === 0 || caller[0].role !== 'admin') throw new Error('无权限');
+        await db.update(emailUsers).set({ isActive: input.isActive }).where(eq(emailUsers.id, input.userId));
+        return { success: true };
+      }),
+
+    updateUserRole: publicProcedure
+      .input(z.object({ userId: z.number(), podRole: z.string(), role: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        const token = ctx.req.cookies?.email_session;
+        if (!token) throw new Error('未登录');
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { emailUsers, emailSessions } = await import('../drizzle/schema');
+        const { eq, and, gt } = await import('drizzle-orm');
+        const sessions = await db.select().from(emailSessions).where(
+          and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+        ).limit(1);
+        if (sessions.length === 0) throw new Error('会话已过期');
+        const caller = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+        if (caller.length === 0 || caller[0].role !== 'admin') throw new Error('无权限');
+        await db.update(emailUsers).set({ podRole: input.podRole as "AD" | "SAM" | "SA" | "RSM", role: input.role as "user" | "admin" }).where(eq(emailUsers.id, input.userId));
+        return { success: true };
+      }),
+  }),
+});
+
+export type AppRouter = typeof appRouter;
