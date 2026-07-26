@@ -90,8 +90,8 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           <img
             src="/manus-storage/aistorm-logo_a2e3b479.webp"
             alt="AIStorm"
-            className="h-8 w-auto object-contain mb-2.5 rounded"
-            style={{ background: "rgba(255,255,255,0.90)", padding: "4px 8px" }}
+            className="h-8 w-auto object-contain mb-2.5"
+            style={{ filter: "brightness(2) contrast(1.1) saturate(1.2)" }}
           />
           {/* System name */}
           <div className="flex items-center gap-2">

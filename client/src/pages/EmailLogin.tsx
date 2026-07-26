@@ -84,8 +84,8 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
           <img
             src="/manus-storage/aistorm-logo_a2e3b479.webp"
             alt="AIStorm"
-            className="h-12 w-auto object-contain rounded-lg"
-            style={{ background: "rgba(255,255,255,0.92)", padding: "6px 12px" }}
+            className="h-12 w-auto object-contain"
+            style={{ filter: "brightness(2) contrast(1.1) saturate(1.2)" }}
           />
         </div>
 
@@ -125,8 +125,8 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
           <img
             src="/manus-storage/aistorm-logo_a2e3b479.webp"
             alt="AIStorm"
-            className="h-10 w-auto object-contain rounded-lg"
-            style={{ background: "rgba(255,255,255,0.92)", padding: "5px 10px" }}
+            className="h-10 w-auto object-contain"
+            style={{ filter: "brightness(2) contrast(1.1) saturate(1.2)" }}
           />
         </div>
 
