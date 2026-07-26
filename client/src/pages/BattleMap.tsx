@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -1898,6 +1898,13 @@ export default function BattleMap() {
   const { data: clients = [], isLoading } = trpc.clients.list.useQuery();
 
   const [showCreate, setShowCreate] = useState(false);
+  // Single-client focus mode: ?clientId=xxx from dashboard navigation
+  const focusClientId = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("clientId");
+    return id ? parseInt(id, 10) : null;
+  }, []);
+
   const [editTarget, setEditTarget] = useState<(typeof clients)[0] | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<(typeof clients)[0] | null>(null);
@@ -2092,6 +2099,52 @@ export default function BattleMap() {
           ))}
         </div>
       ) : (
+        focusClientId ? (
+          // ── Single-client focus mode ──────────────────────────────────────
+          (() => {
+            const focusClient = clients.find(c => c.id === focusClientId);
+            if (!focusClient) return (
+              <div className="text-center py-16 text-muted-foreground">
+                <p className="text-sm">未找到该客户，可能已被删除。</p>
+                <button
+                  className="mt-3 text-xs text-primary hover:underline"
+                  onClick={() => { window.history.replaceState({}, "", "/battle-map"); window.location.reload(); }}
+                >← 返回全部客户</button>
+              </div>
+            );
+            return (
+              <div>
+                {/* Back button */}
+                <button
+                  className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors group"
+                  onClick={() => { window.history.replaceState({}, "", "/battle-map"); window.location.reload(); }}
+                >
+                  <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                  返回全部客户
+                </button>
+                {/* Single client full-width card */}
+                <div className="relative group">
+                  <ClientCard client={focusClient} />
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    <button
+                      onClick={() => openEdit(focusClient)}
+                      className="w-6 h-6 rounded bg-background/90 border border-border flex items-center justify-center hover:bg-primary/20 hover:border-primary/40 transition-colors"
+                      title="编辑客户基本信息"
+                    >
+                      <Edit2 className="w-3 h-3 text-muted-foreground" />
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget(focusClient)}
+                      className="w-6 h-6 rounded bg-background/90 border border-border flex items-center justify-center hover:bg-red-500/20 hover:border-red-500/40 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3 text-muted-foreground" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
           {clients.map(client => (
             <div key={client.id} id={`client-card-${client.id}`} className="relative group">
@@ -2125,7 +2178,7 @@ export default function BattleMap() {
             </button>
           )}
         </div>
-      )}
+      ))}
 
       {/* Create Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>

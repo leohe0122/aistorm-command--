@@ -116,8 +116,12 @@ function AnalysisSkeleton() {
   );
 }
 
-function RiskClientCard({ c, navigate }: { c: any; navigate: (path: string) => void }) {
-  const [expanded, setExpanded] = useState(false);
+function RiskClientCard({ c, navigate, isExpanded, onToggle }: {
+  c: any;
+  navigate: (path: string) => void;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
@@ -135,15 +139,9 @@ function RiskClientCard({ c, navigate }: { c: any; navigate: (path: string) => v
   const utils = trpc.useUtils();
   const { data: latestScore, refetch: refetchScore } = trpc.prediction.getLatest.useQuery({ clientId: c.id });
 
-  // Auto-expand panel when cached score is available on first load
-  useEffect(() => {
-    if (latestScore && !result) {
-      setExpanded(true);
-    }
-  }, [latestScore]);
-
+  // Show cached score in panel when available (no auto-expand — user controls expansion)
   const analyze = trpc.prediction.analyze.useMutation({
-    onSuccess: (data) => { setResult(data); setExpanded(true); setAnalyzing(false); },
+    onSuccess: (data) => { setResult(data); if (!isExpanded) onToggle(); setAnalyzing(false); },
     onError: () => { toast.error("分析失败"); setAnalyzing(false); },
   });
 
@@ -211,7 +209,7 @@ function RiskClientCard({ c, navigate }: { c: any; navigate: (path: string) => v
 
   const handleAnalyze = () => {
     setAnalyzing(true);
-    setExpanded(true);
+    if (!isExpanded) onToggle();
     analyze.mutate(buildAnalyzePayload());
   };
 
@@ -251,7 +249,7 @@ function RiskClientCard({ c, navigate }: { c: any; navigate: (path: string) => v
     <>
       <div className="rounded-lg bg-red-500/5 border border-red-500/20 overflow-hidden">
         <div className="flex items-center justify-between p-2">
-          <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate("/battle-map")}>
+          <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/battle-map?clientId=${c.id}`)}>
             <div className="text-sm font-medium truncate">{c.name}</div>
             <div className="flex items-center gap-1.5 mt-0.5">
               <Badge variant="outline" className="text-[10px] px-1 py-0">{c.stage}</Badge>
@@ -274,15 +272,15 @@ function RiskClientCard({ c, navigate }: { c: any; navigate: (path: string) => v
               {analyzing ? "分析中" : score ? "重新分析" : "AI分析"}
             </Button>
             {(score || analyzing) && (
-              <button onClick={() => setExpanded(!expanded)} className="p-1 text-muted-foreground hover:text-foreground">
-                {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              <button onClick={onToggle} className="p-1 text-muted-foreground hover:text-foreground">
+                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
             )}
           </div>
         </div>
 
         {/* Expanded panel */}
-        {expanded && (
+        {isExpanded && (
           <div className="border-t border-red-500/10">
             {analyzing ? (
               <AnalysisSkeleton />
@@ -476,6 +474,7 @@ function RiskClientCard({ c, navigate }: { c: any; navigate: (path: string) => v
 
 export default function ADDashboard() {
   const [, navigate] = useLocation();
+  const [activeRiskClientId, setActiveRiskClientId] = useState<number | null>(null);
   const { data, isLoading } = trpc.dashboard.summary.useQuery();
   // Load pending tasks from all roles to build pending-task opportunity set
   const { data: adTasks } = trpc.pod.listByRole.useQuery({ role: "AD" });
@@ -681,7 +680,13 @@ export default function ADDashboard() {
           ) : (
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
               {data.riskClients.map(c => (
-                <RiskClientCard key={c.id} c={c} navigate={navigate} />
+                <RiskClientCard
+                  key={c.id}
+                  c={c}
+                  navigate={navigate}
+                  isExpanded={activeRiskClientId === c.id}
+                  onToggle={() => setActiveRiskClientId(prev => prev === c.id ? null : c.id)}
+                />
               ))}
             </div>
           )}
