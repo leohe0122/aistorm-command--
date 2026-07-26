@@ -82,10 +82,10 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
         {/* Logo */}
         <div className="relative z-10">
           <img
-            src="/manus-storage/aistorm_logo_transparent_62266e48.png"
+            src="/manus-storage/aistorm-logo_a2e3b479.webp"
             alt="AIStorm"
-            className="h-10 w-auto object-contain"
-            style={{ filter: "brightness(1.25) saturate(1.1)" }}
+            className="h-12 w-auto object-contain rounded-lg"
+            style={{ background: "rgba(255,255,255,0.92)", padding: "6px 12px" }}
           />
         </div>
 
@@ -123,10 +123,10 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
         {/* Mobile logo */}
         <div className="md:hidden mb-8">
           <img
-            src="/manus-storage/aistorm_logo_transparent_62266e48.png"
+            src="/manus-storage/aistorm-logo_a2e3b479.webp"
             alt="AIStorm"
-            className="h-8 w-auto object-contain"
-            style={{ filter: "brightness(1.25) saturate(1.1)" }}
+            className="h-10 w-auto object-contain rounded-lg"
+            style={{ background: "rgba(255,255,255,0.92)", padding: "5px 10px" }}
           />
         </div>
 
