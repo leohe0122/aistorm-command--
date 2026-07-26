@@ -64,19 +64,27 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
   };
 
   return (
-    <div className="min-h-screen flex" style={{ background: "oklch(0.09 0.025 240)" }}>
+    <div className="h-screen flex" style={{ background: "oklch(0.09 0.025 240)" }}>
       {/* Left panel - branding */}
       <div className="hidden md:flex md:w-5/12 flex-col justify-between p-10 relative overflow-hidden"
-        style={{ background: "linear-gradient(135deg, oklch(0.08 0.03 240) 0%, oklch(0.12 0.04 230) 100%)" }}>
+        style={{ background: "linear-gradient(160deg, #060f1e 0%, #0a1a32 40%, #0d2244 100%)" }}>
 
-        {/* Animated background circles */}
+        {/* Network grid + glow — matches aistorm.com hero */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full opacity-10"
-            style={{ background: "radial-gradient(circle, #00A8D6 0%, transparent 70%)" }} />
-          <div className="absolute -bottom-24 -right-24 w-80 h-80 rounded-full opacity-8"
-            style={{ background: "radial-gradient(circle, #4DB87A 0%, transparent 70%)" }} />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full opacity-5"
-            style={{ background: "radial-gradient(circle, #1B6FBF 0%, transparent 60%)" }} />
+          <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full"
+            style={{ background: "radial-gradient(circle, rgba(0,168,214,0.20) 0%, transparent 65%)" }} />
+          <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full"
+            style={{ background: "radial-gradient(circle, rgba(27,111,191,0.16) 0%, transparent 65%)" }} />
+          <svg className="absolute inset-0 w-full h-full opacity-[0.07]" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id="cmd-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#00A8D6" strokeWidth="0.5"/>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#cmd-grid)" />
+          </svg>
+          <div className="absolute top-0 left-0 w-full h-full opacity-[0.04]"
+            style={{ background: "linear-gradient(135deg, transparent 30%, rgba(0,168,214,0.9) 50%, transparent 70%)" }} />
         </div>
 
         {/* Logo */}
@@ -85,7 +93,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
             src="/manus-storage/aistorm-logo_a2e3b479.webp"
             alt="AIStorm"
             className="h-12 w-auto object-contain"
-            style={{ filter: "brightness(2) contrast(1.1) saturate(1.2)" }}
+            style={{ filter: "brightness(3) contrast(1.2) saturate(1.3)" }}
           />
         </div>
 
@@ -119,18 +127,25 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
       </div>
 
       {/* Right panel - login form */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8">
+      <div className="flex-1 flex flex-col items-center justify-center p-8 relative"
+        style={{ background: "linear-gradient(160deg, #07111f 0%, #0a1628 60%, #0c1e38 100%)" }}>
+        {/* Subtle right-side glow */}
+        <div className="absolute top-1/4 right-0 w-96 h-96 rounded-full pointer-events-none"
+          style={{ background: "radial-gradient(circle, rgba(0,168,214,0.06) 0%, transparent 70%)" }} />
         {/* Mobile logo */}
         <div className="md:hidden mb-8">
           <img
             src="/manus-storage/aistorm-logo_a2e3b479.webp"
             alt="AIStorm"
             className="h-10 w-auto object-contain"
-            style={{ filter: "brightness(2) contrast(1.1) saturate(1.2)" }}
+            style={{ filter: "brightness(3) contrast(1.2) saturate(1.3)" }}
           />
         </div>
 
         <div className="w-full max-w-md">
+          {/* Form card */}
+          <div className="rounded-2xl p-8 relative z-10"
+            style={{ background: "rgba(13,26,50,0.7)", border: "1px solid rgba(0,168,214,0.15)", backdropFilter: "blur(12px)" }}>
           {/* Title */}
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-white mb-1">
@@ -284,6 +299,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
           <p className="text-center text-[11px] text-white/25 mt-6">
             仅限 AIStorm 内部团队使用 · 如有问题请联系系统管理员
           </p>
+          </div>{/* /form card */}
         </div>
       </div>
     </div>

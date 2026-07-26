@@ -85,7 +85,9 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
       <aside className="w-64 flex-shrink-0 flex flex-col border-r border-border bg-sidebar overflow-y-auto">
 
         {/* Brand Header */}
-        <div className="px-4 pt-4 pb-3 border-b border-border">
+        <div className="px-4 pt-4 pb-3 border-b border-border relative">
+          {/* Top brand accent line */}
+          <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: "linear-gradient(90deg, #00A8D6 0%, #1B6FBF 60%, transparent 100%)" }} />
           {/* AIStorm Logo */}
           <img
             src="/manus-storage/aistorm-logo_a2e3b479.webp"
@@ -96,11 +98,11 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           {/* System name */}
           <div className="flex items-center gap-2">
             <div className="flex-1">
-              <div className="text-sm font-bold text-foreground tracking-wide">Command</div>
-              <div className="text-[10px] text-muted-foreground tracking-wider uppercase">Strategic Account AI System</div>
+              <div className="text-sm font-bold tracking-wide" style={{ color: "#e8f4fb" }}>Command</div>
+              <div className="text-[10px] tracking-wider uppercase" style={{ color: "rgba(0,168,214,0.75)" }}>Strategic Account AI System</div>
             </div>
             {/* Accent dot */}
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "linear-gradient(135deg, #00A8D6, #4DB87A)" }} />
+            <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "linear-gradient(180deg, #00A8D6, #1B6FBF)" }} />
           </div>
         </div>
 
@@ -136,17 +138,18 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
                 <div className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-lg mb-0.5 cursor-pointer transition-all group",
                   isActive
-                    ? "border border-primary/30 text-primary"
+                    ? "text-white border border-[#00A8D6]/35"
                     : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground border border-transparent"
                 )}
-                  style={isActive ? { background: "linear-gradient(90deg, oklch(0.63 0.165 215 / 0.12) 0%, transparent 100%)" } : undefined}
+                  style={isActive ? { background: "linear-gradient(90deg, rgba(0,168,214,0.16) 0%, rgba(0,168,214,0.03) 100%)",
+                    boxShadow: "inset 2px 0 0 #00A8D6" } : undefined}
                 >
-                  <Icon className={cn("w-4 h-4 flex-shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+                  <Icon className={cn("w-4 h-4 flex-shrink-0", isActive ? "text-[#00A8D6]" : "text-muted-foreground group-hover:text-foreground")} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium leading-tight">{item.label}</div>
                     <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">{item.desc}</div>
                   </div>
-                  {isActive && <ChevronRight className="w-3 h-3 text-primary flex-shrink-0" />}
+                  {isActive && <ChevronRight className="w-3 h-3 text-[#00A8D6] flex-shrink-0" />}
                 </div>
               </Link>
             );
@@ -164,17 +167,18 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
                 <div className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-lg mb-0.5 cursor-pointer transition-all group",
                   isActive
-                    ? "border border-primary/30 text-primary"
+                    ? "text-white border border-[#00A8D6]/35"
                     : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground border border-transparent"
                 )}
-                  style={isActive ? { background: "linear-gradient(90deg, oklch(0.63 0.165 215 / 0.12) 0%, transparent 100%)" } : undefined}
+                  style={isActive ? { background: "linear-gradient(90deg, rgba(0,168,214,0.16) 0%, rgba(0,168,214,0.03) 100%)",
+                    boxShadow: "inset 2px 0 0 #00A8D6" } : undefined}
                 >
-                  <Icon className={cn("w-4 h-4 flex-shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+                  <Icon className={cn("w-4 h-4 flex-shrink-0", isActive ? "text-[#00A8D6]" : "text-muted-foreground group-hover:text-foreground")} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium leading-tight">{item.label}</div>
                     <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">{item.desc}</div>
                   </div>
-                  {isActive && <ChevronRight className="w-3 h-3 text-primary flex-shrink-0" />}
+                  {isActive && <ChevronRight className="w-3 h-3 text-[#00A8D6] flex-shrink-0" />}
                 </div>
               </Link>
             );
@@ -193,17 +197,18 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
                   <div className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-lg mb-0.5 cursor-pointer transition-all group",
                     isActive
-                      ? "border border-primary/30 text-primary"
+                      ? "text-white border border-[#00A8D6]/35"
                       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground border border-transparent"
                   )}
-                    style={isActive ? { background: "linear-gradient(90deg, oklch(0.63 0.165 215 / 0.12) 0%, transparent 100%)" } : undefined}
+                    style={isActive ? { background: "linear-gradient(90deg, rgba(0,168,214,0.16) 0%, rgba(0,168,214,0.03) 100%)",
+                    boxShadow: "inset 2px 0 0 #00A8D6" } : undefined}
                   >
-                    <Icon className={cn("w-4 h-4 flex-shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+                    <Icon className={cn("w-4 h-4 flex-shrink-0", isActive ? "text-[#00A8D6]" : "text-muted-foreground group-hover:text-foreground")} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium leading-tight">{item.label}</div>
                       <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">{item.desc}</div>
                     </div>
-                    {isActive && <ChevronRight className="w-3 h-3 text-primary flex-shrink-0" />}
+                    {isActive && <ChevronRight className="w-3 h-3 text-[#00A8D6] flex-shrink-0" />}
                   </div>
                 </Link>
               );
@@ -215,7 +220,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
         <div className="p-3 border-t border-border space-y-2">
           <EmailUserFooter />
           <div className="text-[10px] text-muted-foreground text-center">
-            Powered by <span className="text-primary font-semibold">AIStorm</span> · AI-Driven Sales Intelligence
+            Powered by <span className="font-semibold" style={{ color: "#00A8D6" }}>AIStorm</span> · AI-Driven Sales Intelligence
           </div>
         </div>
       </aside>
