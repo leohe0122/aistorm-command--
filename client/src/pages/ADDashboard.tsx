@@ -250,34 +250,48 @@ function RiskClientCard({ c, navigate, isExpanded, onToggle, onExpand }: {
   return (
     <>
       <div className="rounded-lg bg-red-500/5 border border-red-500/20 overflow-hidden isolate">
-        <div className="flex items-center justify-between p-2">
-          <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/battle-map?clientId=${c.id}`)}>
-            <div className="text-sm font-medium truncate">{c.name}</div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <Badge variant="outline" className="text-[10px] px-1 py-0">{c.stage}</Badge>
-              <RiskBadge reason={c.riskReason} />
+        {/* 卡片头部：严格三区分隔，不允许任何换行叠加 */}
+        <div className="p-2.5 pb-2">
+          {/* 第一行：客户名 + 右侧操作区（固定高度，不换行） */}
+          <div className="flex items-center gap-2" style={{ flexWrap: 'nowrap' }}>
+            {/* 左：客户名（截断，不挤压右侧） */}
+            <div
+              className="text-sm font-semibold truncate cursor-pointer hover:text-primary transition-colors"
+              style={{ minWidth: 0, flex: '1 1 0' }}
+              onClick={() => navigate(`/battle-map?clientId=${c.id}`)}
+            >
+              {c.name}
+            </div>
+            {/* 右：MEDDPICC分数 + AI分析按钮 + 展开按钮（固定宽度，不收缩） */}
+            <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
+              <div className="text-center" style={{ minWidth: 36 }}>
+                <div className={`text-sm font-bold leading-none ${c.meddpiccAvg < 30 ? "text-red-400" : "text-yellow-400"}`}>{c.meddpiccAvg}</div>
+                <div className="text-[9px] text-muted-foreground leading-none mt-0.5">avg</div>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5 text-[10px] gap-0.5 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 whitespace-nowrap"
+                style={{ flexShrink: 0 }}
+                onClick={handleAnalyze}
+                disabled={analyzing}
+              >
+                {analyzing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                {analyzing ? "分析中" : score ? "重新分析" : "AI分析"}
+              </Button>
+              {(score || analyzing) && (
+                <button onClick={onToggle} className="p-0.5 text-muted-foreground hover:text-foreground" style={{ flexShrink: 0 }}>
+                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
-            <div className="text-right min-w-[44px]">
-              <div className={`text-sm font-bold ${c.meddpiccAvg < 30 ? "text-red-400" : "text-yellow-400"}`}>{c.meddpiccAvg}</div>
-              <div className="text-[10px] text-muted-foreground">avg</div>
+          {/* 第二行：阶段标签 + 风险原因（独立一行，不与任何数字并排） */}
+          <div className="flex items-center gap-1.5 mt-1.5" style={{ flexWrap: 'nowrap', overflow: 'hidden' }}>
+            <Badge variant="outline" className="text-[10px] px-1 py-0 whitespace-nowrap" style={{ flexShrink: 0 }}>{c.stage}</Badge>
+            <div style={{ minWidth: 0, overflow: 'hidden' }}>
+              <RiskBadge reason={c.riskReason} />
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-[10px] gap-1 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
-              onClick={handleAnalyze}
-              disabled={analyzing}
-            >
-              {analyzing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-              {analyzing ? "分析中" : score ? "重新分析" : "AI分析"}
-            </Button>
-            {(score || analyzing) && (
-              <button onClick={onToggle} className="p-1 text-muted-foreground hover:text-foreground">
-                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              </button>
-            )}
           </div>
         </div>
 
