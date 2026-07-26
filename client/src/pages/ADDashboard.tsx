@@ -116,11 +116,12 @@ function AnalysisSkeleton() {
   );
 }
 
-function RiskClientCard({ c, navigate, isExpanded, onToggle }: {
+function RiskClientCard({ c, navigate, isExpanded, onToggle, onExpand }: {
   c: any;
   navigate: (path: string) => void;
   isExpanded: boolean;
   onToggle: () => void;
+  onExpand: () => void;
 }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -141,7 +142,7 @@ function RiskClientCard({ c, navigate, isExpanded, onToggle }: {
 
   // Show cached score in panel when available (no auto-expand — user controls expansion)
   const analyze = trpc.prediction.analyze.useMutation({
-    onSuccess: (data) => { setResult(data); if (!isExpanded) onToggle(); setAnalyzing(false); },
+    onSuccess: (data) => { setResult(data); onExpand(); setAnalyzing(false); },
     onError: () => { toast.error("分析失败"); setAnalyzing(false); },
   });
 
@@ -209,7 +210,7 @@ function RiskClientCard({ c, navigate, isExpanded, onToggle }: {
 
   const handleAnalyze = () => {
     setAnalyzing(true);
-    if (!isExpanded) onToggle();
+    onExpand();
     analyze.mutate(buildAnalyzePayload());
   };
 
@@ -686,6 +687,7 @@ export default function ADDashboard() {
                   navigate={navigate}
                   isExpanded={activeRiskClientId === c.id}
                   onToggle={() => setActiveRiskClientId(prev => prev === c.id ? null : c.id)}
+                  onExpand={() => setActiveRiskClientId(c.id)}
                 />
               ))}
             </div>
