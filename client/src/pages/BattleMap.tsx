@@ -1058,8 +1058,8 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
   );
 }
 
-function ClientCard({ client }: { client: any }) {
-  const [expanded, setExpanded] = useState(false);
+function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus?: () => void; defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy">("meddpicc");
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<any>({});
@@ -1254,13 +1254,27 @@ function ClientCard({ client }: { client: any }) {
 
         {/* Actions */}
         <div className="flex items-center justify-between mt-3">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {expanded ? "收起详情" : "展开详情"}
-          </button>
+          {onFocus ? (
+            /* Grid mode: clicking expands into full-screen single-client view */
+            !expanded ? (
+              <button
+                onClick={onFocus}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+              >
+                <ChevronDown className="w-3 h-3" />
+                展开详情
+              </button>
+            ) : null
+          ) : (
+            /* Full-screen mode: show collapse button */
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              {expanded ? "收起详情" : "展开详情"}
+            </button>
+          )}
           <button
             onClick={() => { setEditing(!editing); setEditData({}); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
@@ -2124,7 +2138,7 @@ export default function BattleMap() {
                 </button>
                 {/* Single client full-width card */}
                 <div className="relative group">
-                  <ClientCard client={focusClient} />
+                  <ClientCard client={focusClient} defaultExpanded={true} />
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                     <button
                       onClick={() => openEdit(focusClient)}
@@ -2148,7 +2162,13 @@ export default function BattleMap() {
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
           {clients.map(client => (
             <div key={client.id} id={`client-card-${client.id}`} className="relative group">
-              <ClientCard client={client} />
+              <ClientCard
+                client={client}
+                onFocus={() => {
+                  window.history.pushState({}, "", `/battle-map?clientId=${client.id}`);
+                  window.location.reload();
+                }}
+              />
               {/* Hover action buttons */}
               <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                 <button
