@@ -273,6 +273,56 @@ class SDKServer {
     const session = await this.verifySession(sessionToken);
 
     if (!session) {
+      // 3. Fallback to email_session cookie (internal emailAuth login).
+      const emailToken = cookies.get('email_session');
+      if (emailToken) {
+        try {
+          const drizzle = await import('drizzle-orm');
+          const schema = await import('../../drizzle/schema');
+          const dbInstance = await (await import('../db')).getDb();
+          if (dbInstance) {
+            const now = new Date();
+            const sessions = await dbInstance
+              .select({ userId: schema.emailSessions.userId })
+              .from(schema.emailSessions)
+              .where(drizzle.and(
+                drizzle.eq(schema.emailSessions.token, emailToken),
+                drizzle.gt(schema.emailSessions.expiresAt, now)
+              ))
+              .limit(1);
+            if (sessions.length > 0) {
+              const emailUserRows = await dbInstance
+                .select()
+                .from(schema.emailUsers)
+                .where(drizzle.eq(schema.emailUsers.id, sessions[0].userId))
+                .limit(1);
+              if (emailUserRows.length > 0) {
+                const emailUser = emailUserRows[0];
+                // Find or create corresponding users table entry
+                const openId = `email_${emailUser.id}`;
+                let user = await db.getUserByOpenId(openId);
+                if (!user) {
+                  await db.upsertUser({
+                    openId,
+                    name: emailUser.name,
+                    email: emailUser.email,
+                    loginMethod: 'email',
+                    role: emailUser.role as 'admin' | 'user',
+                    lastSignedIn: new Date(),
+                  });
+                  user = await db.getUserByOpenId(openId);
+                }
+                if (user) {
+                  await db.upsertUser({ openId, lastSignedIn: new Date() });
+                  return user;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Auth] emailAuth fallback failed:', e);
+        }
+      }
       throw ForbiddenError("Invalid session cookie");
     }
 
