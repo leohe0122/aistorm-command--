@@ -925,7 +925,7 @@ export default function ADDashboard() {
                   ? "border-red-500/40 bg-red-500/5 hover:bg-red-500/10"
                   : "border-muted hover:bg-muted/50"
               }`}
-              onClick={() => navigate("/battle-map")}
+              onClick={() => navigate(`/battle-map?clientId=${client.id}`)}
             >
               <div className="flex items-start justify-between gap-1">
                 <span className="text-xs font-medium leading-tight truncate">{client.name}</span>
