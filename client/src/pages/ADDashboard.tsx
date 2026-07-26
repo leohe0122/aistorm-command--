@@ -23,6 +23,7 @@ import {
   FileEdit,
   Clock,
 } from "lucide-react";
+import { Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -531,6 +532,85 @@ export default function ADDashboard() {
     }
   }
 
+
+  // 季度数据导出函数
+  const exportQuarterlyReport = () => {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
+    const dimLabels = ["M", "E", "D", "D2", "P", "I", "C", "C2"];
+    const dimFull = ["Metrics", "Economic Buyer", "Decision Criteria", "Decision Process", "Paper Process", "Implicate Pain", "Champion", "Competition"];
+
+    let md = `# AIStorm Command 季度战情报告\n\n`;
+    md += `**导出时间：** ${dateStr}  \n`;
+    md += `**汇报人：** AD 指挥台自动导出\n\n---\n\n`;
+
+    // 1. 客户健康度总览
+    md += `## 一、客户健康度总览\n\n`;
+    md += `| 客户 | 优先级 | 阶段 | MEDDPICC均分 | 拜访次数 | 风险状态 |\n`;
+    md += `|---|---|---|---|---|---|\n`;
+    for (const c of sortedClients) {
+      const isRisk = data.riskClients.some((r: any) => r.id === c.id);
+      md += `| ${c.name} | ${c.priority} | ${c.stage} | ${c.meddpiccAvg} | ${(c as any).visitCount ?? 0} | ${isRisk ? "⚠ 高风险" : "正常"} |\n`;
+    }
+    md += `\n**全组 MEDDPICC 均分：${avgMeddpicc} / 100**\n\n---\n\n`;
+
+    // 2. MEDDPICC 矩阵
+    md += `## 二、MEDDPICC 健康度矩阵\n\n`;
+    md += `| 客户 | ${dimLabels.join(" | ")} |\n`;
+    md += `|---|${dimLabels.map(() => "---").join("|")}|\n`;
+    for (const c of sortedClients) {
+      const scores = (c as any).meddpiccScores || {};
+      const keys = ["metricsScore","economicBuyerScore","decisionCriteriaScore","decisionProcessScore","paperProcessScore","implicatePainScore","championScore","competitionScore"];
+      const cells = keys.map(k => {
+        const v = scores[k] ?? 0;
+        return v >= 3 ? `✅${v}` : v >= 2 ? `🟡${v}` : `🔴${v}`;
+      });
+      md += `| ${c.name} | ${cells.join(" | ")} |\n`;
+    }
+    md += `\n*评分说明：✅ 3-4分（健康）/ 🟡 2分（需关注）/ 🔴 0-1分（高风险）*\n\n---\n\n`;
+
+    // 3. 高风险预警
+    md += `## 三、高风险预警客户\n\n`;
+    if (data.riskClients.length === 0) {
+      md += `暂无高风险客户。\n\n`;
+    } else {
+      for (const r of data.riskClients as any[]) {
+        md += `### ${r.name}（${r.stage}）\n`;
+        md += `- **风险原因：** ${r.riskReason}\n`;
+        md += `- **MEDDPICC均分：** ${r.meddpiccAvg}\n\n`;
+      }
+    }
+    md += `---\n\n`;
+
+    // 4. 逾期任务
+    const allTasks = [...(adTasks || []), ...(samTasks || []), ...(saTasks || []), ...(rsmTasks || [])] as any[];
+    const overdueTasks = allTasks.filter(t => !t.isCompleted && t.dueDate && new Date(t.dueDate) < now);
+    md += `## 四、逾期任务清单\n\n`;
+    if (overdueTasks.length === 0) {
+      md += `暂无逾期任务。\n\n`;
+    } else {
+      md += `| 任务 | 负责角色 | 截止日期 | 逾期天数 |\n`;
+      md += `|---|---|---|---|\n`;
+      for (const t of overdueTasks) {
+        const days = Math.floor((now.getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24));
+        md += `| ${t.title} | ${t.assignedRole} | ${new Date(t.dueDate).toLocaleDateString("zh-CN")} | ${days}天 |\n`;
+      }
+    }
+    md += `\n---\n\n`;
+    md += `*本报告由 AIStorm Command 系统自动生成，数据截止至导出时间。*\n`;
+
+    // 下载为 Markdown 文件
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `AIStorm_Command_季度报告_${now.toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl">
       {/* Header */}
@@ -545,6 +625,10 @@ export default function ADDashboard() {
         <Button variant="outline" size="sm" onClick={() => navigate("/battle-map")} className="gap-1.5">
           <Eye className="w-4 h-4" />
           战场地图
+        </Button>
+        <Button variant="outline" size="sm" onClick={exportQuarterlyReport} className="gap-1.5 text-[#00A8D6] border-[#00A8D6]/30 hover:bg-[#00A8D6]/10">
+          <Download className="w-4 h-4" />
+          导出季度报告
         </Button>
       </div>
 

@@ -1096,7 +1096,7 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
 
 function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus?: () => void; defaultExpanded?: boolean }) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
-  const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy">("meddpicc");
+  const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin">("meddpicc");
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<any>({});
   const [meddpiccEdit, setMeddpiccEdit] = useState<any>({});
@@ -1104,6 +1104,7 @@ function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus
   const [expandedDim, setExpandedDim] = useState<string | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestReasoning, setSuggestReasoning] = useState<string>('');
+  const [showStageGate, setShowStageGate] = useState(false);
   const { role } = useRole();
 
   const utils = trpc.useUtils();
@@ -1175,6 +1176,59 @@ function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus
   if (!hasEconomicBuyer) gapWarnings.push("缺 Economic Buyer");
   if (!hasChampion) gapWarnings.push("缺 Champion");
 
+  // 阶段门控：每个阶段的完成标准检查
+  const visitCount = (client as any).visitCount ?? 0;
+  const mScore = meddpicc ? (meddpicc as any).metricsScore ?? 0 : 0;
+  const eScore = meddpicc ? (meddpicc as any).economicBuyerScore ?? 0 : 0;
+  const iScore = meddpicc ? (meddpicc as any).implicatePainScore ?? 0 : 0;
+  const cScore = meddpicc ? (meddpicc as any).championScore ?? 0 : 0;
+  const championName = meddpicc ? (meddpicc as any).championName : null;
+  const hasKeywords = !!(client.monitorKeywords && client.monitorKeywords.length > 0);
+  const hasHookTopic = !!(client.hookTopic && client.hookTopic.trim());
+
+  // 门控条件定义
+  const stageGates: Record<string, { label: string; checks: { text: string; pass: boolean; critical?: boolean }[] }> = {
+    "建图": {
+      label: "建图 → 进门",
+      checks: [
+        { text: `关键人图谱 ≥ 3 人（当前 ${contacts.length} 人）`, pass: contacts.length >= 3, critical: true },
+        { text: `敲门砖话题已填写`, pass: hasHookTopic, critical: true },
+        { text: `安全切入点已填写`, pass: !!(client.securityAngle && client.securityAngle.trim()) },
+        { text: `情报监控关键词已配置`, pass: hasKeywords },
+      ]
+    },
+    "进门": {
+      label: "进门 → 定痛",
+      checks: [
+        { text: `E（Economic Buyer）维度有初始评分（当前 ${eScore}/4）`, pass: eScore >= 1, critical: true },
+        { text: `至少 1 次拜访记录（当前 ${visitCount} 次）`, pass: visitCount >= 1, critical: true },
+        { text: `关键人图谱 ≥ 3 人（当前 ${contacts.length} 人）`, pass: contacts.length >= 3 },
+      ]
+    },
+    "定痛": {
+      label: "定痛 → 找人",
+      checks: [
+        { text: `M（Metrics）评分 ≥ 2/4，客户有可量化目标（当前 ${mScore}/4）`, pass: mScore >= 2, critical: true },
+        { text: `I（Implicate Pain）评分 ≥ 2/4，痛点已量化（当前 ${iScore}/4）`, pass: iScore >= 2, critical: true },
+        { text: `至少 2 次拜访记录（当前 ${visitCount} 次）`, pass: visitCount >= 2 },
+      ]
+    },
+    "找人": {
+      label: "找人 → 进入商机",
+      checks: [
+        { text: `C（Champion）评分 ≥ 3/4，Champion 已激活（当前 ${cScore}/4）`, pass: cScore >= 3, critical: true },
+        { text: `Champion 姓名已录入`, pass: !!(championName && championName.trim()), critical: true },
+        { text: `Champion 在关键人图谱中已标注`, pass: hasChampion },
+        { text: `E（Economic Buyer）评分 ≥ 2/4（当前 ${eScore}/4）`, pass: eScore >= 2 },
+      ]
+    },
+  };
+  const currentGate = stageGates[client.stage];
+  const gatePassCount = currentGate ? currentGate.checks.filter(c => c.pass).length : 0;
+  const gateTotalCount = currentGate ? currentGate.checks.length : 0;
+  const criticalFails = currentGate ? currentGate.checks.filter(c => c.critical && !c.pass) : [];
+  const canAdvance = criticalFails.length === 0;
+
   return (
     <div className={cn("bg-card border rounded-xl overflow-hidden transition-all", expanded ? "border-primary/30" : "border-border hover:border-muted-foreground/50")}>
       {/* Card Header */}
@@ -1236,6 +1290,21 @@ function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus
             ) : (
               <span className={cn("text-xs px-2 py-1 rounded-md font-medium", stageColor[client.stage])}>{client.stage}</span>
             )}
+            {/* 阶段推进按钮 */}
+            {currentGate && (
+              <button
+                onClick={() => setShowStageGate(v => !v)}
+                title="查看阶段推进门控"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.5 rounded border font-medium transition-colors flex items-center gap-0.5",
+                  canAdvance
+                    ? "bg-green-500/15 text-green-400 border-green-500/30 hover:bg-green-500/25"
+                    : "bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25"
+                )}
+              >
+                {canAdvance ? "✓" : `${gatePassCount}/${gateTotalCount}`} →
+              </button>
+            )}
             <div className="relative w-10 h-10 flex-shrink-0">
               <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
                 <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" className="text-muted/30" />
@@ -1248,7 +1317,56 @@ function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus
           </div>
         </div>
 
-        {/* MEDDPICC mini bars */}
+      {/* 阶段门控面板 */}
+      {showStageGate && currentGate && (
+        <div className="border-t border-border bg-muted/5 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-foreground">阶段门控：{currentGate.label}</span>
+              <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium", canAdvance ? "bg-green-500/15 text-green-400" : "bg-orange-500/15 text-orange-400")}>
+                {canAdvance ? "✓ 可推进" : `${criticalFails.length} 项关键条件未满足`}
+              </span>
+            </div>
+            <button onClick={() => setShowStageGate(false)} className="text-muted-foreground hover:text-foreground text-xs">✕</button>
+          </div>
+          <div className="space-y-2 mb-4">
+            {currentGate.checks.map((check, idx) => (
+              <div key={idx} className={cn("flex items-start gap-2 text-xs p-2 rounded-lg", check.pass ? "bg-green-500/5" : check.critical ? "bg-red-500/8 border border-red-500/20" : "bg-muted/30")}>
+                <span className={cn("mt-0.5 flex-shrink-0 font-bold", check.pass ? "text-green-400" : check.critical ? "text-red-400" : "text-muted-foreground")}>
+                  {check.pass ? "✓" : check.critical ? "✗" : "○"}
+                </span>
+                <span className={cn(check.pass ? "text-foreground/70" : check.critical ? "text-foreground" : "text-muted-foreground")}>
+                  {check.text}
+                  {check.critical && !check.pass && <span className="ml-1 text-[10px] text-red-400 font-medium">（必须满足）</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+          {canAdvance ? (
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-green-400 font-medium">✓ 所有关键条件已满足，可以推进到下一阶段</div>
+              <button
+                onClick={() => {
+                  const nextStage = STAGES[STAGES.indexOf(client.stage) + 1];
+                  if (nextStage) {
+                    updateClient.mutate({ id: client.id, stage: nextStage });
+                    setShowStageGate(false);
+                    toast.success(`已推进到「${nextStage}」阶段`);
+                  }
+                }}
+                className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium transition-colors"
+              >
+                确认推进 → {STAGES[STAGES.indexOf(client.stage) + 1]}
+              </button>
+            </div>
+          ) : (
+            <div className="text-xs text-orange-400/80 bg-orange-500/5 border border-orange-500/20 rounded-lg p-2">
+              ⚠ 请先完成上方标红的关键条件，再推进到下一阶段。未完成关键条件强行推进会导致商机质量失真。
+            </div>
+          )}
+        </div>
+      )}
+      {/* MEDDPICC mini bars */}
         {(() => {
           const isOneToN = client.stage === '进入商机';
           if (isOneToN && oppMeddpiccList.length > 0) {
@@ -1487,10 +1605,18 @@ function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus
               <Trophy className="w-3 h-3" />
               Win Strategy
             </button>
+            <button
+              onClick={() => setActiveTab("spin")}
+              className={cn("flex-1 py-2.5 text-xs font-medium transition-colors flex items-center justify-center gap-1.5",
+                activeTab === "spin" ? "text-primary border-b-2 border-primary bg-primary/5" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              💬 SPIN
+            </button>
           </div>
 
           {/* MEDDPICC tab - smart switch based on stage */}
-          {activeTab === "meddpicc" && (() => {
+          {(activeTab === "meddpicc") && (() => {
             const isOneToN = client.stage === '进入商机';
             if (isOneToN && oppMeddpiccList.length > 0) {
               // 进入商机阶段：商机 MEDDPICC 汇总矩阵
@@ -1720,6 +1846,78 @@ function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus
             ) : null;
           })()}
 
+
+          {/* SPIN提问库 tab */}
+          {activeTab === "spin" && (() => {
+            // 基于客户名称匹配预置SPIN问题库
+            const spinLibrary: Record<string, { s: string[]; p: string[]; i: string[]; n: string[] }> = {
+              "美的集团": {
+                s: ["美的泰国工厂目前部署了哪些AI应用？72个AI应用的安全管控机制是什么？", "海外22个制造基地的安全架构是统一管理还是各地自建？", "美云智数平台目前承载了哪些核心业务数据？"],
+                p: ["OT/IT融合后，工厂东西向流量的安全盲区是否已有系统性解决方案？", "多云AI基础设施（美擎AIGC）是否存在统一安全态势管理的缺口？", "泰国工厂的智能体（13个主要智能体）之间的身份认证和访问控制是如何实现的？"],
+                i: ["如果一次工厂OT安全事件导致生产线停工，对美的海外营收（占比43%）的影响是多少？", "AI算力投入（3年600亿）如果缺乏统一的Token成本治理，预计每年的算力浪费有多大？", "在FCC/EU等监管压力下，海外工厂数据合规问题如果未解决，对美的出海战略的影响是什么？"],
+                n: ["如果有一套方案能在3-5天内部署私有化大模型推理，同时降低AI总支出30-50%，美的的ROI预期是什么？", "如果AIStorm能帮助美的泰国工厂通过Real2Sim2Real解决多品种混产瓶颈，这对美的的战略价值如何量化？"]
+              },
+              "传音控股": {
+                s: ["传音的SPIFFE/SPIRE标准MultiAgent身份认证体系目前处于什么建设阶段？", "数据主权区域中心计划覆盖哪些地区？非洲和东南亚的部署时间表是什么？", "传音与Google Cloud的深度合作在安全层面是否有商业产品集成需求？"],
+                p: ["基于SPIFFE/SPIRE的开源实现是否存在企业级商业支持和SLA保障的缺口？", "分布式区域中心之间的东西向流量是否有统一的安全监控方案？", "非洲/东南亚基建薄弱区的网络连通性是否影响了安全系统的部署和运维？"],
+                i: ["如果MultiAgent身份认证体系出现漏洞，对传音1.69亿部手机用户数据的影响是什么？", "在非洲/东南亚40%市占率的背景下，一次重大安全事件对品牌信任的损失如何量化？", "数据主权合规问题如果未解决，对传音进入欧盟市场的时间线有什么影响？"],
+                n: ["如果Agent Trust Fabric能直接对接传音现有的SPIFFE/SPIRE架构，传音的集成成本和时间可以节省多少？", "卫星宽带+Agent安全的打包方案，对传音在非洲基建薄弱区的覆盖能力提升有多大？"]
+              },
+              "大疆创新": {
+                s: ["大疆目前针对FCC Covered List的应对策略是什么？是否有第三方安全审计合作方？", "大疆企业级数据安全架构通过了哪些独立安全审计？审计结果是否对外公开？", "无人机在远海/雪山等无网区的超视距通信目前是如何解决的？"],
+                p: ["FCC审查压力下，大疆的企业客户（政府/公共安全）对数据流向审计的需求有多迫切？", "现有的独立安全审计是否足以应对美国市场的监管要求？是否需要持续性的第三方监控？", "超视距通信的刚需场景（远海/雪山）目前是否有可靠的商业解决方案？"],
+                i: ["如果无法有效应对FCC审查，大疆在企业级市场（政府/公共安全）的收入损失预计是多少？", "一次数据安全事件对大疆全球70%市占率的品牌信任影响如何量化？", "超视距通信问题如果无法解决，大疆在工业无人机（农业/测绘/应急）市场的增长天花板在哪里？"],
+                n: ["如果NDR方案能提供持续性的数据流向审计报告，大疆向企业客户证明安全合规的效率能提升多少？", "千帆星座卫星宽带如果能解决超视距通信刚需，大疆工业无人机的可用场景能扩展多少？"]
+              },
+              "荣耀终端": {
+                s: ["荣耀脱离华为体系后，终端安全体系是完全自建还是有外部合作？", "AI助手Yoyo目前在EU AI Act合规方面的准备进展如何？由哪个团队主导？", "荣耀的大模型训练算力目前是自建还是云端？Token成本管理是否有系统性方案？"],
+                p: ["独立运营后，荣耀的终端安全体系是否存在与华为时代不同的新缺口？", "EU AI Act分阶段合规要求（2025-2027年）对荣耀AI助手Yoyo的具体影响是什么？", "海外销量增长47%的背景下，安全合规体系是否能跟上国际化扩张的速度？"],
+                i: ["如果EU AI Act合规问题未解决，荣耀在欧洲市场的销售禁令风险对五年100亿美元阿尔法战略的影响是什么？", "终端安全体系重建如果依赖自研，时间成本和人力投入是多少？与引入成熟商业方案相比如何？", "AI算力成本如果没有有效治理，荣耀大模型研发的ROI如何保障？"],
+                n: ["如果Agent Trust Fabric能帮助Yoyo通过EU AI Act合规认证，荣耀进入欧洲市场的时间线能提前多少？", "RTX 6000D私有化推理一体机+Token ERP如果能降低AI总支出30-50%，对荣耀五年100亿美元投入的ROI改善有多大？"]
+              },
+              "华大基因": {
+                s: ["沙特Genalive私有数据中心目前的安全架构是什么？处理83家公立医院数据的合规证明机制如何？", "GeneT Agent智能体的身份管理和访问控制目前是如何实现的？", "华大基因在中东/东南亚扩张中，跨境基因数据合规的主要挑战是什么？"],
+                p: ["沙特卫生部3年合同（93万次基因检测）是否要求第三方安全合规证明？现有方案是否满足要求？", "美国生物安全审查压力下，华大基因的供应链和数据流向是否有系统性的合规监控方案？", "GeneT Agent的多智能体协作是否存在身份认证和数据访问控制的安全缺口？"],
+                i: ["如果沙特Genalive数据中心出现安全事件，对华大基因3年合同和中东扩张战略的影响是什么？", "美国生物安全审查如果升级，华大基因在全球100+国家业务的合规风险如何量化？", "跨境基因数据合规问题如果未解决，华大基因进入欧盟/日本等高价值市场的障碍有多大？"],
+                n: ["如果CloudGuard能为Genalive数据中心提供持续性的云安全合规报告，华大基因向沙特卫生部的合规证明效率能提升多少？", "RTX 6000D私有化推理一体机（数据全程不出域）如果能满足生命科学合规要求，华大基因的数据主权成本能降低多少？"]
+              }
+            };
+            const spin = spinLibrary[client.name];
+            const spinColors = { s: "text-blue-400 bg-blue-500/10 border-blue-500/20", p: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20", i: "text-orange-400 bg-orange-500/10 border-orange-500/20", n: "text-green-400 bg-green-500/10 border-green-500/20" };
+            const spinLabels = { s: "S — Situation（现状问题）", p: "P — Problem（困难问题）", i: "I — Implication（影响问题）", n: "N — Need-Payoff（需求回报问题）" };
+            const spinOwners = { s: "SAM 会前摸底", p: "SAM 初次接触", i: "AD C-Level 刺痛", n: "AD 高层会面收尾" };
+            return (
+              <div className="p-4 space-y-3">
+                <div className="p-2.5 bg-primary/5 border border-primary/20 rounded-lg">
+                  <div className="text-xs font-semibold text-primary mb-0.5">💬 SPIN 提问库</div>
+                  <div className="text-[10px] text-muted-foreground">基于客户公开数据预置的顾问式提问话术。S/P 问题由 SAM 会前摸底，I/N 问题由 AD 在 C-Level 对话中主导。</div>
+                </div>
+                {spin ? (
+                  (["s","p","i","n"] as const).map(type => (
+                    <div key={type} className={cn("rounded-lg border p-3", spinColors[type])}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold">{spinLabels[type]}</span>
+                        <span className="text-[10px] opacity-70 font-medium">{spinOwners[type]}</span>
+                      </div>
+                      <ul className="space-y-1.5">
+                        {spin[type].map((q, idx) => (
+                          <li key={idx} className="text-[11px] text-foreground/80 flex items-start gap-1.5">
+                            <span className="opacity-50 flex-shrink-0 mt-0.5">{idx + 1}.</span>
+                            <span>{q}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <div className="text-sm mb-1">暂无预置 SPIN 问题库</div>
+                    <div className="text-xs">SAM 到位后可基于真实接触录入定制化提问话术</div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {/* Trend Chart tab */}
           {activeTab === "trend" && (
             <div className="p-4 bg-muted/5">
