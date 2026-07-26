@@ -872,7 +872,7 @@ export default function ADDashboard() {
                               : "hover:bg-muted/30"
                           }`}
                           style={{ gridTemplateColumns: "1fr 90px 60px 60px 80px" }}
-                          onClick={() => navigate(`/battle-map?clientId=${opp.clientId}`)}
+                          onClick={() => navigate(`/battle-map?clientId=${opp.clientId}&oppId=${opp.id}`)}
                         >
                           <div className="text-xs font-medium truncate text-muted-foreground">{opp.name}</div>
                           <div className="text-[10px] text-muted-foreground truncate">{opp.stage}</div>

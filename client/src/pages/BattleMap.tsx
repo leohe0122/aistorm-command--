@@ -513,7 +513,7 @@ function OppBlueSheetPanel({ opp, clientId, onClose }: { opp: any; clientId: num
   );
 }
 
-function ActiveFrontsPanel({ clientId }: { clientId: number }) {
+function ActiveFrontsPanel({ clientId, focusOppId }: { clientId: number; focusOppId?: number | null }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [expandedOppId, setExpandedOppId] = useState<number | null>(null);
@@ -621,7 +621,15 @@ function ActiveFrontsPanel({ clientId }: { clientId: number }) {
       )}
 
       {opps.map((opp: any) => (
-        <div key={opp.id} className="bg-muted/20 rounded-lg border border-border/50 overflow-hidden">
+        <div
+          key={opp.id}
+          id={`opp-${opp.id}`}
+          className={`rounded-lg border overflow-hidden transition-colors ${
+            focusOppId === opp.id
+              ? "bg-primary/8 border-primary/40 ring-1 ring-primary/30"
+              : "bg-muted/20 border-border/50"
+          }`}
+        >
           {editingId === opp.id ? (
             <div className="p-3 space-y-2">
               <div className="grid grid-cols-2 gap-2">
@@ -1094,9 +1102,15 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
   );
 }
 
-function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus?: () => void; defaultExpanded?: boolean }) {
+function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }: {
+  client: any;
+  onFocus?: () => void;
+  defaultExpanded?: boolean;
+  initialTab?: "meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin";
+  focusOppId?: number | null;
+}) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
-  const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin">("meddpicc");
+  const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin">(initialTab ?? "meddpicc");
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<any>({});
   const [meddpiccEdit, setMeddpiccEdit] = useState<any>({});
@@ -2014,7 +2028,7 @@ function ClientCard({ client, onFocus, defaultExpanded }: { client: any; onFocus
                   </div>
                 )}
               </div>
-              <ActiveFrontsPanel clientId={client.id} />
+              <ActiveFrontsPanel clientId={client.id} focusOppId={focusOppId} />
             </div>
           )}
 
@@ -2153,11 +2167,17 @@ export default function BattleMap() {
     const id = params.get("clientId");
     return id ? parseInt(id, 10) : null;
   }, []);
+  const initialFocusOppId = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("oppId");
+    return id ? parseInt(id, 10) : null;
+  }, []);
   const [focusClientId, setFocusClientId] = useState<number | null>(initialFocusId);
 
-  const goToClient = useCallback((id: number) => {
+  const goToClient = useCallback((id: number, oppId?: number) => {
     setFocusClientId(id);
-    window.history.pushState({}, "", `/battle-map?clientId=${id}`);
+    const url = oppId ? `/battle-map?clientId=${id}&oppId=${oppId}` : `/battle-map?clientId=${id}`;
+    window.history.pushState({}, "", url);
   }, []);
 
   const goToAllClients = useCallback(() => {
@@ -2384,7 +2404,12 @@ export default function BattleMap() {
                 </button>
                 {/* Single client full-width card */}
                 <div className="relative group">
-                  <ClientCard client={focusClient} defaultExpanded={true} />
+                  <ClientCard
+                    client={focusClient}
+                    defaultExpanded={true}
+                    initialTab={initialFocusOppId ? "fronts" : undefined}
+                    focusOppId={initialFocusOppId}
+                  />
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                     <button
                       onClick={() => openEdit(focusClient)}
