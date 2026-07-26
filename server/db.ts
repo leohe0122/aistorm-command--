@@ -105,7 +105,12 @@ export async function getClientById(id: number): Promise<Client | undefined> {
 export async function updateClient(id: number, data: Partial<InsertClient>): Promise<void> {
   const db = await getDb();
   if (!db) return;
-  await db.update(clients).set(data).where(eq(clients.id, id));
+  // 当 stage 变更时自动写入 stageChangedAt，精确记录阶段停留起始时间
+  const updateData: any = { ...data };
+  if (data.stage !== undefined) {
+    updateData.stageChangedAt = new Date();
+  }
+  await db.update(clients).set(updateData).where(eq(clients.id, id));
 }
 
 export async function insertClient(data: Omit<InsertClient, 'id' | 'createdAt' | 'updatedAt'>): Promise<number> {

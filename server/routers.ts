@@ -1625,7 +1625,12 @@ ${contactList}
       const { opportunities } = await import('../drizzle/schema.js');
       const { eq } = await import('drizzle-orm');
       const { id, ...data } = input;
-      await db.update(opportunities).set(data as any).where(eq(opportunities.id, id));
+      // 当 stage 变更时自动写入 stageChangedAt，精确记录阶段停留起始时间
+      const updateData: any = { ...data };
+      if ((data as any).stage !== undefined) {
+        updateData.stageChangedAt = new Date();
+      }
+      await db.update(opportunities).set(updateData).where(eq(opportunities.id, id));
       return { success: true };
     }),
     delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
@@ -2915,6 +2920,15 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
           const stageDwellDays = stageChangedAt
             ? Math.floor((now - new Date(stageChangedAt).getTime()) / 86400000)
             : Math.floor((now - new Date(opp.updatedAt).getTime()) / 86400000);
+          // 分阶段预警阈值（企业级网络安全国际销售参考基准）
+          const stageThresholds: Record<string, { yellow: number; red: number }> = {
+            '初步需求':  { yellow: 21, red: 30 },
+            '需求挖掘':  { yellow: 30, red: 45 },
+            '技术验证':  { yellow: 45, red: 60 },
+            '方案提案':  { yellow: 21, red: 30 },
+            '商务谈判':  { yellow: 30, red: 45 },
+          };
+          const threshold = stageThresholds[opp.stage] ?? { yellow: 21, red: 30 };
           const meddpicc = oppMeddpiccMap.get(opp.id);
           // 找出最弱的1-2个MEDDPICC维度
           const dimLabels: Record<string, string> = {
@@ -2932,7 +2946,8 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
           }
           // 该商机的待处理任务
           const clientName = allClients.find(c => c.id === opp.clientId)?.name ?? '';
-          const isStagnant = stageDwellDays > 30;
+          const isStagnant = stageDwellDays >= threshold.red;
+          const isWarning = !isStagnant && stageDwellDays >= threshold.yellow;
           return {
             id: opp.id,
             clientId: opp.clientId,
@@ -2943,6 +2958,9 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
             stageDwellDays,
             weakDims,
             isStagnant,
+            isWarning,
+            thresholdYellow: threshold.yellow,
+            thresholdRed: threshold.red,
           };
         })
         .sort((a, b) => b.stageDwellDays - a.stageDwellDays);

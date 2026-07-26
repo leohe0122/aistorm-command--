@@ -867,6 +867,8 @@ export default function ADDashboard() {
                           className={`grid items-center gap-2 px-1 py-1.5 rounded cursor-pointer transition-colors ${
                             opp.isStagnant
                               ? "bg-red-500/8 border border-red-500/20 hover:bg-red-500/12"
+                              : opp.isWarning
+                              ? "bg-yellow-500/5 border border-yellow-500/15 hover:bg-yellow-500/10"
                               : "hover:bg-muted/30"
                           }`}
                           style={{ gridTemplateColumns: "1fr 90px 60px 60px 80px" }}
@@ -874,7 +876,10 @@ export default function ADDashboard() {
                         >
                           <div className="text-xs font-medium truncate text-muted-foreground">{opp.name}</div>
                           <div className="text-[10px] text-muted-foreground truncate">{opp.stage}</div>
-                          <div className={`text-xs font-bold text-center ${opp.stageDwellDays > 30 ? "text-red-400" : opp.stageDwellDays > 14 ? "text-yellow-400" : "text-green-400"}`}>
+                          <div
+                            className={`text-xs font-bold text-center ${opp.isStagnant ? "text-red-400" : opp.isWarning ? "text-yellow-400" : "text-green-400"}`}
+                            title={`该阶段参考周期：黄色预警 >${opp.thresholdYellow}天，红色停滞 >${opp.thresholdRed}天`}
+                          >
                             {opp.stageDwellDays}天
                           </div>
                           <div className="text-center">
@@ -886,7 +891,9 @@ export default function ADDashboard() {
                           <div className="text-center">
                             {opp.isStagnant
                               ? <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/20 text-red-400">⚠ 停滞</span>
-                              : <span className="text-[9px] px-1 py-0.5 rounded bg-green-500/10 text-green-400">推进中</span>
+                              : opp.isWarning
+                              ? <span className="text-[9px] px-1 py-0.5 rounded bg-yellow-500/20 text-yellow-400">⚡ 关注</span>
+                              : <span className="text-[9px] px-1 py-0.5 rounded bg-green-500/10 text-green-400">正常</span>
                             }
                           </div>
                         </div>
@@ -898,113 +905,6 @@ export default function ADDashboard() {
             </div>
           );
         })()}
-      </div>
-
-      {/* MEDDPICC Health Matrix — 商机级别 */}
-      <div className="rounded-xl border bg-card p-4 space-y-3">
-        <div className="flex items-center gap-2 font-semibold text-sm">
-          <TrendingUp className="w-4 h-4 text-[#00A8D6]" />
-          商机 MEDDPICC 健康度矩阵
-          <span className="text-xs text-muted-foreground font-normal ml-1">— 每条商机独立评分，点击跳转战场地图</span>
-        </div>
-        {/* Header row */}
-        <div className="grid gap-2" style={{ gridTemplateColumns: "180px 60px repeat(8, 1fr)" }}>
-          <div className="text-xs text-muted-foreground font-medium">商机</div>
-          <div className="text-xs text-muted-foreground font-medium text-center">健康度</div>
-          {Object.entries(MEDDPICC_LABELS).map(([key, label]) => (
-            <div key={key} className="text-[10px] text-muted-foreground text-center font-mono" title={MEDDPICC_FULL[key]}>
-              {label}
-            </div>
-          ))}
-        </div>
-        <div className="space-y-1.5 max-h-96 overflow-y-auto pr-1">
-          {sortedClients.map(client => {
-            // 展示客户标题行
-            return (
-              <div key={client.id}>
-                {/* 客户分组标题 */}
-                <div className="flex items-center gap-2 py-1 px-2 mb-0.5">
-                  <span className={`w-1.5 h-1.5 rounded-full ${STAGE_COLORS[client.stage] || "bg-slate-400"}`} />
-                  <span className="text-xs font-semibold text-foreground">{client.name}</span>
-                  {client.priority === "P0" && (
-                    <Badge variant="destructive" className="text-[9px] px-1 py-0">P0</Badge>
-                  )}
-                  <span className="text-[10px] text-muted-foreground">{client.stage}</span>
-                </div>
-                {/* 商机列表 */}
-                {(client as any).opportunities && (client as any).opportunities.length > 0 ? (
-                  (client as any).opportunities.map((opp: any) => {
-                    const meddpicc = opp.meddpicc;
-                    const scores = meddpicc ? [
-                      meddpicc.metricsScore, meddpicc.economicBuyerScore, meddpicc.decisionCriteriaScore,
-                      meddpicc.decisionProcessScore, meddpicc.paperProcessScore, meddpicc.implicatePainScore,
-                      meddpicc.championScore, meddpicc.competitionScore
-                    ] : Array(8).fill(0);
-                    const total = scores.reduce((s: number, v: number) => s + (v ?? 0), 0);
-                    const healthPct = Math.round((total / (8 * 4)) * 100);
-                    const hasData = meddpicc && total > 0;
-                    return (
-                      <div
-                        key={opp.id}
-                        className="grid items-center gap-2 py-1.5 px-2 ml-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors border-l-2 border-border/30 mb-0.5"
-                        style={{ gridTemplateColumns: "180px 60px repeat(8, 1fr)" }}
-                        onClick={() => navigate("/battle-map")}
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1">
-                            <div className="text-xs font-medium truncate text-muted-foreground">{opp.name}</div>
-                            {pendingTaskOppIds.has(opp.id) && (() => {
-                              const info = pendingTaskOppMap.get(opp.id)!;
-                              return (
-                                <span
-                                  title={`${info.count} \u4e2a\u5f85\u5b8c\u6210\u4efb\u52a1 (${info.roles.join('/')}) — \u70b9\u51fb\u8df3\u8f6c POD \u4e2d\u67a2`}
-                                  className="relative flex-shrink-0 group cursor-pointer"
-                                  onClick={(e) => { e.stopPropagation(); navigate(`/pod-center?oppId=${opp.id}&oppName=${encodeURIComponent(opp.name)}`); }}
-                                >
-                                  <span className="w-2 h-2 rounded-full bg-red-500 block animate-pulse hover:scale-125 transition-transform" />
-                                  <span className="absolute left-3 top-0 z-10 hidden group-hover:block whitespace-nowrap text-[10px] bg-popover border border-border text-popover-foreground px-1.5 py-0.5 rounded shadow-md">
-                                    {info.count}\u4e2a\u5f85\u529e \u00b7 {info.roles.join('/')} \u2192 POD\u4e2d\u67a2
-                                  </span>
-                                </span>
-                              );
-                            })()}
-                          </div>
-                          <span className={`text-[10px] px-1 rounded ${STAGE_COLORS[opp.stage] ? "text-white" : "text-muted-foreground"}`}
-                            style={{ background: "transparent" }}>
-                            {opp.stage}
-                          </span>
-                        </div>
-                        <div className={`text-sm font-bold text-center ${
-                          !hasData ? "text-muted-foreground/40" :
-                          healthPct >= 60 ? "text-green-400" : healthPct >= 35 ? "text-yellow-400" : "text-red-400"
-                        }`}>
-                          {hasData ? `${healthPct}%` : "—"}
-                        </div>
-                        {scores.map((score: number, idx: number) => {
-                          const color = !hasData ? "bg-muted/30" : score >= 3 ? "bg-green-500" : score >= 2 ? "bg-yellow-500" : score >= 1 ? "bg-orange-500" : "bg-red-500/50";
-                          return (
-                            <div key={idx} className="flex flex-col items-center gap-0.5">
-                              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${color}`} style={{ width: hasData ? `${(score / 4) * 100}%` : "0%" }} />
-                              </div>
-                              <span className="text-[9px] text-muted-foreground">{hasData ? score : "—"}</span>
-
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="ml-3 py-1.5 px-2 text-[10px] text-muted-foreground/50 italic">暂无商机记录</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <div className="text-[10px] text-muted-foreground pt-1 border-t border-border/30">
-          评分说明：0—未评分 · 1—初步了解 · 2—已确认 · 3—已验证 · 4—完全控制
-        </div>
       </div>
 
       {/* This week visit status */}
