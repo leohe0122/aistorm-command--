@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useLocation } from "wouter";
 import { Edit2, Save, X, ChevronDown, ChevronUp, Users, Plus, Trash2, UserCheck, TrendingUp, Sparkles, Upload, Download, AlertCircle, CheckCircle2, Calendar, MapPin, Swords, Target, Trophy, Loader2 } from "lucide-react";
 
 import { TermTooltip, MeddpiccLabel } from "@/components/TermTooltip";
@@ -1913,10 +1914,22 @@ export default function BattleMap() {
 
   const [showCreate, setShowCreate] = useState(false);
   // Single-client focus mode: ?clientId=xxx from dashboard navigation
-  const focusClientId = useMemo(() => {
+  const [, navigate] = useLocation();
+  const initialFocusId = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("clientId");
     return id ? parseInt(id, 10) : null;
+  }, []);
+  const [focusClientId, setFocusClientId] = useState<number | null>(initialFocusId);
+
+  const goToClient = useCallback((id: number) => {
+    setFocusClientId(id);
+    window.history.pushState({}, "", `/battle-map?clientId=${id}`);
+  }, []);
+
+  const goToAllClients = useCallback(() => {
+    setFocusClientId(null);
+    window.history.replaceState({}, "", "/battle-map");
   }, []);
 
   const [editTarget, setEditTarget] = useState<(typeof clients)[0] | null>(null);
@@ -2122,7 +2135,7 @@ export default function BattleMap() {
                 <p className="text-sm">未找到该客户，可能已被删除。</p>
                 <button
                   className="mt-3 text-xs text-primary hover:underline"
-                  onClick={() => { window.history.replaceState({}, "", "/battle-map"); window.location.reload(); }}
+                  onClick={goToAllClients}
                 >← 返回全部客户</button>
               </div>
             );
@@ -2130,8 +2143,8 @@ export default function BattleMap() {
               <div>
                 {/* Back button */}
                 <button
-                  className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors group"
-                  onClick={() => { window.history.replaceState({}, "", "/battle-map"); window.location.reload(); }}
+                  className="mb-4 flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors group border border-primary/30 hover:border-primary/60 px-3 py-1.5 rounded-lg bg-primary/5 hover:bg-primary/10 w-fit"
+                  onClick={goToAllClients}
                 >
                   <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                   返回全部客户
@@ -2165,8 +2178,7 @@ export default function BattleMap() {
               <ClientCard
                 client={client}
                 onFocus={() => {
-                  window.history.pushState({}, "", `/battle-map?clientId=${client.id}`);
-                  window.location.reload();
+                  goToClient(client.id);
                 }}
               />
               {/* Hover action buttons */}
