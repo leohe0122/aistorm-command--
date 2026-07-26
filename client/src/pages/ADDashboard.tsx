@@ -830,47 +830,71 @@ export default function ADDashboard() {
           }
           return (
             <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-              {/* 表头 */}
-              <div className="grid gap-2 px-2 text-[10px] text-muted-foreground font-medium" style={{ gridTemplateColumns: "1fr 120px 80px 80px 100px" }}>
-                <div>商机</div>
-                <div>当前阶段</div>
-                <div className="text-center">停留天数</div>
-                <div className="text-center">MEDDPICC缺口</div>
-                <div className="text-center">状态</div>
-              </div>
-              {board.map((opp: any) => (
-                <div
-                  key={opp.id}
-                  className={`grid items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-colors ${
-                    opp.isStagnant
-                      ? "bg-red-500/8 border border-red-500/25 hover:bg-red-500/15"
-                      : "bg-muted/10 border border-border/20 hover:bg-muted/30"
-                  }`}
-                  style={{ gridTemplateColumns: "1fr 120px 80px 80px 100px" }}
-                  onClick={() => navigate(`/battle-map?clientId=${opp.clientId}`)}
-                >
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold truncate">{opp.name}</div>
-                    <div className="text-[10px] text-muted-foreground truncate">{opp.clientName}</div>
+              {/* 按客户分组 */}
+              {(() => {
+                // 按clientId分组
+                const byClient = new Map<number, { clientName: string; clientId: number; opps: any[] }>();
+                board.forEach((opp: any) => {
+                  if (!byClient.has(opp.clientId)) {
+                    byClient.set(opp.clientId, { clientName: opp.clientName, clientId: opp.clientId, opps: [] });
+                  }
+                  byClient.get(opp.clientId)!.opps.push(opp);
+                });
+                return Array.from(byClient.values()).map(group => (
+                  <div key={group.clientId} className="space-y-1">
+                    {/* 客户分组标题 */}
+                    <div
+                      className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-muted/20 rounded"
+                      onClick={() => navigate(`/battle-map?clientId=${group.clientId}`)}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#00A8D6] flex-shrink-0" />
+                      <span className="text-xs font-semibold text-foreground">{group.clientName}</span>
+                      <span className="text-[10px] text-muted-foreground ml-auto">{group.opps.length} 条商机 →</span>
+                    </div>
+                    {/* 该客户下的商机列表 */}
+                    <div className="ml-3 space-y-1 border-l-2 border-border/30 pl-2">
+                      {/* 子表头 */}
+                      <div className="grid gap-2 px-1 text-[9px] text-muted-foreground/60 font-medium" style={{ gridTemplateColumns: "1fr 90px 60px 60px 80px" }}>
+                        <div>商机名称</div>
+                        <div>当前阶段</div>
+                        <div className="text-center">停留</div>
+                        <div className="text-center">缺口</div>
+                        <div className="text-center">状态</div>
+                      </div>
+                      {group.opps.map((opp: any) => (
+                        <div
+                          key={opp.id}
+                          className={`grid items-center gap-2 px-1 py-1.5 rounded cursor-pointer transition-colors ${
+                            opp.isStagnant
+                              ? "bg-red-500/8 border border-red-500/20 hover:bg-red-500/12"
+                              : "hover:bg-muted/30"
+                          }`}
+                          style={{ gridTemplateColumns: "1fr 90px 60px 60px 80px" }}
+                          onClick={() => navigate(`/battle-map?clientId=${opp.clientId}`)}
+                        >
+                          <div className="text-xs font-medium truncate text-muted-foreground">{opp.name}</div>
+                          <div className="text-[10px] text-muted-foreground truncate">{opp.stage}</div>
+                          <div className={`text-xs font-bold text-center ${opp.stageDwellDays > 30 ? "text-red-400" : opp.stageDwellDays > 14 ? "text-yellow-400" : "text-green-400"}`}>
+                            {opp.stageDwellDays}天
+                          </div>
+                          <div className="text-center">
+                            {opp.weakDims.length > 0
+                              ? <span className="text-[9px] text-orange-400 font-mono">{opp.weakDims.join(' ')}</span>
+                              : <span className="text-[9px] text-green-400">—</span>
+                            }
+                          </div>
+                          <div className="text-center">
+                            {opp.isStagnant
+                              ? <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/20 text-red-400">⚠ 停滞</span>
+                              : <span className="text-[9px] px-1 py-0.5 rounded bg-green-500/10 text-green-400">推进中</span>
+                            }
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="text-[10px] text-muted-foreground truncate">{opp.stage}</div>
-                  <div className={`text-sm font-bold text-center ${opp.stageDwellDays > 30 ? "text-red-400" : opp.stageDwellDays > 14 ? "text-yellow-400" : "text-green-400"}`}>
-                    {opp.stageDwellDays}天
-                  </div>
-                  <div className="text-center">
-                    {opp.weakDims.length > 0
-                      ? <span className="text-[10px] text-orange-400 font-mono">{opp.weakDims.join(' ')}</span>
-                      : <span className="text-[10px] text-green-400">—</span>
-                    }
-                  </div>
-                  <div className="text-center">
-                    {opp.isStagnant
-                      ? <span className="text-[10px] px-1 py-0.5 rounded bg-red-500/20 text-red-400">⚠ 停滞</span>
-                      : <span className="text-[10px] px-1 py-0.5 rounded bg-green-500/10 text-green-400">推进中</span>
-                    }
-                  </div>
-                </div>
-              ))}
+                ));
+              })()}
             </div>
           );
         })()}
