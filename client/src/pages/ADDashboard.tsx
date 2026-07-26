@@ -349,69 +349,7 @@ function RiskClientCard({ c, navigate, isExpanded, onToggle, onExpand }: {
                     <ClipboardList className="w-3 h-3" />
                     生成跟进任务
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="flex-1 h-7 text-[11px] gap-1.5 border-green-500/30 text-green-400 hover:bg-green-500/10"
-                    onClick={() => setShowVisitForm(!showVisitForm)}
-                  >
-                    <FileEdit className="w-3 h-3" />
-                    快速录入拜访
-                  </Button>
                 </div>
-
-                {/* Quick visit log form */}
-                {showVisitForm && (
-                  <div className="space-y-2 bg-muted/10 rounded-lg p-2.5 border border-border/50">
-                    <div className="text-xs font-medium text-foreground">快速录入拜访日志</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[10px] text-muted-foreground">拜访日期</label>
-                        <Input
-                          type="date"
-                          value={visitDate}
-                          onChange={e => setVisitDate(e.target.value)}
-                          className="h-7 text-xs mt-0.5"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-muted-foreground">参与人</label>
-                        <Input
-                          placeholder="如：Leo, 客户IT总监"
-                          value={visitAttendees}
-                          onChange={e => setVisitAttendees(e.target.value)}
-                          className="h-7 text-xs mt-0.5"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-muted-foreground">拜访要点 *</label>
-                      <Textarea
-                        placeholder="简要记录本次拜访的关键信息、进展、下一步行动…"
-                        value={visitKeyPoints}
-                        onChange={e => setVisitKeyPoints(e.target.value)}
-                        className="text-xs mt-0.5 min-h-[60px] resize-none"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        className="flex-1 h-7 text-xs"
-                        onClick={() => quickLog.mutate({
-                          clientId: c.id,
-                          meetingDate: visitDate,
-                          attendees: visitAttendees || undefined,
-                          keyPoints: visitKeyPoints,
-                        })}
-                        disabled={!visitKeyPoints.trim() || quickLog.isPending}
-                      >
-                        {quickLog.isPending ? <RefreshCw className="w-3 h-3 animate-spin mr-1" /> : null}
-                        确认录入并刷新评分
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowVisitForm(false)}>取消</Button>
-                    </div>
-                  </div>
-                )}
               </div>
             ) : null}
           </div>
@@ -523,9 +461,14 @@ export default function ADDashboard() {
   const visitedCount = data.visitedThisWeekCount;
   const riskCount = data.riskClients.length;
   const p0Clients = data.clients.filter(c => c.priority === "P0");
-  const avgMeddpicc = data.clients.length > 0
-    ? Math.round(data.clients.reduce((sum, c) => sum + c.meddpiccAvg, 0) / data.clients.length)
-    : 0;
+  // Champion缺口：客户级championScore≤1（0→1阶段）或商机级championScore≤1（1→N阶段）
+  const championGapCount = data.clients.filter(c => {
+    const details = (c as any).meddpiccDetails;
+    if (!details) return true; // 无评分视为缺口
+    return (details.championScore ?? 0) <= 1;
+  }).length;
+  // 商机停滞数（超过30天无阶段推进的活跃商机）
+  const stagnantOppCount = (data as any).oneToNBoard?.filter((o: any) => o.isStagnant).length ?? 0;
 
   // Sort clients by MEDDPICC avg desc for health matrix
   const sortedClients = [...data.clients].sort((a, b) => b.meddpiccAvg - a.meddpiccAvg);
@@ -566,7 +509,10 @@ export default function ADDashboard() {
       const isRisk = data.riskClients.some((r: any) => r.id === c.id);
       md += `| ${c.name} | ${c.priority} | ${c.stage} | ${c.meddpiccAvg} | ${(c as any).visitCount ?? 0} | ${isRisk ? "⚠ 高风险" : "正常"} |\n`;
     }
-    md += `\n**全组 MEDDPICC 均分：${avgMeddpicc} / 100**\n\n---\n\n`;
+    const avgMeddpiccForExport = data.clients.length > 0
+      ? Math.round(data.clients.reduce((sum: number, c: any) => sum + c.meddpiccAvg, 0) / data.clients.length)
+      : 0;
+    md += `\n**全组 MEDDPICC 均分：${avgMeddpiccForExport} / 100**\n\n---\n\n`;
 
     // 2. MEDDPICC 矩阵
     md += `## 二、MEDDPICC 健康度矩阵\n\n`;
@@ -667,12 +613,12 @@ export default function ADDashboard() {
         <div className="rounded-xl border bg-card p-4 space-y-1">
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <Activity className="w-3.5 h-3.5" />
-            MEDDPICC 均分
+            Champion 缺口
           </div>
-          <div className={`text-3xl font-bold ${avgMeddpicc >= 60 ? "text-green-400" : avgMeddpicc >= 35 ? "text-yellow-400" : "text-red-400"}`}>
-            {avgMeddpicc}
+          <div className="text-3xl font-bold">
+            <span className={championGapCount > 0 ? "text-orange-400" : "text-green-400"}>{championGapCount}</span>
           </div>
-          <div className="text-xs text-muted-foreground">满分 100</div>
+          <div className="text-xs text-muted-foreground">户客户 Champion 未确认（C ≤ 1）</div>
         </div>
         <div className="rounded-xl border bg-card p-4 space-y-1">
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
@@ -685,32 +631,62 @@ export default function ADDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Stage Funnel */}
+        {/* 0→1 客户推进看板 */}
         <div className="rounded-xl border bg-card p-4 space-y-3">
           <div className="flex items-center gap-2 font-semibold text-sm">
             <BarChart3 className="w-4 h-4 text-[#00A8D6]" />
-            阶段漏斗
+            0→1 客户推进
+            <span className="text-xs text-muted-foreground font-normal ml-1">— 阶段停留天数</span>
           </div>
-          <div className="space-y-2">
-            {STAGE_ORDER.map(stage => {
-              const count = data.stageDistribution[stage] || 0;
-              const pct = totalClients > 0 ? Math.round((count / totalClients) * 100) : 0;
-              return (
-                <div key={stage} className="space-y-0.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{stage}</span>
-                    <span className="font-medium">{count} 个</span>
+          {(() => {
+            const board = (data as any).zeroToOneBoard ?? [];
+            if (board.length === 0) {
+              return <div className="text-xs text-muted-foreground text-center py-4">暂无 0→1 阶段客户</div>;
+            }
+            return (
+              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+                {board.map((c: any) => (
+                  <div
+                    key={c.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
+                      c.isStagnant
+                        ? "bg-red-500/8 border border-red-500/25 hover:bg-red-500/15"
+                        : c.hasActionThisWeek
+                        ? "bg-green-500/5 border border-green-500/20 hover:bg-green-500/10"
+                        : "bg-muted/20 border border-border/30 hover:bg-muted/40"
+                    }`}
+                    onClick={() => navigate(`/battle-map?clientId=${c.id}`)}
+                  >
+                    {/* 客户名 + 阶段 */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold truncate">{c.name}</span>
+                        {c.priority === "P0" && (
+                          <span className="text-[9px] px-1 py-0 rounded bg-red-500/20 text-red-400 font-bold flex-shrink-0">P0</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`text-[10px] px-1 py-0 rounded ${STAGE_COLORS[c.stage] ? "text-white" : "text-muted-foreground"} bg-muted/50`}>
+                          {c.stage}
+                        </span>
+                        {c.hasActionThisWeek
+                          ? <span className="text-[10px] text-green-400">✓ 本周有动作</span>
+                          : <span className="text-[10px] text-muted-foreground/60">本周无动作</span>
+                        }
+                      </div>
+                    </div>
+                    {/* 停留天数 */}
+                    <div className="text-right flex-shrink-0">
+                      <div className={`text-sm font-bold ${c.stageDwellDays > 14 ? "text-red-400" : c.stageDwellDays > 7 ? "text-yellow-400" : "text-green-400"}`}>
+                        {c.stageDwellDays}天
+                      </div>
+                      <div className="text-[9px] text-muted-foreground">停留</div>
+                    </div>
                   </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${STAGE_COLORS[stage] || "bg-slate-500"}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Risk Alerts */}
@@ -833,6 +809,71 @@ export default function ADDashboard() {
             <ChevronRight className="w-3 h-3" />
           </Button>
         </div>
+      </div>
+
+      {/* 1→N 商机推进看板 */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div className="flex items-center gap-2 font-semibold text-sm">
+          <TrendingUp className="w-4 h-4 text-orange-400" />
+          1→N 商机推进
+          <span className="text-xs text-muted-foreground font-normal ml-1">— 活跃商机阶段停滞监控</span>
+          {stagnantOppCount > 0 && (
+            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-semibold">
+              {stagnantOppCount} 条停滞 &gt;30天
+            </span>
+          )}
+        </div>
+        {(() => {
+          const board = (data as any).oneToNBoard ?? [];
+          if (board.length === 0) {
+            return <div className="text-xs text-muted-foreground text-center py-4">暂无活跃商机</div>;
+          }
+          return (
+            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+              {/* 表头 */}
+              <div className="grid gap-2 px-2 text-[10px] text-muted-foreground font-medium" style={{ gridTemplateColumns: "1fr 120px 80px 80px 100px" }}>
+                <div>商机</div>
+                <div>当前阶段</div>
+                <div className="text-center">停留天数</div>
+                <div className="text-center">MEDDPICC缺口</div>
+                <div className="text-center">状态</div>
+              </div>
+              {board.map((opp: any) => (
+                <div
+                  key={opp.id}
+                  className={`grid items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-colors ${
+                    opp.isStagnant
+                      ? "bg-red-500/8 border border-red-500/25 hover:bg-red-500/15"
+                      : "bg-muted/10 border border-border/20 hover:bg-muted/30"
+                  }`}
+                  style={{ gridTemplateColumns: "1fr 120px 80px 80px 100px" }}
+                  onClick={() => navigate(`/battle-map?clientId=${opp.clientId}`)}
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold truncate">{opp.name}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{opp.clientName}</div>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground truncate">{opp.stage}</div>
+                  <div className={`text-sm font-bold text-center ${opp.stageDwellDays > 30 ? "text-red-400" : opp.stageDwellDays > 14 ? "text-yellow-400" : "text-green-400"}`}>
+                    {opp.stageDwellDays}天
+                  </div>
+                  <div className="text-center">
+                    {opp.weakDims.length > 0
+                      ? <span className="text-[10px] text-orange-400 font-mono">{opp.weakDims.join(' ')}</span>
+                      : <span className="text-[10px] text-green-400">—</span>
+                    }
+                  </div>
+                  <div className="text-center">
+                    {opp.isStagnant
+                      ? <span className="text-[10px] px-1 py-0.5 rounded bg-red-500/20 text-red-400">⚠ 停滞</span>
+                      : <span className="text-[10px] px-1 py-0.5 rounded bg-green-500/10 text-green-400">推进中</span>
+                    }
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* MEDDPICC Health Matrix — 商机级别 */}

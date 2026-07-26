@@ -47,6 +47,8 @@ export const clients = mysqlTable("clients", {
   plannedFirstVisitDate: int("plannedFirstVisitDate"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  /** 当前阶段开始时间（每次阶段推进时更新）。用于计算阶段停留天数。 */
+  stageChangedAt: timestamp("stageChangedAt").defaultNow().notNull(),
 });
 
 export type Client = typeof clients.$inferSelect;
@@ -529,6 +531,8 @@ export const opportunities = mysqlTable("opportunities", {
   riskAndMitigation: text("riskAndMitigation"), // 风险与应对
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  /** 当前商机子阶段开始时间（每次阶段推进时更新）。用于计算商机停滞天数。 */
+  stageChangedAt: timestamp("stageChangedAt").defaultNow().notNull(),
 });
 export type Opportunity = typeof opportunities.$inferSelect;
 export type InsertOpportunity = typeof opportunities.$inferInsert;

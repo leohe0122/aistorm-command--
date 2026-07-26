@@ -2689,6 +2689,13 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
         updatedAt: clients.updatedAt,
       }).from(clients);
 
+      // 1b. 客户阶段变更时间（stageChangedAt）
+      const allClientsWithStage = await db.select({
+        id: clients.id,
+        stageChangedAt: clients.stageChangedAt,
+      }).from(clients);
+      const stageChangedAtMap = new Map(allClientsWithStage.map(c => [c.id, c.stageChangedAt]));
+
       // 2. MEDDPICC 评分
       const allMeddpicc = await db.select({
         clientId: meddpicc.clientId,
@@ -2858,6 +2865,88 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
         oppsByClient.set(opp.clientId, list);
       });
 
+      // 8b. 商机阶段停滞数据（stageChangedAt）
+      const allOppsWithStage = await db.select({
+        id: opportunities.id,
+        clientId: opportunities.clientId,
+        name: opportunities.name,
+        stage: opportunities.stage,
+        status: opportunities.status,
+        estimatedValue: opportunities.estimatedValue,
+        stageChangedAt: opportunities.stageChangedAt,
+        updatedAt: opportunities.updatedAt,
+      }).from(opportunities);
+
+      const now = Date.now();
+      // 0→1 推进看板：每个非"进入商机"客户的阶段停留天数和本周动作
+      const zeroToOneBoard = allClients
+        .filter(c => c.stage !== '进入商机')
+        .map(c => {
+          const stageChangedAt = stageChangedAtMap.get(c.id);
+          const stageDwellDays = stageChangedAt
+            ? Math.floor((now - new Date(stageChangedAt).getTime()) / 86400000)
+            : Math.floor((now - new Date(c.updatedAt).getTime()) / 86400000);
+          const hasActionThisWeek = visitedThisWeek.has(c.id);
+          const visitStats = visitStatsByClient.get(c.id);
+          const mScore = meddpiccMap.get(c.id)?.avg ?? 0;
+          // 门控达标检查（简化版）
+          const keyContacts = (c as any).keyContactCount ?? 0;
+          const isStagnant = stageDwellDays > 14 && !hasActionThisWeek;
+          return {
+            id: c.id,
+            name: c.name,
+            stage: c.stage,
+            priority: c.priority,
+            stageDwellDays,
+            hasActionThisWeek,
+            lastVisitDate: visitStats?.lastVisitDate ?? null,
+            visitCount: visitStats?.visitCount ?? 0,
+            meddpiccAvg: mScore,
+            isStagnant,
+          };
+        })
+        .sort((a, b) => b.stageDwellDays - a.stageDwellDays); // 停滞最久的排前面
+
+      // 1→N 商机推进看板：每条活跃商机的停滞天数和MEDDPICC缺口
+      const oneToNBoard = allOppsWithStage
+        .filter(opp => opp.status === '活跃')
+        .map(opp => {
+          const stageChangedAt = opp.stageChangedAt;
+          const stageDwellDays = stageChangedAt
+            ? Math.floor((now - new Date(stageChangedAt).getTime()) / 86400000)
+            : Math.floor((now - new Date(opp.updatedAt).getTime()) / 86400000);
+          const meddpicc = oppMeddpiccMap.get(opp.id);
+          // 找出最弱的1-2个MEDDPICC维度
+          const dimLabels: Record<string, string> = {
+            metricsScore: 'M', economicBuyerScore: 'E', decisionCriteriaScore: 'Dc',
+            decisionProcessScore: 'Dp', paperProcessScore: 'P', implicatePainScore: 'I',
+            championScore: 'C', competitionScore: 'C2'
+          };
+          const weakDims: string[] = [];
+          if (meddpicc) {
+            const dimScores = Object.entries(dimLabels).map(([key, label]) => ({
+              label, score: (meddpicc as any)[key] ?? 0
+            }));
+            dimScores.sort((a, b) => a.score - b.score);
+            weakDims.push(...dimScores.slice(0, 2).filter(d => d.score <= 1).map(d => d.label));
+          }
+          // 该商机的待处理任务
+          const clientName = allClients.find(c => c.id === opp.clientId)?.name ?? '';
+          const isStagnant = stageDwellDays > 30;
+          return {
+            id: opp.id,
+            clientId: opp.clientId,
+            clientName,
+            name: opp.name,
+            stage: opp.stage,
+            estimatedValue: opp.estimatedValue,
+            stageDwellDays,
+            weakDims,
+            isStagnant,
+          };
+        })
+        .sort((a, b) => b.stageDwellDays - a.stageDwellDays);
+
       // 9. 高风险客户（MEDDPICC < 30 或 P0 且本周未拜访）
       const riskClients = allClients.filter(c => {
         const mScore = meddpiccMap.get(c.id)?.avg ?? 0;
@@ -2906,6 +2995,8 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
         visitedThisWeekCount: visitedThisWeek.size,
         riskClients,
         pendingTasksByRole: pendingTasks.map(t => ({ role: t.assignedRole, count: t.count })),
+        zeroToOneBoard,
+        oneToNBoard,
       };
     }),
   }),
