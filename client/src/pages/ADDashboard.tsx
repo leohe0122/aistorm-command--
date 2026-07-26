@@ -248,7 +248,7 @@ function RiskClientCard({ c, navigate, isExpanded, onToggle, onExpand }: {
 
   return (
     <>
-      <div className="rounded-lg bg-red-500/5 border border-red-500/20 overflow-hidden">
+      <div className="rounded-lg bg-red-500/5 border border-red-500/20 overflow-hidden isolate">
         <div className="flex items-center justify-between p-2">
           <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/battle-map?clientId=${c.id}`)}>
             <div className="text-sm font-medium truncate">{c.name}</div>
@@ -257,10 +257,10 @@ function RiskClientCard({ c, navigate, isExpanded, onToggle, onExpand }: {
               <RiskBadge reason={c.riskReason} />
             </div>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0 ml-2">
-            <div className="text-right">
+          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+            <div className="text-right min-w-[44px]">
               <div className={`text-sm font-bold ${c.meddpiccAvg < 30 ? "text-red-400" : "text-yellow-400"}`}>{c.meddpiccAvg}</div>
-              <div className="text-[10px] text-muted-foreground">MEDDPICC</div>
+              <div className="text-[10px] text-muted-foreground">avg</div>
             </div>
             <Button
               size="sm"
@@ -679,7 +679,7 @@ export default function ADDashboard() {
               <p className="text-xs">暂无高风险客户</p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
               {data.riskClients.map(c => (
                 <RiskClientCard
                   key={c.id}
