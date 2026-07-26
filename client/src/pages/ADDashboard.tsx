@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -134,6 +134,13 @@ function RiskClientCard({ c, navigate }: { c: any; navigate: (path: string) => v
 
   const utils = trpc.useUtils();
   const { data: latestScore, refetch: refetchScore } = trpc.prediction.getLatest.useQuery({ clientId: c.id });
+
+  // Auto-expand panel when cached score is available on first load
+  useEffect(() => {
+    if (latestScore && !result) {
+      setExpanded(true);
+    }
+  }, [latestScore]);
 
   const analyze = trpc.prediction.analyze.useMutation({
     onSuccess: (data) => { setResult(data); setExpanded(true); setAnalyzing(false); },

@@ -287,3 +287,10 @@
 - [x] 新增「系统设置」统一配置页面（/settings），含 RSS 信息源 / 飞书推送 / CRM 集成 三个 Tab
 - [x] 导航精简：settingsNavItems 将 /crm 和 /daily-briefing 合并为单一「系统设置」入口
 - [x] 情报雷达空状态文字「设置」改为可点击链接，直接跳转 /settings
+
+## Round 31 — AI分析缓存 + HKT商机数据完善
+- [x] AD指挥台：latestScore加载后自动展开AI分析面板（无需重新触发）
+- [x] HKT商机数据：为6条并行商机补充标准子阶段名称（初步需求/需求挖掘/技术验证/方案提案/商务谈判）
+- [x] 数据库初始化：创建所有缺失的核心表（clients/meddpicc/opportunities/pod_tasks等）
+- [x] 种子数据：录入5户T100客户基础数据（HKT/美的/大疆/荣耀/传音）
+- [x] 种子数据：为HKT录入6条并行商机（含标准子阶段+MEDDPICC评分+关键联系人）
