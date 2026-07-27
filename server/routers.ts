@@ -6,6 +6,13 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
+
+// Helper: extract JSON from model output that may be wrapped in ```json ... ``` markdown blocks
+function extractJSON(raw: string): string {
+  const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  return match ? match[1].trim() : raw.trim();
+}
+
 import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient,
   getMeddpiccByClientId, upsertMeddpicc,
   insertClient, deleteClientCascade,
@@ -305,7 +312,7 @@ export const appRouter = router({
         },
       });
 
-      const parsed = JSON.parse(String(res.choices[0].message.content) || "{}");
+      const parsed = JSON.parse(extractJSON(String(res.choices[0].message.content || "{}")));
       const signalId = await insertSignal({
         clientId: input.clientId,
         rawSignal: input.rawSignal,
@@ -591,7 +598,7 @@ ${signalsSummary}
         },
       });
 
-      const parsed = JSON.parse(String(res.choices[0].message.content) || '{"actions":[]}');
+      const parsed = JSON.parse(extractJSON(String(res.choices[0].message.content || '{"actions":[]}')));
 
       // Auto-append "安排拜访" action if client has never been visited or last visit > 30 days ago
       const visitCount = input.visitCount ?? 0;
@@ -733,7 +740,7 @@ MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
         model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
       });
-      const parsed = JSON.parse(String(res.choices[0].message.content || '{}'));
+      const parsed = JSON.parse(extractJSON(String(res.choices[0].message.content || '{}')));
       const tasks = (parsed.tasks || []).map((t: any) => ({
         clientId: input.clientId,
         title: t.title,
@@ -823,7 +830,7 @@ ${content}
           model: "gpt-4o-mini",
           messages: [{ role: "user", content: strategyPrompt }],
         });
-        const sParsed = JSON.parse(String(sRes.choices[0].message.content || "{}"));
+        const sParsed = JSON.parse(extractJSON(String(sRes.choices[0].message.content || "{}")));
         hookTopicDraft = sParsed.hookTopic || "";
         securityAngleDraft = sParsed.securityAngle || "";
         hookTopicBasis = sParsed.hookTopicBasis || "";
@@ -1047,7 +1054,7 @@ ${contentSource}
           messages: [{ role: "user", content: `你是一位MEDDPICC销售方法论专家。根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以如下JSON格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n{"items": [\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]}\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点牵连, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n必须返回JSON对象，key为items，value为数组。` }],
         }).then(r => {
           try {
-            const parsed = JSON.parse(String(r.choices[0].message.content || ""));
+            const parsed = JSON.parse(extractJSON(String(r.choices[0].message.content || "")));
             // Handle all possible wrapping keys
             if (Array.isArray(parsed)) return parsed;
             if (parsed.items) return parsed.items;
@@ -1067,7 +1074,7 @@ ${contentSource}
           messages: [{ role: "user", content: `你是一位大客户销售策略专家。根据以下拜访日志，提炼两个关键建议。\n\n拜访日志：\n${aiMinutes}\n\n请以JSON格式返回：\n{\n  "hookTopic": "基于本次拜访揭示的客户痛点和关注点，下次拜访最有效的敲门砖话题（一句话，具体、有针对性）",\n  "securityAngle": "基于客户痛点，建议的为信安全产品切入角度（具体产品线或解决方案）"\n}\n\n只返回JSON，不要其他文字。` }],
         }).then(r => {
           try {
-            return JSON.parse(String(r.choices[0].message.content || "{}"));
+            return JSON.parse(extractJSON(String(r.choices[0].message.content || "{}")));
           } catch { return {}; }
         }).catch(() => ({})),
 
@@ -1077,7 +1084,7 @@ ${contentSource}
           messages: [{ role: 'user', content: `从以下会议记录中识别所有提到的竞品厂商名称。常见竞品包括：奇安信(QAX)、Palo Alto Networks、CrowdStrike、Fortinet、Check Point、深信服、天山信息、安恒天蹄、火眉安全、绣球网络、SentinelOne、Microsoft Defender、Trend Micro、Symantec、McAfee等。\n\n会议记录：\n${aiMinutes}\n\n请以JSON格式返回，只返回实际提到的竞品名称（如果没有提到竞品则返回空数组）：\n{ "competitors": ["QAX", "Palo Alto Networks"] }` }],
         }).then(r => {
           try {
-            const p = JSON.parse(String(r.choices[0].message.content || '{}'));
+            const p = JSON.parse(extractJSON(String(r.choices[0].message.content || '{}')));
             return Array.isArray(p.competitors) ? p.competitors : [];
           } catch { return []; }
         }).catch(() => [] as string[]),
@@ -1422,7 +1429,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
         },
       });
 
-      const parsed = JSON.parse(String(res.choices[0].message.content) || "{}");
+      const parsed = JSON.parse(extractJSON(String(res.choices[0].message.content || "{}")));
       const aiAnalysis: string = parsed.analysis ?? '';
       const warnings: string[] = Array.isArray(parsed.warnings) ? parsed.warnings : [];
       await insertScore({
@@ -1516,7 +1523,7 @@ ${contactList}
         model: 'gpt-4o',
         messages: [{ role: 'user', content: prompt }],
       });
-      const parsed = JSON.parse(String(res.choices[0].message.content || '{}'));
+      const parsed = JSON.parse(extractJSON(String(res.choices[0].message.content || '{}')));
 
       // Save breakthroughTip and persona back to each contact
       const db = await getDb();
