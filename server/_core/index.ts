@@ -50,7 +50,10 @@ async function startServer() {
       const filename = req.file.originalname;
       const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
       const base = filename.includes(".") ? filename.slice(0, filename.lastIndexOf(".")) : filename;
-      const fileKey = `product-docs/${Date.now()}-${base}_${hash}${ext}`;
+      // Sanitize filename: replace non-ASCII chars with underscores, keep only safe chars
+      const safeBase = base.replace(/[^\x00-\x7F]/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '_').replace(/_+/g, '_').slice(0, 60);
+      const safeExt = ext.replace(/[^\x00-\x7F]/g, '').replace(/[^a-zA-Z0-9\.]/g, '').slice(0, 10);
+      const fileKey = `product-docs/${Date.now()}-${safeBase}_${hash}${safeExt}`;
       const { key, url } = await storagePut(fileKey, req.file.buffer, req.file.mimetype || "application/octet-stream");
       res.json({ fileKey: key, fileUrl: url, filename, mimeType: req.file.mimetype, fileSize: req.file.size });
     } catch (e: any) {
