@@ -5,8 +5,9 @@
 import { ENV } from "./_core/env";
 
 function getForgeConfig() {
-  const forgeUrl = ENV.forgeApiUrl;
-  const forgeKey = ENV.forgeApiKey;
+  // Always use the built-in Forge storage API, never OpenAI endpoint
+  const forgeUrl = process.env.BUILT_IN_FORGE_API_URL ?? ENV.forgeApiUrl;
+  const forgeKey = process.env.BUILT_IN_FORGE_API_KEY ?? ENV.forgeApiKey;
 
   if (!forgeUrl || !forgeKey) {
     throw new Error(
