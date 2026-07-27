@@ -223,6 +223,28 @@ const assertApiKey = () => {
   }
 };
 
+// Resolve API URL and key dynamically from DB config, fallback to ENV
+async function resolveProviderConfig(model?: string): Promise<{ apiUrl: string; apiKey: string }> {
+  try {
+    const { getLLMProviderConfig } = await import('../db.js');
+    // Determine tier based on model name hint
+    const isFastModel = model && (model.includes('mini') || model.includes('flash') || model.includes('haiku') || model.includes('4-flash'));
+    const tier = isFastModel ? 'fast' : 'primary';
+    const cfg = await getLLMProviderConfig(tier);
+    if (cfg) {
+      const apiUrl = `${cfg.apiUrl.replace(/\/$/, '')}/v1/chat/completions`;
+      return { apiUrl, apiKey: cfg.apiKey };
+    }
+  } catch {
+    // DB not available, fall through to ENV
+  }
+  // Fallback to ENV
+  return {
+    apiUrl: resolveApiUrl(),
+    apiKey: ENV.forgeApiKey,
+  };
+}
+
 const normalizeResponseFormat = ({
   responseFormat,
   response_format,
@@ -340,8 +362,6 @@ const fetchWithBackoff = async (
 };
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
-
   const {
     messages,
     tools,
@@ -401,11 +421,14 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const response = await fetchWithBackoff(resolveApiUrl(), {
+  const { apiUrl, apiKey } = await resolveProviderConfig(model);
+  if (!apiKey) throw new Error("LLM API Key not configured. Please set up a provider in System Settings → AI 模型配置.");
+
+  const response = await fetchWithBackoff(apiUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(payload),
   });

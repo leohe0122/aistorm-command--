@@ -162,7 +162,7 @@ export const appRouter = router({
   "reasoning": "建议理由（2-3句，说明为什么选这个敲门砖和切入点，引用了哪些情报或产品能力）"
 }`;
       const result = await invokeLLM({
-        model: 'gemini-2.5-flash',
+        model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
       });
       const textContent = result.choices[0]?.message?.content;
@@ -2452,6 +2452,100 @@ ${contactList}
       setSystemConfig(input.key, input.value)
     ),
   }),
+
+  // ── LLM Configuration ─────────────────────────────────────────────────────
+  llmConfig: router({
+    // Get all configured providers (keys are masked)
+    getAll: publicProcedure.query(async () => {
+      const keys = ["llm_openai_key", "llm_claude_key", "llm_glm_key", "llm_custom_key", "llm_custom_url", "llm_primary_provider", "llm_fast_provider"];
+      const configs: Record<string, string> = {};
+      for (const k of keys) {
+        const val = await getSystemConfig(k);
+        if (val) {
+          // Mask API keys for display
+          if (k.endsWith("_key") && val.length > 8) {
+            configs[k] = val.slice(0, 6) + "••••••••" + val.slice(-4);
+          } else {
+            configs[k] = val;
+          }
+        }
+      }
+      return configs;
+    }),
+    // Save a provider's API key
+    setKey: publicProcedure.input(z.object({
+      provider: z.enum(["openai", "claude", "glm", "custom"]),
+      apiKey: z.string(),
+      customUrl: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      await setSystemConfig(`llm_${input.provider}_key`, input.apiKey);
+      if (input.provider === "custom" && input.customUrl) {
+        await setSystemConfig("llm_custom_url", input.customUrl);
+      }
+      return { ok: true };
+    }),
+    // Set routing preferences
+    setRouting: publicProcedure.input(z.object({
+      primaryProvider: z.enum(["openai", "claude", "glm", "custom", "auto"]),
+      fastProvider: z.enum(["openai", "claude", "glm", "custom", "auto"]),
+    })).mutation(async ({ input }) => {
+      await setSystemConfig("llm_primary_provider", input.primaryProvider);
+      await setSystemConfig("llm_fast_provider", input.fastProvider);
+      return { ok: true };
+    }),
+    // Test connection for a provider
+    testConnection: publicProcedure.input(z.object({
+      provider: z.enum(["openai", "claude", "glm", "custom"]),
+    })).mutation(async ({ input }) => {
+      const apiKey = await getSystemConfig(`llm_${input.provider}_key`);
+      if (!apiKey) throw new Error(`未配置 ${input.provider} API Key`);
+
+      const providerConfig: Record<string, { url: string; model: string; headers?: Record<string, string>; body?: object }> = {
+        openai: { url: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
+        claude: { url: "https://api.anthropic.com/v1/messages", model: "claude-3-haiku-20240307",
+          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+          body: { model: "claude-3-haiku-20240307", max_tokens: 5, messages: [{ role: "user", content: "hi" }] }
+        },
+        glm: { url: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4-flash" },
+        custom: { url: (await getSystemConfig("llm_custom_url")) || "", model: "gpt-4o-mini" },
+      };
+
+      const cfg = providerConfig[input.provider];
+      if (!cfg.url) throw new Error("请先填写自定义 API 端点");
+
+      try {
+        let resp: Response;
+        if (input.provider === "claude") {
+          resp = await fetch(cfg.url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...cfg.headers },
+            body: JSON.stringify(cfg.body),
+          });
+        } else {
+          resp = await fetch(cfg.url, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ model: cfg.model, messages: [{ role: "user", content: "hi" }], max_tokens: 5 }),
+          });
+        }
+        if (!resp.ok) {
+          const err = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${err.slice(0, 100)}`);
+        }
+        return { ok: true, message: "连接成功" };
+      } catch (e: any) {
+        throw new Error(`连接失败: ${e.message}`);
+      }
+    }),
+    // Remove a provider's key
+    removeKey: publicProcedure.input(z.object({
+      provider: z.enum(["openai", "claude", "glm", "custom"]),
+    })).mutation(async ({ input }) => {
+      await setSystemConfig(`llm_${input.provider}_key`, "");
+      return { ok: true };
+    }),
+  }),
+
 
   // ── Email Auth (仅允许 @aistorm.com 邮箱) ────────────────────────────────────────────
   emailAuth: router({

@@ -613,3 +613,40 @@ export async function deleteArsenalPricing(id: number): Promise<void> {
   if (!db) return;
   await db.delete(arsenalPricing).where(eq(arsenalPricing.id, id));
 }
+
+// ── LLM Dynamic Config ────────────────────────────────────────────────────────
+export async function getLLMProviderConfig(tier: "primary" | "fast"): Promise<{ apiUrl: string; apiKey: string; provider: string } | null> {
+  // Tier mapping: primary = high-quality tasks, fast = extraction/summarization
+  const providerPref = await getSystemConfig(tier === "primary" ? "llm_primary_provider" : "llm_fast_provider");
+
+  const PROVIDER_URLS: Record<string, string> = {
+    openai: "https://api.openai.com",
+    claude: "https://api.anthropic.com",
+    glm: "https://open.bigmodel.cn/api/paas",
+    custom: (await getSystemConfig("llm_custom_url")) || "",
+  };
+
+  // Build priority list
+  const candidates: string[] = [];
+  if (providerPref && providerPref !== "auto") candidates.push(providerPref);
+  // Fallback order
+  for (const p of ["openai", "glm", "claude", "custom"]) {
+    if (!candidates.includes(p)) candidates.push(p);
+  }
+
+  for (const provider of candidates) {
+    const key = await getSystemConfig(`llm_${provider}_key`);
+    if (key && key.trim()) {
+      const url = PROVIDER_URLS[provider] || "";
+      if (!url) continue;
+      return { apiUrl: url, apiKey: key, provider };
+    }
+  }
+
+  // Final fallback: env vars
+  const envKey = process.env.OPENAI_API_KEY || process.env.BUILT_IN_FORGE_API_KEY || "";
+  const envUrl = process.env.OPENAI_API_KEY ? "https://api.openai.com" : (process.env.BUILT_IN_FORGE_API_URL || "");
+  if (envKey) return { apiUrl: envUrl, apiKey: envKey, provider: "env" };
+
+  return null;
+}

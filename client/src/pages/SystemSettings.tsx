@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -7,6 +8,7 @@ import {
   CheckCircle2, XCircle, ExternalLink, Eye, EyeOff, RefreshCw, Send,
   Info, Upload, User, Briefcase, ArrowDownToLine, Download, Webhook, Clock, Save
 } from "lucide-react";
+import { Cpu, KeyRound, Zap, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -393,16 +395,196 @@ function CrmIntegrationTab() {
   );
 }
 
+
+// ── LLM Config Tab ──────────────────────────────────────────────────────────
+const PROVIDERS = [
+  { id: "openai", label: "OpenAI", desc: "GPT-4o / GPT-4o-mini", color: "text-green-400", placeholder: "sk-proj-..." },
+  { id: "claude", label: "Anthropic Claude", desc: "Claude 3.5 Sonnet / Haiku", color: "text-orange-400", placeholder: "sk-ant-..." },
+  { id: "glm", label: "智谱 GLM", desc: "GLM-4 / GLM-4-Flash", color: "text-blue-400", placeholder: "your-glm-api-key" },
+  { id: "custom", label: "自定义端点", desc: "OpenAI 兼容 API", color: "text-purple-400", placeholder: "your-api-key" },
+] as const;
+
+type ProviderId = "openai" | "claude" | "glm" | "custom";
+
+const MODEL_TIERS = [
+  { id: "primary", label: "核心任务模型", desc: "行动指令、竞品分析、关键人分析等高质量输出" },
+  { id: "fast", label: "辅助任务模型", desc: "MEDDPICC提取、策略摘要、竞品识别等快速提取" },
+] as const;
+
+function LLMConfigTab() {
+  const { data: configs = {} } = trpc.llmConfig.getAll.useQuery();
+  const setKey = trpc.llmConfig.setKey.useMutation({ onSuccess: () => { toast.success("API Key 已保存"); refetchConfigs(); } });
+  const removeKey = trpc.llmConfig.removeKey.useMutation({ onSuccess: () => { toast.success("已移除"); refetchConfigs(); } });
+  const setRouting = trpc.llmConfig.setRouting.useMutation({ onSuccess: () => toast.success("路由配置已保存") });
+  const testConn = trpc.llmConfig.testConnection.useMutation({
+    onSuccess: (d) => toast.success(d.message || "连接成功"),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const utils = trpc.useUtils();
+  const refetchConfigs = () => utils.llmConfig.getAll.invalidate();
+
+  const [inputs, setInputs] = useState<Record<string, string>>({});
+  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const [customUrl, setCustomUrl] = useState("");
+  const [primaryProvider, setPrimaryProvider] = useState("auto");
+  const [fastProvider, setFastProvider] = useState("auto");
+
+  useEffect(() => {
+    if (configs["llm_primary_provider"]) setPrimaryProvider(configs["llm_primary_provider"]);
+    if (configs["llm_fast_provider"]) setFastProvider(configs["llm_fast_provider"]);
+    if (configs["llm_custom_url"]) setCustomUrl(configs["llm_custom_url"]);
+  }, [configs]);
+
+  const hasKey = (pid: string) => !!configs[`llm_${pid}_key`];
+
+  const handleSaveKey = (pid: ProviderId) => {
+    const key = inputs[pid]?.trim();
+    if (!key) { toast.error("请输入 API Key"); return; }
+    setKey.mutate({ provider: pid, apiKey: key, customUrl: pid === "custom" ? customUrl : undefined });
+    setInputs(prev => ({ ...prev, [pid]: "" }));
+  };
+
+  const handleSaveRouting = () => {
+    setRouting.mutate({ primaryProvider: primaryProvider as any, fastProvider: fastProvider as any });
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-base font-semibold text-foreground mb-1">AI 模型配置</h2>
+        <p className="text-xs text-muted-foreground">配置多个 LLM 提供商的 API Key，系统根据任务类型自动选择最合适的模型。已配置的提供商会参与路由，未配置的自动跳过。</p>
+      </div>
+
+      {/* Provider Keys */}
+      <div className="space-y-3">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+          <KeyRound className="w-3.5 h-3.5" /> API Key 配置
+        </div>
+        {PROVIDERS.map(p => (
+          <div key={p.id} className="bg-card border border-border rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className={`text-sm font-semibold ${p.color}`}>{p.label}</span>
+                <span className="text-xs text-muted-foreground">{p.desc}</span>
+              </div>
+              {hasKey(p.id) ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-green-400 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />已配置</span>
+                  <button onClick={() => removeKey.mutate({ provider: p.id as ProviderId })} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"><XCircle className="w-3 h-3" />移除</button>
+                </div>
+              ) : (
+                <span className="text-xs text-muted-foreground">未配置</span>
+              )}
+            </div>
+            {hasKey(p.id) && (
+              <div className="mb-3 px-3 py-2 bg-muted/30 rounded-lg text-xs text-muted-foreground font-mono">
+                {configs[`llm_${p.id}_key`]}
+              </div>
+            )}
+            {p.id === "custom" && (
+              <Input
+                placeholder="https://your-api.com/v1"
+                value={customUrl}
+                onChange={e => setCustomUrl(e.target.value)}
+                className="mb-2 text-xs h-8"
+              />
+            )}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type={showKeys[p.id] ? "text" : "password"}
+                  placeholder={hasKey(p.id) ? "输入新 Key 以替换..." : p.placeholder}
+                  value={inputs[p.id] || ""}
+                  onChange={e => setInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
+                  className="text-xs h-8 pr-8"
+                />
+                <button
+                  onClick={() => setShowKeys(prev => ({ ...prev, [p.id]: !prev[p.id] }))}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showKeys[p.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <Button size="sm" className="h-8 text-xs" onClick={() => handleSaveKey(p.id as ProviderId)} disabled={!inputs[p.id]?.trim()}>
+                <Save className="w-3 h-3 mr-1" />保存
+              </Button>
+              {hasKey(p.id) && (
+                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => testConn.mutate({ provider: p.id as ProviderId })} disabled={testConn.isPending}>
+                  <Zap className="w-3 h-3 mr-1" />{testConn.isPending ? "测试中..." : "测试"}
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Routing Preferences */}
+      <div className="space-y-3">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+          <Shield className="w-3.5 h-3.5" /> 路由偏好
+        </div>
+        <div className="bg-card border border-border rounded-xl p-4 space-y-4">
+          <p className="text-xs text-muted-foreground">设置不同任务类型优先使用哪个提供商。选"自动"则按已配置的提供商依次尝试（OpenAI → GLM → Claude → 自定义）。</p>
+          {MODEL_TIERS.map(tier => (
+            <div key={tier.id} className="flex items-center gap-4">
+              <div className="flex-1">
+                <div className="text-sm font-medium text-foreground">{tier.label}</div>
+                <div className="text-xs text-muted-foreground">{tier.desc}</div>
+              </div>
+              <select
+                value={tier.id === "primary" ? primaryProvider : fastProvider}
+                onChange={e => tier.id === "primary" ? setPrimaryProvider(e.target.value) : setFastProvider(e.target.value)}
+                className="bg-muted border border-border rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/50"
+              >
+                <option value="auto">自动（按优先级）</option>
+                <option value="openai">OpenAI</option>
+                <option value="claude">Anthropic Claude</option>
+                <option value="glm">智谱 GLM</option>
+                <option value="custom">自定义端点</option>
+              </select>
+            </div>
+          ))}
+          <Button size="sm" className="text-xs h-8" onClick={handleSaveRouting}>
+            <Save className="w-3 h-3 mr-1" />保存路由配置
+          </Button>
+        </div>
+      </div>
+
+      {/* Current Status */}
+      <div className="bg-muted/20 border border-border rounded-xl p-4">
+        <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-2">
+          <Cpu className="w-3.5 h-3.5" /> 当前状态
+        </div>
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <div>已配置提供商：{PROVIDERS.filter(p => hasKey(p.id)).map(p => p.label).join("、") || "无（将使用环境变量 OPENAI_API_KEY）"}</div>
+          <div>核心任务路由：{primaryProvider === "auto" ? "自动" : PROVIDERS.find(p => p.id === primaryProvider)?.label || primaryProvider}</div>
+          <div>辅助任务路由：{fastProvider === "auto" ? "自动" : PROVIDERS.find(p => p.id === fastProvider)?.label || fastProvider}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Settings Page ──────────────────────────────────────────────────────
 const TABS = [
   { id: "rss", label: "RSS 信息源", icon: Rss, desc: "自定义第三方情报 RSS" },
   { id: "feishu", label: "飞书推送", icon: Bell, desc: "每日战情简报" },
   { id: "crm", label: "CRM 集成", icon: Database, desc: "销售易数据同步" },
+  { id: "llm", label: "AI 模型配置", icon: Cpu, desc: "多模型 Key 与路由" },
 ];
 
 export default function SystemSettings() {
   const [activeTab, setActiveTab] = useState("rss");
-
+  const { user } = useAuth();
+  if (!user) return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">请先登录</div>;
+  if (user.role !== "admin") return (
+    <div className="flex flex-col items-center justify-center h-full gap-3">
+      <Shield className="w-10 h-10 text-muted-foreground/40" />
+      <div className="text-sm font-medium text-foreground">仅管理员可访问系统设置</div>
+      <div className="text-xs text-muted-foreground">请联系系统管理员（Leo）获取权限</div>
+    </div>
+  );
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Page header */}
@@ -446,6 +628,7 @@ export default function SystemSettings() {
           {activeTab === "rss" && <RssSourcesTab />}
           {activeTab === "feishu" && <FeishuBriefingTab />}
           {activeTab === "crm" && <CrmIntegrationTab />}
+          {activeTab === "llm" && <LLMConfigTab />}
         </div>
       </div>
     </div>
