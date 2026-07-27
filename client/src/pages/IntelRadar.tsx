@@ -60,6 +60,9 @@ export default function IntelRadar() {
   const [complianceExpanded, setComplianceExpanded] = useState(true);
   const [confirmDeleteSignalId, setConfirmDeleteSignalId] = useState<number | null>(null);
   const [deletingSignalId, setDeletingSignalId] = useState<number | null>(null);
+  const [selectedSignalIds, setSelectedSignalIds] = useState<Set<number>>(new Set());
+  const [confirmBatchDeleteSignals, setConfirmBatchDeleteSignals] = useState(false);
+  const [batchDeletingSignals, setBatchDeletingSignals] = useState(false);
 
   const { data: clients = [] } = trpc.clients.list.useQuery();
   const { data: signals = [], refetch } = trpc.intelligence.listByClient.useQuery(
@@ -99,6 +102,40 @@ export default function IntelRadar() {
       toast.error("删除失败，请重试");
     },
   });
+
+  const deleteSignalBatchMutation = trpc.intelligence.deleteBatch.useMutation({
+    onSuccess: () => {
+      refetch();
+      refetchAll();
+      setSelectedSignalIds(new Set());
+      setConfirmBatchDeleteSignals(false);
+      setBatchDeletingSignals(false);
+      toast.success("已批量删除所选信号");
+    },
+    onError: () => {
+      setBatchDeletingSignals(false);
+      toast.error("批量删除失败，请重试");
+    },
+  });
+
+  const toggleSignalSelect = (id: number) => {
+    setSelectedSignalIds(prev => {
+      const next = new Set(Array.from(prev));
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const currentSignals = selectedClientId ? signals : allSignals;
+
+  const toggleSelectAllSignals = () => {
+    if (selectedSignalIds.size === currentSignals.length) {
+      setSelectedSignalIds(new Set());
+    } else {
+      setSelectedSignalIds(new Set(currentSignals.map((s: any) => s.id)));
+    }
+  };
 
   const { data: complianceItems = [], isLoading: fetchingCompliance, refetch: refetchCompliance } = trpc.rss.fetchComplianceNews.useQuery(
     { limit: 30 }
@@ -401,6 +438,25 @@ export default function IntelRadar() {
                   {selectedClientId ? signals.length : allSignals.length} 条记录
                 </div>
               </div>
+              {/* Batch select toolbar */}
+              {currentSignals.length > 0 && (
+                <div className="flex items-center justify-between px-1 pb-1">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" className="w-3.5 h-3.5 accent-primary"
+                      checked={selectedSignalIds.size === currentSignals.length && currentSignals.length > 0}
+                      onChange={toggleSelectAllSignals} />
+                    <span className="text-xs text-muted-foreground">
+                      {selectedSignalIds.size > 0 ? `已选 ${selectedSignalIds.size} 条` : "全选"}
+                    </span>
+                  </label>
+                  {selectedSignalIds.size > 0 && (
+                    <Button variant="destructive" size="sm" className="h-6 text-xs px-2 gap-1"
+                      onClick={() => setConfirmBatchDeleteSignals(true)}>
+                      <Trash2 className="w-3 h-3" />删除所选 ({selectedSignalIds.size})
+                    </Button>
+                  )}
+                </div>
+              )}
               <div className="space-y-3 max-h-[500px] overflow-y-auto">
                 {(selectedClientId ? signals : allSignals).length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
@@ -443,6 +499,13 @@ export default function IntelRadar() {
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
+                            <input
+                              type="checkbox"
+                              className="w-3.5 h-3.5 accent-primary"
+                              checked={selectedSignalIds.has(signal.id)}
+                              onChange={() => toggleSignalSelect(signal.id)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
                           </div>
                         </div>
                         <div className="text-xs text-muted-foreground mb-2 line-clamp-2">{signal.rawSignal}</div>
@@ -555,6 +618,30 @@ export default function IntelRadar() {
               }}
             >
               {deletingSignalId !== null ? "删除中..." : "确认删除"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Batch Delete Signals Confirmation Dialog */}
+      <Dialog open={confirmBatchDeleteSignals} onOpenChange={(open) => { if (!open) setConfirmBatchDeleteSignals(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <Trash2 className="w-4 h-4" />
+              确认批量删除情报信号
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-muted-foreground">
+              即将永久删除 <span className="text-red-400 font-medium">{selectedSignalIds.size} 条</span> 情报信号及其 AI 解读，此操作不可撤销。
+            </p>
+          </div>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmBatchDeleteSignals(false)}>取消</Button>
+            <Button variant="destructive" size="sm" disabled={batchDeletingSignals}
+              onClick={() => { setBatchDeletingSignals(true); deleteSignalBatchMutation.mutate({ ids: Array.from(selectedSignalIds) }); }}>
+              {batchDeletingSignals ? "删除中..." : `确认删除 ${selectedSignalIds.size} 条`}
             </Button>
           </div>
         </DialogContent>

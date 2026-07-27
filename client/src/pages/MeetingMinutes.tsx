@@ -6,6 +6,7 @@ import {
   Send, CheckCircle2, TrendingUp, AlertCircle, Upload, FileText,
   Target, Shield, Clock, Users, Crosshair, Zap, Info, X, Trash2
 } from "lucide-react";
+import { Edit2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -128,6 +129,9 @@ export default function MeetingMinutes() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [editingMeetingId, setEditingMeetingId] = useState<number | null>(null);
+  const [editMeetingData, setEditMeetingData] = useState<{meetingDate: string; visitType: string; attendees: string; keyPoints: string}>({ meetingDate: "", visitType: "", attendees: "", keyPoints: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
@@ -170,6 +174,29 @@ export default function MeetingMinutes() {
       toast.error("批量删除失败，请重试");
     },
   });
+
+  const updateMeetingMutation = trpc.meetings.update.useMutation({
+    onSuccess: () => {
+      refetch();
+      setEditingMeetingId(null);
+      setSavingEdit(false);
+      toast.success("日志已更新");
+    },
+    onError: () => {
+      setSavingEdit(false);
+      toast.error("更新失败，请重试");
+    },
+  });
+
+  const handleStartEdit = (meeting: any) => {
+    setEditingMeetingId(meeting.id);
+    setEditMeetingData({
+      meetingDate: new Date(meeting.meetingDate).toISOString().split("T")[0],
+      visitType: meeting.visitType || "",
+      attendees: meeting.attendees || "",
+      keyPoints: meeting.keyPoints || "",
+    });
+  };
 
   const toggleSelect = (id: number) => {
     setSelectedIds(prev => {
@@ -630,6 +657,13 @@ export default function MeetingMinutes() {
                       )}
                       {expandedId === meeting.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                       <button
+                        onClick={(e) => { e.stopPropagation(); handleStartEdit(meeting); }}
+                        className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                        title="编辑此日志"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(meeting.id); }}
                         className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
                         title="删除此日志"
@@ -849,6 +883,62 @@ export default function MeetingMinutes() {
               <AlertCircle className="w-3 h-3" />
               应用后将覆盖战场地图中该客户的现有值。你也可以稍后在拜访日志展开区查看并手动应用。
             </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Meeting Dialog */}
+      <Dialog open={editingMeetingId !== null} onOpenChange={(open) => { if (!open) setEditingMeetingId(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit2 className="w-4 h-4" />
+              编辑拜访日志
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">拜访日期</label>
+                <Input type="date" className="h-8 text-sm"
+                  value={editMeetingData.meetingDate}
+                  onChange={(e) => setEditMeetingData({ ...editMeetingData, meetingDate: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">拜访类型</label>
+                <Select value={editMeetingData.visitType} onValueChange={(v) => setEditMeetingData({ ...editMeetingData, visitType: v })}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="选择类型" /></SelectTrigger>
+                  <SelectContent>
+                    {["首次拜访", "跟进拜访", "技术交流", "高层拜访", "方案演示", "商务洽谈", "签约"].map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">参会人员</label>
+              <Input className="h-8 text-sm" placeholder="参会人员姓名，逗号分隔"
+                value={editMeetingData.attendees}
+                onChange={(e) => setEditMeetingData({ ...editMeetingData, attendees: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">关键信息点</label>
+              <Textarea className="text-sm h-20 resize-none" placeholder="本次拜访的关键信息点..."
+                value={editMeetingData.keyPoints}
+                onChange={(e) => setEditMeetingData({ ...editMeetingData, keyPoints: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" size="sm" onClick={() => setEditingMeetingId(null)}>取消</Button>
+            <Button size="sm" disabled={savingEdit}
+              onClick={() => {
+                if (!editingMeetingId) return;
+                setSavingEdit(true);
+                updateMeetingMutation.mutate({ id: editingMeetingId, ...editMeetingData });
+              }}>
+              {savingEdit ? "保存中..." : "保存修改"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -352,6 +352,14 @@
 - [x] 关键人新增表单：补全 buyingRole 字段（Buying Group 角色选择器，默认"未知"）
 - [x] 拜访日志：历史列表顶部全选复选框 + 批量删除按钮（后端 meetings.deleteBatch 接口）
 
+## Round 48 — 批量删除扩展 + 拜访日志编辑（2026-07-27）
+- [x] 后端：contacts.deleteBatch 接口（关键人批量删除）
+- [x] 后端：intelligence.deleteBatch 接口（情报信号批量删除）
+- [x] 后端：meetings.update 接口（拜访日志编辑，支持修改日期/类型/参会人/要点）
+- [x] 前端：战场地图关键人列表顶部全选+批量删除（复选框+确认弹窗）
+- [x] 前端：情报雷达历史信号列表顶部全选+批量删除（复选框+确认弹窗）
+- [x] 前端：拜访日志每条记录添加铅笔编辑按钮，弹出编辑表单（日期/类型/参会人/要点）
+
 ## Round 45 — 情报雷达RSS分离修复（2026-07-27）
 - [x] 修复：合规政策RSS源（菲律宾NPC等）被混入客户专属新闻流 → fetchNews路由跳过tags含"合规政策"的RSS源
 - [x] 新增：rss.fetchComplianceNews专用路由，只抓取tags含"合规政策"的RSS源

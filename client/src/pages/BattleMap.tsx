@@ -809,6 +809,9 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
   const [chainAnalysis, setChainAnalysis] = useState<{ reportingChain: string; tips: any[] } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [showChainPanel, setShowChainPanel] = useState(false);
+  const [selectedContactIds, setSelectedContactIds] = useState<Set<number>>(new Set());
+  const [confirmBatchDeleteContacts, setConfirmBatchDeleteContacts] = useState(false);
+  const [batchDeletingContacts, setBatchDeletingContacts] = useState(false);
   const [newContact, setNewContact] = useState({
     name: "", title: "", department: "", influence: "影响者", relationship: "未接触", email: "", linkedinUrl: "", notes: ""
     , buyingRole: "未知"
@@ -841,6 +844,37 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
       toast.success("已删除");
     },
   });
+
+  const deleteContactBatchMutation = trpc.contacts.deleteBatch.useMutation({
+    onSuccess: () => {
+      utils.contacts.listByClient.invalidate({ clientId });
+      setSelectedContactIds(new Set());
+      setConfirmBatchDeleteContacts(false);
+      setBatchDeletingContacts(false);
+      toast.success("已批量删除所选关键人");
+    },
+    onError: () => {
+      setBatchDeletingContacts(false);
+      toast.error("批量删除失败，请重试");
+    },
+  });
+
+  const toggleContactSelect = (id: number) => {
+    setSelectedContactIds(prev => {
+      const next = new Set(Array.from(prev));
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllContacts = () => {
+    if (selectedContactIds.size === contacts.length) {
+      setSelectedContactIds(new Set());
+    } else {
+      setSelectedContactIds(new Set(contacts.map((c: any) => c.id)));
+    }
+  };
 
   const analyzeChain = trpc.contacts.analyzeChain.useMutation({
     onSuccess: (data: any) => {
@@ -948,6 +982,26 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
           </div>
         );
       })()}
+
+      {/* Batch select toolbar */}
+      {contacts.length > 0 && (
+        <div className="flex items-center justify-between px-1 pb-1">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" className="w-3.5 h-3.5 accent-primary"
+              checked={selectedContactIds.size === contacts.length && contacts.length > 0}
+              onChange={toggleSelectAllContacts} />
+            <span className="text-xs text-muted-foreground">
+              {selectedContactIds.size > 0 ? `已选 ${selectedContactIds.size} 人` : "全选"}
+            </span>
+          </label>
+          {selectedContactIds.size > 0 && (
+            <Button variant="destructive" size="sm" className="h-6 text-xs px-2 gap-1"
+              onClick={() => setConfirmBatchDeleteContacts(true)}>
+              <Trash2 className="w-3 h-3" />删除所选 ({selectedContactIds.size})
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Contact list */}
       {contacts.length === 0 && !showAdd && (
@@ -1074,7 +1128,7 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                     ))}
                   </div>
                 </div>
-                <div className="flex gap-1 flex-shrink-0">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <button onClick={() => { setEditingId(contact.id); setEditData({}); }}
                     className="text-muted-foreground hover:text-foreground transition-colors p-1">
                     <Edit2 className="w-3 h-3" />
@@ -1083,6 +1137,13 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                     className="text-muted-foreground hover:text-red-400 transition-colors p-1">
                     <Trash2 className="w-3 h-3" />
                   </button>
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-primary ml-0.5"
+                    checked={selectedContactIds.has(contact.id)}
+                    onChange={() => toggleContactSelect(contact.id)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
                 </div>
               </div>
             </div>
@@ -1161,6 +1222,31 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
           className="w-full flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors py-2 border border-dashed border-border hover:border-primary/40 rounded-lg">
           <Plus className="w-3 h-3" />添加关键人
         </button>
+      )}
+
+      {/* Batch Delete Contacts Confirmation Dialog */}
+      {confirmBatchDeleteContacts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-card border border-border rounded-xl p-5 max-w-sm w-full mx-4 shadow-xl">
+            <div className="flex items-center gap-2 mb-3 text-red-400">
+              <Trash2 className="w-4 h-4" />
+              <span className="font-semibold text-sm">确认批量删除关键人</span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              即将永久删除 <span className="text-red-400 font-medium">{selectedContactIds.size} 位</span> 关键人，此操作不可撤销。
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmBatchDeleteContacts(false)}
+                className="px-3 py-1.5 text-xs rounded-md border border-border hover:bg-muted/30 transition-colors">取消</button>
+              <button
+                disabled={batchDeletingContacts}
+                onClick={() => { setBatchDeletingContacts(true); deleteContactBatchMutation.mutate({ ids: Array.from(selectedContactIds) }); }}
+                className="px-3 py-1.5 text-xs rounded-md bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30 transition-colors disabled:opacity-50">
+                {batchDeletingContacts ? "删除中..." : `确认删除 ${selectedContactIds.size} 人`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

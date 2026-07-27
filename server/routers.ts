@@ -17,7 +17,7 @@ import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient
   getMeddpiccByClientId, upsertMeddpicc,
   insertClient, deleteClientCascade,
   getSignalsByClientId, getAllRecentSignals, insertSignal, updateSignal,
-  deleteSignal,
+  deleteSignal, deleteSignalBatch,
   getActionsByClientId, getActionsByRole, insertActions, completeAction, deleteActionById, clearPendingActionsByClient,
   getOnePagersByClientId, insertOnePager,
   getAmmoByClientId, insertAmmo,
@@ -27,6 +27,7 @@ import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient
   getLatestScoreByClientId, insertScore,
   getDealReviews, insertDealReview,
   getContactsByClientId, insertContact, updateContact, deleteContact,
+  deleteContactBatch,
   getWeeklyReportData,
   saveMeddpiccSnapshot, getMeddpiccHistory,
   getSystemConfig, setSystemConfig, getAllSystemConfigs,
@@ -334,6 +335,10 @@ export const appRouter = router({
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await deleteSignal(input.id);
       return { success: true };
+    }),
+    deleteBatch: protectedProcedure.input(z.object({ ids: z.array(z.number()) })).mutation(async ({ input }) => {
+      await deleteSignalBatch(input.ids);
+      return { success: true, deleted: input.ids.length };
     }),
   }),
 
@@ -1196,6 +1201,20 @@ ${contentSource}
       await deleteMeetingBatch(input.ids);
       return { success: true, deleted: input.ids.length };
     }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      meetingDate: z.string().optional(),
+      visitType: z.string().optional(),
+      attendees: z.string().optional(),
+      keyPoints: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const { id, meetingDate, ...rest } = input;
+      await updateMeeting(id, {
+        ...(meetingDate ? { meetingDate: new Date(meetingDate) } : {}),
+        ...rest,
+      });
+      return { success: true };
+    }),
   }),
 
   // ── POD Tasks ─────────────────────────────────────────────────────────────
@@ -1556,6 +1575,10 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
     delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
       deleteContact(input.id)
     ),
+    deleteBatch: protectedProcedure.input(z.object({ ids: z.array(z.number()) })).mutation(async ({ input }) => {
+      await deleteContactBatch(input.ids);
+      return { success: true, deleted: input.ids.length };
+    }),
     // AI 分析关键人汇报链路，生成突破建议
     analyzeChain: publicProcedure.input(z.object({
       clientId: z.number(),

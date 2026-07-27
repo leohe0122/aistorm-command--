@@ -219,6 +219,14 @@ export async function deleteSignal(id: number): Promise<void> {
   if (!db) return;
   await db.delete(intelligenceSignals).where(eq(intelligenceSignals.id, id));
 }
+export async function deleteSignalBatch(ids: number[]): Promise<void> {
+  if (!ids.length) return;
+  const db = await getDb();
+  if (!db) return;
+  const { inArray } = await import('drizzle-orm');
+  await db.delete(intelligenceSignals).where(inArray(intelligenceSignals.id, ids));
+}
+
 
 // ── Action Items ───────────────────────────────────────────────────────────
 export async function getActionsByClientId(clientId: number): Promise<ActionItem[]> {
@@ -451,6 +459,14 @@ export async function deleteContact(id: number): Promise<void> {
   if (!db) return;
   await db.delete(keyContacts).where(eq(keyContacts.id, id));
 }
+export async function deleteContactBatch(ids: number[]): Promise<void> {
+  if (!ids.length) return;
+  const db = await getDb();
+  if (!db) return;
+  const { inArray } = await import('drizzle-orm');
+  await db.delete(keyContacts).where(inArray(keyContacts.id, ids));
+}
+
 
 // ── Weekly Report Aggregation ─────────────────────────────────────────────────
 export async function getWeeklyReportData() {
