@@ -1046,12 +1046,21 @@ ${contentSource}
         // Call 2: extract structured MEDDPICC suggestions (downgraded to gpt-4o-mini — JSON extraction task)
         invokeLLM({
           model: "gpt-4o-mini",
-          messages: [{ role: "user", content: `你是一位MEDDPICC销售方法论专家。根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以JSON数组格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n[\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点牵连, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n只返回JSON数组，不要其他文字。` }],
+          messages: [{ role: "user", content: `你是一位MEDDPICC销售方法论专家。根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以如下JSON格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n{"items": [\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]}\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点牵连, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n必须返回JSON对象，key为items，value为数组。` }],
           response_format: { type: "json_object" },
         }).then(r => {
           try {
             const parsed = JSON.parse(String(r.choices[0].message.content || ""));
-            return Array.isArray(parsed) ? parsed : (parsed.suggestions || parsed.data || []);
+            // Handle all possible wrapping keys
+            if (Array.isArray(parsed)) return parsed;
+            if (parsed.items) return parsed.items;
+            if (parsed.suggestions) return parsed.suggestions;
+            if (parsed.data) return parsed.data;
+            if (parsed.updates) return parsed.updates;
+            if (parsed.results) return parsed.results;
+            // Last resort: find the first array value in the object
+            const firstArr = Object.values(parsed).find(v => Array.isArray(v));
+            return firstArr || [];
           } catch { return []; }
         }).catch(() => [] as Array<{dim: string; label: string; suggestedScore: number; reason: string; confidence: string}>),
 
