@@ -13,7 +13,8 @@ import ReactMarkdown from "react-markdown";
 import {
   FileText, Upload, Trash2, Search, Plus, Bot, Wand2,
   FileDown, ChevronDown, ChevronUp, Copy, Check,
-  ShoppingCart, X, Calculator, Package, Swords, Shield
+  ShoppingCart, X, Calculator, Package, Swords, Shield,
+  Eye, Sparkles, ExternalLink, Loader2
 } from "lucide-react";
 import KillSheetsTab from "./KillSheetsTab";
 import ChampionAmmo from "./ChampionAmmo";
@@ -29,20 +30,28 @@ function ProductDocsTab() {
   const [search, setSearch] = useState("");
   const [filterLine, setFilterLine] = useState<string>("all");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadDialog, setUploadDialog] = useState(false);
   const [uploadForm, setUploadForm] = useState({ title: "", description: "", productLine: "", tags: "" });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+  const [summaryDocId, setSummaryDocId] = useState<number | null>(null);
+  const [summaries, setSummaries] = useState<Record<number, any>>({});
 
   const { data: docs = [], refetch } = trpc.productDocs.list.useQuery(undefined);
   const confirmUploadMut = trpc.productDocs.confirmUpload.useMutation({
-    onSuccess: () => {
-      toast.success("文档上传成功");
+    onSuccess: (data: any) => {
+      toast.success("文档上传成功，AI 正在解析...");
       refetch();
       setSelectedFile(null);
       setUploadForm({ title: "", description: "", productLine: "", tags: "" });
-      // 延迟关闭 Dialog，避免 React 同一 tick 内 DOM reconcile 冲突
       setTimeout(() => setUploadDialog(false), 50);
+      // 自动触发 AI 摘要
+      if (data?.id) {
+        setSummaryDocId(data.id);
+        extractSummaryMut.mutate({ id: data.id });
+      }
     },
     onError: (e: any) => toast.error("上传失败: " + e.message),
   });
@@ -50,38 +59,53 @@ function ProductDocsTab() {
     onSuccess: () => { toast.success("已删除"); refetch(); },
     onError: (e: any) => toast.error("删除失败: " + e.message),
   });
+  const extractSummaryMut = trpc.productDocs.extractSummary.useMutation({
+    onSuccess: (data: any, variables: any) => {
+      setSummaries(prev => ({ ...prev, [variables.id]: data }));
+      setSummaryDocId(null);
+      toast.success("AI 摘要提取完成");
+    },
+    onError: () => { setSummaryDocId(null); },
+  });
 
-  const handleUpload = async () => {
+  const handleUpload = () => {
     if (!selectedFile || !uploadForm.title) return;
     setUploading(true);
-    try {
-      // Step 1: multipart 上传文件到服务器（服务器写入S3，无大小限制）
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      const uploadResp = await fetch("/api/upload-doc", {
-        method: "POST",
-        body: formData,
-      });
-      if (!uploadResp.ok) {
-        const errData = await uploadResp.json().catch(() => ({}));
-        throw new Error(errData.error || `上传失败 (${uploadResp.status})`);
+    setUploadProgress(0);
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = async () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const { fileKey, fileUrl } = JSON.parse(xhr.responseText);
+          await confirmUploadMut.mutateAsync({
+            title: uploadForm.title,
+            description: uploadForm.description || undefined,
+            productLine: uploadForm.productLine || undefined,
+            tags: uploadForm.tags ? uploadForm.tags.split(",").map((t: string) => t.trim()).filter(Boolean) : undefined,
+            filename: selectedFile.name,
+            mimeType: selectedFile.type || "application/octet-stream",
+            fileKey,
+            fileUrl,
+            fileSize: selectedFile.size,
+          });
+        } catch (err: any) {
+          toast.error("上传失败: " + (err.message || "未知错误"));
+        }
+      } else {
+        try { const e = JSON.parse(xhr.responseText); toast.error("上传失败: " + (e.error || xhr.statusText)); }
+        catch { toast.error("上传失败: " + xhr.statusText); }
       }
-      const { fileKey, fileUrl } = await uploadResp.json();
-      // Step 2: 写入数据库
-      await confirmUploadMut.mutateAsync({
-        title: uploadForm.title,
-        description: uploadForm.description || undefined,
-        productLine: uploadForm.productLine || undefined,
-        tags: uploadForm.tags ? uploadForm.tags.split(",").map((t: string) => t.trim()).filter(Boolean) : undefined,
-        filename: selectedFile.name,
-        mimeType: selectedFile.type || "application/octet-stream",
-        fileKey,
-        fileUrl,
-        fileSize: selectedFile.size,
-      });
-    } catch (err: any) {
-      toast.error("上传失败: " + (err.message || "未知错误"));
-    } finally { setUploading(false); }
+      setUploading(false);
+      setUploadProgress(0);
+    };
+    xhr.onerror = () => { toast.error("网络错误，上传失败"); setUploading(false); setUploadProgress(0); };
+    xhr.open("POST", "/api/upload-doc");
+    xhr.send(formData);
   };
 
   const filtered = (docs as any[]).filter((d) => {
@@ -150,15 +174,68 @@ function ProductDocsTab() {
               <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
                 <span>{doc.filename}</span><span>{formatSize(doc.fileSize)}</span>
               </div>
+              {/* AI 摘要区域 */}
+            {summaryDocId === doc.id && (
+              <div className="mt-2 flex items-center gap-1.5 text-xs text-primary/70">
+                <Loader2 className="h-3 w-3 animate-spin" /> AI 正在解析文档...
+              </div>
+            )}
+            {summaries[doc.id] && (
+              <div className="mt-2 bg-primary/5 border border-primary/20 rounded p-2 space-y-1">
+                <p className="text-xs text-foreground/80 leading-relaxed">{summaries[doc.id].summary}</p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {(summaries[doc.id].keyPoints || []).slice(0, 3).map((kp: string, i: number) => (
+                    <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{kp}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* 操作按钮 */}
+            <div className="flex items-center gap-2 mt-2">
+              {doc.fileUrl && doc.mimeType?.includes("pdf") && (
+                <button type="button" onClick={() => setPreviewDoc(doc)}
+                  className="flex items-center gap-1 text-xs text-primary hover:underline">
+                  <Eye className="h-3 w-3" /> 预览
+                </button>
+              )}
               {doc.fileUrl && (
-                <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline">
-                  <FileDown className="h-3 w-3" /> 查看文档
+                <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary">
+                  <FileDown className="h-3 w-3" /> 下载
                 </a>
               )}
+              {!summaries[doc.id] && summaryDocId !== doc.id && (
+                <button type="button" onClick={() => { setSummaryDocId(doc.id); extractSummaryMut.mutate({ id: doc.id }); }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary ml-auto">
+                  <Sparkles className="h-3 w-3" /> AI 解析
+                </button>
+              )}
+            </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* PDF 预览 Dialog */}
+      <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) setPreviewDoc(null); }}>
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
+          <DialogHeader className="px-4 pt-4 pb-2 flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <Eye className="h-4 w-4" />
+              {previewDoc?.title}
+              <a href={previewDoc?.fileUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-primary hover:underline flex items-center gap-1">
+                <ExternalLink className="h-3 w-3" /> 新窗口打开
+              </a>
+            </DialogTitle>
+          </DialogHeader>
+          {previewDoc?.fileUrl && (
+            <iframe
+              src={previewDoc.fileUrl}
+              className="flex-1 w-full border-0 rounded-b-lg"
+              title={previewDoc.title}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={uploadDialog} onOpenChange={setUploadDialog}>
         <DialogContent className="max-w-md">
@@ -199,12 +276,19 @@ function ProductDocsTab() {
               <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.pptx,.ppt,.docx,.doc,.xls,.xlsx,.mp4,.mov,.avi" onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2">
+            {uploading && (
+              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                <div className="bg-primary h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+              </div>
+            )}
+            <div className="flex gap-2 w-full justify-end">
             <Button type="button" variant="outline" onClick={() => setUploadDialog(false)}>取消</Button>
             <Button type="button" onClick={handleUpload} disabled={uploading || !selectedFile || !uploadForm.title} className="gap-2">
               {uploading ? <Spinner className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
-              {uploading ? "上传中..." : "上传"}
+              {uploading ? `上传中 ${uploadProgress}%` : "上传"}
             </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -2255,6 +2255,59 @@ ${contactList}
         await db.delete(productDocs).where(eq(productDocs.id, input.id));
         return { success: true };
       }),
+
+    // AI 提取文档摘要和关键卖点
+    extractSummary: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const [doc] = await db.select().from(productDocs).where(eq(productDocs.id, input.id));
+        if (!doc) throw new Error('文档不存在');
+        const { invokeLLM } = await import('./_core/llm');
+        const context = doc.extractedText
+          ? `文档内容摘录：\n${doc.extractedText.slice(0, 3000)}`
+          : `文档名称：${doc.title}\n产品线：${doc.productLine || '未知'}\n描述：${doc.description || '无'}`;
+        const prompt = `你是一位网络安全产品专家。请分析以下产品文档，提取核心摘要和关键卖点。
+
+${context}
+
+请以JSON格式返回：
+{
+  "summary": "2-3句话的核心摘要，说明这是什么产品/文档，主要解决什么问题",
+  "keyPoints": ["卖点1", "卖点2", "卖点3", "卖点4", "卖点5"],
+  "targetCustomer": "适合哪类客户或场景",
+  "competitiveEdge": "与竞品相比的核心优势（1句话）"
+}`;
+        const res = await invokeLLM({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'doc_summary',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  summary: { type: 'string' },
+                  keyPoints: { type: 'array', items: { type: 'string' } },
+                  targetCustomer: { type: 'string' },
+                  competitiveEdge: { type: 'string' },
+                },
+                required: ['summary', 'keyPoints', 'targetCustomer', 'competitiveEdge'],
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+        const parsed = JSON.parse(String(res.choices[0].message.content || '{}'));
+        // 保存摘要到数据库
+        await db.update(productDocs).set({ extractedText: JSON.stringify(parsed) }).where(eq(productDocs.id, input.id));
+        return parsed;
+      }),
   }),
 
   // ── AI方案定制 ──────────────────────────────────────────────────────────

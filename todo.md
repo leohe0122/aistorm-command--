@@ -366,6 +366,12 @@
 - [x] 前端：Arsenal.tsx 改为前端直接 PUT 到 S3（三步流程：获取URL→直传→确认）
 - [x] 前端：支持 PDF/PPT/PPTX/DOC/DOCX/XLS/XLSX/MP4/MOV/AVI，移除文件大小限制
 
+## Round 50 — 武器库三项增强（2026-07-27）
+- [x] 后端：productDocs.extractSummary 接口（AI 提取文档摘要和关键卖点）
+- [x] 前端：上传进度条（XMLHttpRequest + onprogress，显示百分比）
+- [x] 前端：PDF 在线预览（iframe Dialog，支持新窗口打开）
+- [x] 前端：AI 摘要展示（上传完成后自动触发，卡片内显示摘要+关键卖点；手动触发按钮）
+
 ## Round 45 — 情报雷达RSS分离修复（2026-07-27）
 - [x] 修复：合规政策RSS源（菲律宾NPC等）被混入客户专属新闻流 → fetchNews路由跳过tags含"合规政策"的RSS源
 - [x] 新增：rss.fetchComplianceNews专用路由，只抓取tags含"合规政策"的RSS源
