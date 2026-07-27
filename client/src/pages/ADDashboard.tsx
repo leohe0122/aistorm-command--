@@ -981,6 +981,81 @@ export default function ADDashboard() {
           ))}
         </div>
       </div>
+
+      {/* 决策层覆盖率大盘 */}
+      {(() => {
+        const coverage = (data as any).decisionLayerCoverage ?? [];
+        if (coverage.length === 0) return null;
+        const totalClients = coverage.length;
+        const withEconomicBuyer = coverage.filter((c: any) => c.hasEconomicBuyer).length;
+        const withTechDM = coverage.filter((c: any) => c.hasTechDecisionMaker).length;
+        const withChampion = coverage.filter((c: any) => c.hasChampion).length;
+        const withBlocker = coverage.filter((c: any) => c.hasBlocker).length;
+        return (
+          <div className="rounded-xl border bg-card p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-semibold text-sm">
+                <Users className="w-4 h-4 text-[#00A8D6]" />
+                决策层覆盖率大盘
+                <span className="text-xs text-muted-foreground font-normal ml-1">— C-Level 触达率 · Buying Group 完整度</span>
+              </div>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>经济决策人 <span className={`font-bold ${withEconomicBuyer < totalClients ? 'text-orange-400' : 'text-green-400'}`}>{withEconomicBuyer}/{totalClients}</span></span>
+                <span>技术决策人 <span className={`font-bold ${withTechDM < totalClients ? 'text-orange-400' : 'text-green-400'}`}>{withTechDM}/{totalClients}</span></span>
+                <span>Champion <span className={`font-bold ${withChampion < totalClients ? 'text-orange-400' : 'text-green-400'}`}>{withChampion}/{totalClients}</span></span>
+                {withBlocker > 0 && <span>已知阻碍者 <span className="font-bold text-red-400">{withBlocker}</span></span>}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="text-left py-1.5 pr-3 font-medium w-32">客户</th>
+                    <th className="text-center py-1.5 px-2 font-medium">优先级</th>
+                    <th className="text-center py-1.5 px-2 font-medium">经济决策人</th>
+                    <th className="text-center py-1.5 px-2 font-medium">技术决策人</th>
+                    <th className="text-center py-1.5 px-2 font-medium">Champion</th>
+                    <th className="text-center py-1.5 px-2 font-medium">阻碍者</th>
+                    <th className="text-center py-1.5 px-2 font-medium">C-Level触达率</th>
+                    <th className="text-right py-1.5 pl-2 font-medium">关键人总数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {coverage.map((c: any) => (
+                    <tr
+                      key={c.clientId}
+                      className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors"
+                      onClick={() => navigate(`/battle-map?clientId=${c.clientId}`)}
+                    >
+                      <td className="py-2 pr-3 font-medium truncate max-w-[8rem]">{c.clientName}</td>
+                      <td className="py-2 px-2 text-center">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${c.priority === 'P0' ? 'bg-red-500/20 text-red-400' : c.priority === 'P1' ? 'bg-orange-500/20 text-orange-400' : 'bg-muted text-muted-foreground'}`}>{c.priority}</span>
+                      </td>
+                      <td className="py-2 px-2 text-center">{c.hasEconomicBuyer ? <span className="text-green-400">✓</span> : <span className="text-red-400/70">—</span>}</td>
+                      <td className="py-2 px-2 text-center">{c.hasTechDecisionMaker ? <span className="text-green-400">✓</span> : <span className="text-red-400/70">—</span>}</td>
+                      <td className="py-2 px-2 text-center">{c.hasChampion ? <span className="text-green-400">✓</span> : <span className="text-orange-400/70">—</span>}</td>
+                      <td className="py-2 px-2 text-center">{c.hasBlocker ? <span className="text-red-400 font-bold">⚠</span> : <span className="text-muted-foreground/30">—</span>}</td>
+                      <td className="py-2 px-2 text-center">
+                        {c.cLevelTotal > 0 ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-[#00A8D6] rounded-full" style={{ width: `${c.coverageRate}%` }} />
+                            </div>
+                            <span className={c.coverageRate < 50 ? 'text-orange-400' : 'text-green-400'}>{c.coverageRate}%</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground/50 text-[10px]">未录入</span>
+                        )}
+                      </td>
+                      <td className="py-2 pl-2 text-right text-muted-foreground">{c.totalContacts}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

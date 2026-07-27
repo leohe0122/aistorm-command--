@@ -318,6 +318,9 @@
 - [x] AI解析速度慢：拜访日志4个AI调用串行执行 → 已修复（第2/3/4个改为Promise.all并行，第2个从gpt-5降为gpt-4o-mini）
 - [x] MEDDPICC建议持久化：确认不需要持久化，建议是一次性判断，SAM应在录入后立即采纳
 
+## Round 43 — Buying Group角色细化 + 情报信号商机关联（2026-07-27）
+- [x] "信息来源"重命名为"内部线人"，区分与Champion的职能差异
+
 ## Round 42 — AD指挥台布局与业务异常检测优化（2026-07-27）
 - [x] AD指挥台全屏布局重构：去掉max-w限制，改为5列grid，全宽展示
 - [x] 1→N看板商机名称和阶段紧凑化：flex行内排列，阶段标签紧跟商机名
@@ -336,3 +339,19 @@
 - [x] 前端：关键人Tab顶部Buying Group覆盖缺口分析（未覆盖经济决策人/技术决策人/Champion时显示警告）
 - [x] 前端：情报雷达录入信号时可关联具体商机（下拉选择）
 - [x] 前端：情报信号历史列表中已关联商机的信号显示"🎯商机窗口"标签
+
+## Round 44 — 决策层覆盖率大盘 + 合规政策RSS（2026-07-27）
+- [ ] 后端：dashboard.summary新增decisionLayerCoverage聚合数据（各客户C-Level角色覆盖情况）
+- [ ] 前端：AD指挥台新增"决策层覆盖率"面板（全局C-Level触达率统计，按客户展示覆盖缺口）
+- [ ] 系统设置：预置港澳+东南亚合规政策RSS源（PDPC Singapore/PDPA Thailand/PDPA Malaysia/PCPD HK/GPDP Macau/PDPA Indonesia/PDPA Philippines）
+- [ ] 情报雷达：新增"合规政策"信号类型，合规政策RSS自动归类
+- [x] 后端：dashboard.summary新增decisionLayerCoverage聚合数据（各客户C-Level角色覆盖情况）
+- [x] 前端：AD指挥台新增"决策层覆盖率"面板（全局C-Level触达率统计，按客户展示覆盖缺口）
+- [x] 系统设置：预置港澳+东南亚合规政策RSS源（PDPC Singapore/PDPA Thailand/PDPA Malaysia/PCPD HK/GPDP Macau/CSA Singapore/Google News合规动态）
+- [x] 情报雷达：新增"合规政策"信号类型（紫色标签，Shield图标），合规政策RSS自动归类
+
+## Round 44 — 决策层覆盖率大盘 + 合规政策RSS（2026-07-27）
+- [ ] 后端：dashboard.summary新增decisionLayerCoverage聚合数据（各客户C-Level角色覆盖情况）
+- [ ] 前端：AD指挥台新增"决策层覆盖率"面板（全局C-Level触达率统计，按客户展示覆盖缺口）
+- [ ] 系统设置：预置东南亚合规政策RSS源（PDPC Singapore/PDPA Thailand/PDPA Malaysia/PCPD HK）
+- [ ] 情报雷达：新增"合规政策"信号类型，合规政策RSS自动归类

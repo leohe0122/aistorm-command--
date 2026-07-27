@@ -287,7 +287,7 @@ export const appRouter = router({
 
 请分析这条情报信号，返回JSON格式：
 {
-  "signalType": "人事变动|业务扩张|合规事件|招聘信号|技术公告|其他",
+  "signalType": "人事变动|业务扩张|合规事件|合规政策|招聘信号|技术公告|其他",
   "urgency": "高|中|低",
   "interpretation": "对这条信号的深度解读（2-3句话，结合客户背景分析其业务含义）",
   "recommendation": "基于此信号，销售团队应立即采取的具体触达行动（包括：触达对象、触达理由、建议话术要点）"
@@ -2956,12 +2956,49 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
         visitCountByClient.set(m.clientId, (visitCountByClient.get(m.clientId) ?? 0) + 1);
       });
 
-      // 关键人数量（用于0→1汇报链路检测）
+      // 关键人数量 + Buying Group覆盖率（用于0→1汇报链路检测 + 决策层覆盖率大盘）
       const { keyContacts } = await import('../drizzle/schema');
-      const allContacts = await db.select({ clientId: keyContacts.clientId }).from(keyContacts);
+      const allContacts = await db.select({
+        clientId: keyContacts.clientId,
+        buyingRole: keyContacts.buyingRole,
+        influence: keyContacts.influence,
+        name: keyContacts.name,
+        title: keyContacts.title,
+        stance: keyContacts.stance,
+        relationship: keyContacts.relationship,
+      }).from(keyContacts);
       const contactCountByClient = new Map<number, number>();
+      // 决策层覆盖率：按客户统计各关键角色是否已覆盖
+      type DecisionCoverage = {
+        hasEconomicBuyer: boolean;
+        hasTechDecisionMaker: boolean;
+        hasChampion: boolean;
+        hasBlocker: boolean;
+        totalContacts: number;
+        cLevelContacted: number; // 经济决策人+技术决策人中已有lastContactDate的数量
+        cLevelTotal: number; // 经济决策人+技术决策人总数
+        contacts: Array<{ name: string; title: string; buyingRole: string | null; stance: string | null; relationship: string | null }>;
+      };
+      const decisionCoverageByClient = new Map<number, DecisionCoverage>();
       allContacts.forEach(c => {
         contactCountByClient.set(c.clientId, (contactCountByClient.get(c.clientId) ?? 0) + 1);
+        if (!decisionCoverageByClient.has(c.clientId)) {
+          decisionCoverageByClient.set(c.clientId, {
+            hasEconomicBuyer: false, hasTechDecisionMaker: false, hasChampion: false, hasBlocker: false,
+            totalContacts: 0, cLevelContacted: 0, cLevelTotal: 0, contacts: []
+          });
+        }
+        const cov = decisionCoverageByClient.get(c.clientId)!;
+        cov.totalContacts++;
+        const isContacted = c.relationship && ['初步接触', '已接触', '建立关系', 'Champion'].includes(c.relationship);
+        cov.contacts.push({ name: c.name, title: c.title || '', buyingRole: c.buyingRole, stance: c.stance, relationship: c.relationship });
+        if (c.buyingRole === '经济决策人') { cov.hasEconomicBuyer = true; cov.cLevelTotal++; if (isContacted) cov.cLevelContacted++; }
+        if (c.buyingRole === '技术决策人') { cov.hasTechDecisionMaker = true; cov.cLevelTotal++; if (isContacted) cov.cLevelContacted++; }
+        if (c.buyingRole === 'Champion') cov.hasChampion = true;
+        if (c.buyingRole === '阻碍者') cov.hasBlocker = true;
+        // 也检查influence字段（旧数据）
+        if (c.influence === '决策者') { cov.hasEconomicBuyer = true; cov.cLevelTotal++; if (isContacted) cov.cLevelContacted++; }
+        if (c.influence === 'Champion候选') cov.hasChampion = true;
       });
 
       const allOppsWithStage = await db.select({
@@ -3206,6 +3243,24 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
         pendingTasksByRole: pendingTasks.map(t => ({ role: t.assignedRole, count: t.count })),
         zeroToOneBoard,
         oneToNBoard,
+        decisionLayerCoverage: allClients.map(c => {
+          const cov = decisionCoverageByClient.get(c.id);
+          return {
+            clientId: c.id,
+            clientName: c.name,
+            stage: c.stage,
+            priority: c.priority,
+            hasEconomicBuyer: cov?.hasEconomicBuyer ?? false,
+            hasTechDecisionMaker: cov?.hasTechDecisionMaker ?? false,
+            hasChampion: cov?.hasChampion ?? false,
+            hasBlocker: cov?.hasBlocker ?? false,
+            totalContacts: cov?.totalContacts ?? 0,
+            cLevelContacted: cov?.cLevelContacted ?? 0,
+            cLevelTotal: cov?.cLevelTotal ?? 0,
+            coverageRate: cov && cov.cLevelTotal > 0 ? Math.round((cov.cLevelContacted / cov.cLevelTotal) * 100) : 0,
+            contacts: cov?.contacts ?? [],
+          };
+        }),
       };
     }),
   }),

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   Radio, Send, AlertTriangle, TrendingUp, Users, Briefcase, Code, HelpCircle,
-  Newspaper, Loader2, RefreshCw, ExternalLink, Calendar, Rss
+  Newspaper, Loader2, RefreshCw, ExternalLink, Calendar, Rss, Shield
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +16,7 @@ const signalTypeIcon: Record<string, any> = {
   "人事变动": Users,
   "业务扩张": TrendingUp,
   "合规事件": AlertTriangle,
+  "合规政策": Shield,
   "招聘信号": Briefcase,
   "技术公告": Code,
   "其他": HelpCircle,
@@ -25,6 +26,7 @@ const signalTypeColor: Record<string, string> = {
   "人事变动": "text-blue-400 bg-blue-500/10 border-blue-500/20",
   "业务扩张": "text-green-400 bg-green-500/10 border-green-500/20",
   "合规事件": "text-red-400 bg-red-500/10 border-red-500/20",
+  "合规政策": "text-purple-400 bg-purple-500/10 border-purple-500/20",
   "招聘信号": "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
   "技术公告": "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
   "其他": "text-muted-foreground bg-muted/30 border-border",

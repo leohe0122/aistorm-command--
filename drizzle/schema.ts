@@ -99,7 +99,7 @@ export const intelligenceSignals = mysqlTable("intelligence_signals", {
   id: int("id").autoincrement().primaryKey(),
   clientId: int("clientId").notNull(),
   rawSignal: text("rawSignal").notNull(), // 原始信号文本
-  signalType: mysqlEnum("signalType", ["人事变动", "业务扩张", "合规事件", "招聘信号", "技术公告", "其他"]).notNull(),
+  signalType: mysqlEnum("signalType", ["人事变动", "业务扩张", "合规事件", "合规政策", "招聘信号", "技术公告", "其他"]).notNull(),
   aiInterpretation: text("aiInterpretation"), // AI解读
   aiRecommendation: text("aiRecommendation"), // AI触达建议
   urgency: mysqlEnum("urgency", ["高", "中", "低"]).default("中").notNull(),
