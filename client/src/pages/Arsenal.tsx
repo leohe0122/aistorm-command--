@@ -37,7 +37,14 @@ function ProductDocsTab() {
   const { data: docs = [], refetch } = trpc.productDocs.list.useQuery(undefined);
   const getUploadUrlMut = trpc.productDocs.getUploadUrl.useMutation();
   const confirmUploadMut = trpc.productDocs.confirmUpload.useMutation({
-    onSuccess: () => { toast.success("文档上传成功"); refetch(); setUploadDialog(false); setSelectedFile(null); setUploadForm({ title: "", description: "", productLine: "", tags: "" }); },
+    onSuccess: () => {
+      toast.success("文档上传成功");
+      refetch();
+      setSelectedFile(null);
+      setUploadForm({ title: "", description: "", productLine: "", tags: "" });
+      // 延迟关闭 Dialog，避免 React 同一 tick 内 DOM reconcile 冲突
+      setTimeout(() => setUploadDialog(false), 50);
+    },
     onError: (e: any) => toast.error("上传失败: " + e.message),
   });
   const deleteMut = trpc.productDocs.delete.useMutation({
@@ -181,7 +188,7 @@ function ProductDocsTab() {
                   <div className="flex items-center justify-center gap-2 text-sm">
                     <FileText className="h-4 w-4 text-primary" />
                     <span className="truncate max-w-[200px]">{selectedFile.name}</span>
-                    <button onClick={e => { e.stopPropagation(); setSelectedFile(null); }} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+                    <button type="button" onClick={e => { e.stopPropagation(); setSelectedFile(null); }} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
                   </div>
                 ) : (
                   <div className="text-muted-foreground text-sm">
@@ -194,8 +201,8 @@ function ProductDocsTab() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUploadDialog(false)}>取消</Button>
-            <Button onClick={handleUpload} disabled={uploading || !selectedFile || !uploadForm.title} className="gap-2">
+            <Button type="button" variant="outline" onClick={() => setUploadDialog(false)}>取消</Button>
+            <Button type="button" onClick={handleUpload} disabled={uploading || !selectedFile || !uploadForm.title} className="gap-2">
               {uploading ? <Spinner className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
               {uploading ? "上传中..." : "上传"}
             </Button>
