@@ -821,7 +821,7 @@ ${content}
 
 只返回JSON，不要其他文字。`;
         const sRes = await invokeLLM({
-          model: "gpt-4o-mini",
+          model: "gpt-5-mini",
           messages: [{ role: "user", content: strategyPrompt }],
           response_format: { type: "json_object" },
         });
@@ -1043,9 +1043,9 @@ ${contentSource}
 
       // Calls 2/3/4 all depend on aiMinutes but are independent of each other — run in parallel
       const [meddpiccSuggestions, strategyResult, detectedCompetitors] = await Promise.all([
-        // Call 2: extract structured MEDDPICC suggestions (downgraded to gpt-4o-mini — JSON extraction task)
+        // Call 2: extract structured MEDDPICC suggestions (using gpt-5-mini — JSON extraction task)
         invokeLLM({
-          model: "gpt-4o-mini",
+          model: "gpt-5-mini",
           messages: [{ role: "user", content: `你是一位MEDDPICC销售方法论专家。根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以如下JSON格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n{"items": [\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]}\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点牵连, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n必须返回JSON对象，key为items，value为数组。` }],
           response_format: { type: "json_object" },
         }).then(r => {
@@ -1066,17 +1066,18 @@ ${contentSource}
 
         // Call 3: extract hookTopic and securityAngle
         invokeLLM({
-          model: "gpt-4o-mini",
+          model: "gpt-5-mini",
           messages: [{ role: "user", content: `你是一位大客户销售策略专家。根据以下拜访日志，提炼两个关键建议。\n\n拜访日志：\n${aiMinutes}\n\n请以JSON格式返回：\n{\n  "hookTopic": "基于本次拜访揭示的客户痛点和关注点，下次拜访最有效的敲门砖话题（一句话，具体、有针对性）",\n  "securityAngle": "基于客户痛点，建议的为信安全产品切入角度（具体产品线或解决方案）"\n}\n\n只返回JSON，不要其他文字。` }],
           response_format: { type: "json_object" },
         }).then(r => {
-          try { return JSON.parse(String(r.choices[0].message.content || "{}")); }
-          catch { return {}; }
+          try {
+            return JSON.parse(String(r.choices[0].message.content || "{}"));
+          } catch { return {}; }
         }).catch(() => ({})),
 
         // Call 4: detect competitor names
         invokeLLM({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini',
           messages: [{ role: 'user', content: `从以下会议记录中识别所有提到的竞品厂商名称。常见竞品包括：奇安信(QAX)、Palo Alto Networks、CrowdStrike、Fortinet、Check Point、深信服、天山信息、安恒天蹄、火眉安全、绣球网络、SentinelOne、Microsoft Defender、Trend Micro、Symantec、McAfee等。\n\n会议记录：\n${aiMinutes}\n\n请以JSON格式返回，只返回实际提到的竞品名称（如果没有提到竞品则返回空数组）：\n{ "competitors": ["QAX", "Palo Alto Networks"] }` }],
           response_format: { type: 'json_object' },
         }).then(r => {
@@ -1212,7 +1213,7 @@ ${clientSummaries}
 3. 给出下周最重要的一个行动建议
 语气要直接、具体，不要空话套话。`;
 
-      const response = await invokeLLM({ messages: [{ role: "user", content: prompt }], model: "gpt-4o-mini" });
+      const response = await invokeLLM({ messages: [{ role: "user", content: prompt }], model: "gpt-5-mini" });
       const summary = String((response.choices?.[0]?.message?.content) ?? "未能生成战报，请重试。");
       return { summary, stats: { signals: recentSignals.length, completed: completedTasks.length, pending: pendingTasks.length } };
     }),
