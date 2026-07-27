@@ -105,6 +105,8 @@ export const intelligenceSignals = mysqlTable("intelligence_signals", {
   urgency: mysqlEnum("urgency", ["高", "中", "低"]).default("中").notNull(),
   isProcessed: boolean("isProcessed").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  opportunityId: int("opportunityId"),  // 关联商机（可选，触发商机窗口提示）
+  opportunityWindowNote: text("opportunityWindowNote"),  // AI生成的商机窗口说明
 });
 
 export type IntelligenceSignal = typeof intelligenceSignals.$inferSelect;
@@ -285,6 +287,7 @@ export const keyContacts = mysqlTable("key_contacts", {
   title: varchar("title", { length: 150 }),           // 职位
   department: varchar("department", { length: 100 }), // 部门
   influence: mysqlEnum("influence", ["决策者", "影响者", "Champion候选", "技术评估者", "信息来源"]).default("影响者"),
+  buyingRole: mysqlEnum("buyingRole", ["经济决策人", "技术决策人", "用户影响者", "阻碍者", "Champion", "信息来源", "未知"]).default("未知"),
   relationship: mysqlEnum("relationship", ["待接触", "已识别", "初步接触", "已接触", "建立关系", "Champion", "已拒绝"]).default("待接触"),
   linkedinUrl: varchar("linkedinUrl", { length: 300 }),
   email: varchar("email", { length: 200 }),

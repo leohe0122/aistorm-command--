@@ -32,6 +32,16 @@ const MEDDPICC_ITEMS = [
 const STAGES = ["建图", "进门", "定痛", "找人", "进入商机"];
 const PRIORITIES = ["P0", "P1", "P2"];
 const INFLUENCE_OPTIONS = ["决策者", "影响者", "Champion候选", "技术评估者", "信息来源"];
+const BUYING_ROLE_OPTIONS = ["经济决策人", "技术决策人", "用户影响者", "阻碍者", "Champion", "信息来源", "未知"];
+const buyingRoleColor: Record<string, string> = {
+  "经济决策人": "bg-amber-500/20 text-amber-400 border-amber-500/40",
+  "技术决策人": "bg-blue-500/20 text-blue-400 border-blue-500/40",
+  "用户影响者": "bg-cyan-500/20 text-cyan-400 border-cyan-500/40",
+  "阻碍者": "bg-red-500/20 text-red-400 border-red-500/40",
+  "Champion": "bg-green-500/20 text-green-400 border-green-500/40",
+  "信息来源": "bg-muted text-muted-foreground border-border",
+  "未知": "bg-muted/50 text-muted-foreground/60 border-border/40",
+};
 const RELATIONSHIP_OPTIONS = ["待接触", "已识别", "初步接触", "已接触", "建立关系", "Champion", "已拒绝"];
 
 const stageColor: Record<string, string> = {
@@ -905,6 +915,39 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
         </div>
       )}
 
+      {/* Buying Group 覆盖缺口分析 */}
+      {contacts.length > 0 && (() => {
+        const roles = contacts.map((c: any) => c.buyingRole || '未知');
+        const missing = [];
+        if (!roles.includes('经济决策人')) missing.push('经济决策人 (E)');
+        if (!roles.includes('技术决策人')) missing.push('技术决策人 (D)');
+        if (!roles.includes('Champion')) missing.push('Champion (C)');
+        const blockers = contacts.filter((c: any) => c.buyingRole === '阻碍者');
+        return (missing.length > 0 || blockers.length > 0) ? (
+          <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-2.5 mb-2">
+            <div className="text-[10px] font-medium text-orange-400 mb-1.5 flex items-center gap-1">
+              <span>⚠</span> Buying Group 覆盖缺口
+            </div>
+            {missing.length > 0 && (
+              <div className="text-[10px] text-muted-foreground mb-1">
+                <span className="text-orange-300/80">未覆盖关键角色：</span>{missing.join(' · ')}
+              </div>
+            )}
+            {blockers.length > 0 && (
+              <div className="text-[10px] text-red-400/80">
+                <span className="text-red-400">⛔ 已识别阻碍者：</span>{blockers.map((c: any) => c.name).join('、')}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-2 mb-2">
+            <div className="text-[10px] text-green-400 flex items-center gap-1">
+              <span>✓</span> Buying Group 核心角色已全部覆盖
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Contact list */}
       {contacts.length === 0 && !showAdd && (
         <div className="text-xs text-muted-foreground text-center py-3 border border-dashed border-border rounded-lg">
@@ -938,6 +981,14 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                   </Select>
                 </div>
                 <div>
+                  <label className="text-[10px] text-muted-foreground mb-0.5 block">Buying Group角色</label>
+                  <Select value={editData.buyingRole || (contact as any).buyingRole || "未知"}
+                    onValueChange={(v) => setEditData({ ...editData, buyingRole: v })}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>{BUYING_ROLE_OPTIONS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div>
                   <label className="text-[10px] text-muted-foreground mb-0.5 block">关系状态</label>
                   <Select value={editData.relationship || contact.relationship || "未接触"}
                     onValueChange={(v) => setEditData({ ...editData, relationship: v })}>
@@ -968,6 +1019,11 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                     {contact.influence && (
                       <span className={cn("text-[10px] px-1.5 py-0.5 rounded border font-medium", influenceColor[contact.influence] || "bg-muted text-muted-foreground border-border")}>
                         {contact.influence}
+                      </span>
+                    )}
+                    {(contact as any).buyingRole && (contact as any).buyingRole !== '未知' && (
+                      <span className={cn("text-[10px] px-1.5 py-0.5 rounded border font-medium", buyingRoleColor[(contact as any).buyingRole] || "bg-muted text-muted-foreground border-border")}>
+                        {(contact as any).buyingRole}
                       </span>
                     )}
                   </div>

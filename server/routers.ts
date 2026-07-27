@@ -277,6 +277,7 @@ export const appRouter = router({
       clientName: z.string(),
       rawSignal: z.string(),
       industry: z.string().optional(),
+      opportunityId: z.number().optional().nullable(),
     })).mutation(async ({ input }) => {
       // AI analyze the signal
       const prompt = `你是一位顶级企业销售情报分析师，专注于网络安全行业的大客户销售。
@@ -324,6 +325,7 @@ export const appRouter = router({
         aiRecommendation: parsed.recommendation,
         urgency: parsed.urgency as any,
         isProcessed: true,
+        opportunityId: input.opportunityId ?? undefined,
       });
       return { id: signalId, ...parsed };
     }),
@@ -1468,6 +1470,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
       persona: z.string().optional(),
       breakthroughTip: z.string().optional(),
       stance: z.enum(['支持', '中立', '反对', '未知']).optional(),
+      buyingRole: z.enum(['经济决策人', '技术决策人', '用户影响者', '阻碍者', 'Champion', '信息来源', '未知']).optional(),
     })).mutation(({ input }) => {
       const { id, ...data } = input;
       return updateContact(id, data as any);
@@ -1483,6 +1486,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
       email: z.string().optional(),
       notes: z.string().optional(),
       reportingTo: z.string().optional(),
+      buyingRole: z.enum(['经济决策人', '技术决策人', '用户影响者', '阻碍者', 'Champion', '信息来源', '未知']).optional(),
     })).mutation(({ input }) => insertContact(input as any)),
     delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
       deleteContact(input.id)

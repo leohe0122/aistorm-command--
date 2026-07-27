@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,7 @@ export default function IntelRadar() {
   const [latestResult, setLatestResult] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"news" | "signals">("news");
   const [selectedNewsItem, setSelectedNewsItem] = useState<any>(null);
+  const [selectedOpportunityId, setSelectedOpportunityId] = useState<number | null>(null);
 
   const { data: clients = [] } = trpc.clients.list.useQuery();
   const { data: signals = [], refetch } = trpc.intelligence.listByClient.useQuery(
@@ -60,6 +62,10 @@ export default function IntelRadar() {
   const { data: allSignals = [], refetch: refetchAll } = trpc.intelligence.listAll.useQuery();
 
   const selectedClient = clients.find(c => c.id === selectedClientId);
+  const { data: opportunities = [] } = trpc.opportunities.listByClient.useQuery(
+    { clientId: selectedClientId! },
+    { enabled: !!selectedClientId }
+  );
 
   // Real RSS news fetch
   const { data: newsItems = [], isLoading: fetchingNews, refetch: refetchNews } = trpc.rss.fetchNews.useQuery(
@@ -100,6 +106,7 @@ export default function IntelRadar() {
       clientName: selectedClient?.name || "",
       rawSignal: signalInput,
       industry: selectedClient?.industry || undefined,
+      opportunityId: selectedOpportunityId ?? undefined,
     });
   };
 
@@ -149,10 +156,25 @@ export default function IntelRadar() {
                 <div className="text-xs text-muted-foreground line-clamp-2">{selectedNewsItem.title}</div>
               </div>
             )}
+            {selectedClientId && opportunities.length > 0 && (
+              <div className="mb-3">
+                <div className="text-xs text-muted-foreground mb-1">关联商机（可选）</div>
+                <select
+                  className="w-full h-7 text-xs bg-muted/30 border border-border rounded px-2 text-foreground"
+                  value={selectedOpportunityId ?? ""}
+                  onChange={(e) => setSelectedOpportunityId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">不关联商机</option>
+                  {opportunities.map((opp: any) => (
+                    <option key={opp.id} value={opp.id}>{opp.name} · {opp.stage}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <Textarea
               className="resize-none h-28 text-sm mb-3"
               placeholder={selectedClientId
-                ? "粘贴或输入原始情报信号...\n\n或从右侧新闻列表点击「用作信号」自动填入"
+                ? "粘贴或输入原始情报信号...\n\n或从右侧新闻列表点击\u300c用作信号\u300d自动填入"
                 : "请先选择目标客户"}
               value={signalInput}
               onChange={(e) => { setSignalInput(e.target.value); setSelectedNewsItem(null); }}
@@ -360,9 +382,14 @@ export default function IntelRadar() {
                               <Icon className="w-3 h-3" />
                               {signal.signalType}
                             </span>
-                            <span className={cn("text-xs px-1.5 py-0.5 rounded border", urgencyColor[signal.urgency])}>
-                              {signal.urgency}
-                            </span>
+                           <span className={cn("text-xs px-1.5 py-0.5 rounded border", urgencyColor[signal.urgency])}>
+                             {signal.urgency}
+                           </span>
+                           {(signal as any).opportunityId && (
+                             <span className="text-xs px-1.5 py-0.5 rounded border bg-cyan-500/15 text-cyan-400 border-cyan-500/30 font-medium">
+                               🎯 商机窗口
+                             </span>
+                           )}
                           </div>
                           <span className="text-xs text-muted-foreground flex-shrink-0">
                             {new Date(signal.createdAt).toLocaleDateString("zh-CN")}
