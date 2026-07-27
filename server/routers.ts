@@ -2308,6 +2308,15 @@ ${context}
         await db.update(productDocs).set({ extractedText: JSON.stringify(parsed) }).where(eq(productDocs.id, input.id));
         return parsed;
       }),
+
+    // 获取文档的 S3 签名直链（用于预览，有效期1小时）
+    getSignedUrl: protectedProcedure
+      .input(z.object({ fileKey: z.string() }))
+      .mutation(async ({ input }) => {
+        const { storageGetSignedUrl } = await import('./storage');
+        const url = await storageGetSignedUrl(input.fileKey);
+        return { url };
+      }),
   }),
 
   // ── AI方案定制 ──────────────────────────────────────────────────────────

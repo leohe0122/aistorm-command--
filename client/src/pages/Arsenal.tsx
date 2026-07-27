@@ -36,6 +36,8 @@ function ProductDocsTab() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [summaryDocId, setSummaryDocId] = useState<number | null>(null);
   const [summaries, setSummaries] = useState<Record<number, any>>({});
 
@@ -67,6 +69,25 @@ function ProductDocsTab() {
     },
     onError: () => { setSummaryDocId(null); },
   });
+  const getSignedUrlMut = trpc.productDocs.getSignedUrl.useMutation({
+    onSuccess: (data: any) => {
+      // 用 Google Docs Viewer 渲染，支持 PDF/PPT/Word/Excel
+      const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(data.url)}&embedded=true`;
+      setPreviewUrl(viewerUrl);
+      setPreviewLoading(false);
+    },
+    onError: () => {
+      setPreviewLoading(false);
+      toast.error("无法获取预览链接");
+    },
+  });
+
+  const handlePreview = (doc: any) => {
+    setPreviewDoc(doc);
+    setPreviewUrl(null);
+    setPreviewLoading(true);
+    getSignedUrlMut.mutate({ fileKey: doc.fileKey });
+  };
 
   const handleUpload = () => {
     if (!selectedFile || !uploadForm.title) return;
@@ -192,8 +213,8 @@ function ProductDocsTab() {
             )}
             {/* 操作按钮 */}
             <div className="flex items-center gap-2 mt-2">
-              {doc.fileUrl && doc.mimeType?.includes("pdf") && (
-                <button type="button" onClick={() => setPreviewDoc(doc)}
+              {doc.fileUrl && (
+                <button type="button" onClick={() => handlePreview(doc)}
                   className="flex items-center gap-1 text-xs text-primary hover:underline">
                   <Eye className="h-3 w-3" /> 预览
                 </button>
@@ -215,25 +236,37 @@ function ProductDocsTab() {
         </div>
       )}
 
-      {/* PDF 预览 Dialog */}
-      <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) setPreviewDoc(null); }}>
+      {/* 文档预览 Dialog - Google Docs Viewer */}
+      <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) { setPreviewDoc(null); setPreviewUrl(null); } }}>
         <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
-          <DialogHeader className="px-4 pt-4 pb-2 flex-shrink-0">
+          <DialogHeader className="px-4 pt-4 pb-2 flex-shrink-0 border-b">
             <DialogTitle className="flex items-center gap-2 text-sm">
               <Eye className="h-4 w-4" />
-              {previewDoc?.title}
-              <a href={previewDoc?.fileUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-primary hover:underline flex items-center gap-1">
-                <ExternalLink className="h-3 w-3" /> 新窗口打开
-              </a>
+              <span className="truncate flex-1">{previewDoc?.title}</span>
+              {previewDoc?.fileUrl && (
+                <a href={previewDoc.fileUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline flex items-center gap-1 flex-shrink-0">
+                  <ExternalLink className="h-3 w-3" /> 下载原文件
+                </a>
+              )}
             </DialogTitle>
           </DialogHeader>
-          {previewDoc?.fileUrl && (
-            <iframe
-              src={previewDoc.fileUrl}
-              className="flex-1 w-full border-0 rounded-b-lg"
-              title={previewDoc.title}
-            />
-          )}
+          <div className="flex-1 relative">
+            {previewLoading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">正在加载预览...</p>
+              </div>
+            )}
+            {previewUrl && (
+              <iframe
+                src={previewUrl}
+                className="w-full h-full border-0 rounded-b-lg"
+                title={previewDoc?.title}
+                onLoad={() => setPreviewLoading(false)}
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
