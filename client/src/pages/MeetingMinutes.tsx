@@ -128,6 +128,9 @@ export default function MeetingMinutes() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   const { data: clients = [] } = trpc.clients.list.useQuery();
   const { data: meetings = [], refetch } = trpc.meetings.listByClient.useQuery(
@@ -153,6 +156,37 @@ export default function MeetingMinutes() {
       toast.error("删除失败，请重试");
     },
   });
+
+  const deleteMeetingBatch = trpc.meetings.deleteBatch.useMutation({
+    onSuccess: () => {
+      refetch();
+      setSelectedIds(new Set());
+      setConfirmBatchDelete(false);
+      setBatchDeleting(false);
+      toast.success("已批量删除所选日志");
+    },
+    onError: () => {
+      setBatchDeleting(false);
+      toast.error("批量删除失败，请重试");
+    },
+  });
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(Array.from(prev));
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === meetings.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set((meetings as any[]).map((m) => m.id)));
+    }
+  };
 
   const handleDelete = (id: number) => {
     setDeletingId(id);
@@ -520,13 +554,47 @@ export default function MeetingMinutes() {
             </div>
           ) : (
             <div className="space-y-3">
+              {/* Batch select toolbar */}
+              <div className="flex items-center justify-between px-1 pb-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-primary"
+                    checked={selectedIds.size === meetings.length && meetings.length > 0}
+                    onChange={toggleSelectAll}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {selectedIds.size > 0 ? `已选 ${selectedIds.size} 条` : "全选"}
+                  </span>
+                </label>
+                {selectedIds.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="h-6 text-xs px-2 gap-1"
+                    onClick={() => setConfirmBatchDelete(true)}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    删除所选 ({selectedIds.size})
+                  </Button>
+                )}
+              </div>
               {meetings.map((meeting: any) => (
                 <div key={meeting.id} className="bg-card border border-border rounded-xl overflow-hidden">
                   <div
                     className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/20 transition-colors"
                     onClick={() => setExpandedId(expandedId === meeting.id ? null : meeting.id)}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="w-3.5 h-3.5 accent-primary flex-shrink-0"
+                        checked={selectedIds.has(meeting.id)}
+                        onChange={() => toggleSelect(meeting.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => setExpandedId(expandedId === meeting.id ? null : meeting.id)}>
                       <div className="w-8 h-8 rounded-lg bg-muted/50 flex items-center justify-center flex-shrink-0">
                         <Users className="w-4 h-4 text-muted-foreground" />
                       </div>
@@ -806,6 +874,37 @@ export default function MeetingMinutes() {
               onClick={() => confirmDeleteId && handleDelete(confirmDeleteId)}
             >
               {deletingId !== null ? "删除中..." : "确认删除"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Batch Delete Confirmation Dialog */}
+      <Dialog open={confirmBatchDelete} onOpenChange={(open) => { if (!open) setConfirmBatchDelete(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <Trash2 className="w-4 h-4" />
+              确认批量删除
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-muted-foreground">
+              即将永久删除 <span className="text-red-400 font-medium">{selectedIds.size} 条</span> 拜访日志及其 AI 生成内容，此操作不可撤销。
+            </p>
+          </div>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmBatchDelete(false)}>取消</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={batchDeleting}
+              onClick={() => {
+                setBatchDeleting(true);
+                deleteMeetingBatch.mutate({ ids: Array.from(selectedIds) });
+              }}
+            >
+              {batchDeleting ? "删除中..." : `确认删除 ${selectedIds.size} 条`}
             </Button>
           </div>
         </DialogContent>

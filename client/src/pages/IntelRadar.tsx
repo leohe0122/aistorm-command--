@@ -7,10 +7,12 @@ import {
   Radio, Send, AlertTriangle, TrendingUp, Users, Briefcase, Code, HelpCircle,
   Newspaper, Loader2, RefreshCw, ExternalLink, Calendar, Rss, Shield
 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import ClientSelector from "@/components/ClientSelector";
 import { Link } from "wouter";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const signalTypeIcon: Record<string, any> = {
   "人事变动": Users,
@@ -56,6 +58,8 @@ export default function IntelRadar() {
   const [selectedNewsItem, setSelectedNewsItem] = useState<any>(null);
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<number | null>(null);
   const [complianceExpanded, setComplianceExpanded] = useState(true);
+  const [confirmDeleteSignalId, setConfirmDeleteSignalId] = useState<number | null>(null);
+  const [deletingSignalId, setDeletingSignalId] = useState<number | null>(null);
 
   const { data: clients = [] } = trpc.clients.list.useQuery();
   const { data: signals = [], refetch } = trpc.intelligence.listByClient.useQuery(
@@ -82,6 +86,20 @@ export default function IntelRadar() {
   );
 
   // Compliance policy RSS (港澳+东南亚合规政策动态，全局，不过滤客户)
+  const deleteSignal = trpc.intelligence.delete.useMutation({
+    onSuccess: () => {
+      refetch();
+      refetchAll();
+      setConfirmDeleteSignalId(null);
+      setDeletingSignalId(null);
+      toast.success("信号已删除");
+    },
+    onError: () => {
+      setDeletingSignalId(null);
+      toast.error("删除失败，请重试");
+    },
+  });
+
   const { data: complianceItems = [], isLoading: fetchingCompliance, refetch: refetchCompliance } = trpc.rss.fetchComplianceNews.useQuery(
     { limit: 30 }
   );
@@ -414,9 +432,18 @@ export default function IntelRadar() {
                              </span>
                            )}
                           </div>
-                          <span className="text-xs text-muted-foreground flex-shrink-0">
-                            {new Date(signal.createdAt).toLocaleDateString("zh-CN")}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(signal.createdAt).toLocaleDateString("zh-CN")}
+                            </span>
+                            <button
+                              onClick={() => setConfirmDeleteSignalId(signal.id)}
+                              className="p-1 rounded hover:bg-red-500/10 text-muted-foreground/50 hover:text-red-400 transition-colors"
+                              title="删除此信号"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                         <div className="text-xs text-muted-foreground mb-2 line-clamp-2">{signal.rawSignal}</div>
                         {signal.aiInterpretation && (
@@ -500,8 +527,38 @@ export default function IntelRadar() {
             </div>
           )}
         </div>
-      </div>
 
 
+      {/* Delete Signal Confirmation Dialog */}
+      <Dialog open={confirmDeleteSignalId !== null} onOpenChange={(open) => { if (!open) setConfirmDeleteSignalId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <Trash2 className="w-4 h-4" />
+              确认删除情报信号
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-muted-foreground">此操作不可撤销，该条情报信号及其 AI 解读将被永久删除。</p>
+          </div>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteSignalId(null)}>取消</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deletingSignalId !== null}
+              onClick={() => {
+                if (confirmDeleteSignalId) {
+                  setDeletingSignalId(confirmDeleteSignalId);
+                  deleteSignal.mutate({ id: confirmDeleteSignalId });
+                }
+              }}
+            >
+              {deletingSignalId !== null ? "删除中..." : "确认删除"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

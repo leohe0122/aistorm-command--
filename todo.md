@@ -347,6 +347,11 @@
 - [x] 后端：meetings.delete 接口（按 id 删除）
 - [x] 前端：拜访日志历史列表每条记录右侧加删除按钮（垃圾桶图标），点击弹出确认对话框后删除
 
+## Round 47 — 数据清理三项功能（2026-07-27）
+- [x] 情报信号：后端 intelligence.delete 接口 + 前端历史列表单条删除按钮（垃圾桶图标+确认弹窗）
+- [x] 关键人新增表单：补全 buyingRole 字段（Buying Group 角色选择器，默认"未知"）
+- [x] 拜访日志：历史列表顶部全选复选框 + 批量删除按钮（后端 meetings.deleteBatch 接口）
+
 ## Round 45 — 情报雷达RSS分离修复（2026-07-27）
 - [x] 修复：合规政策RSS源（菲律宾NPC等）被混入客户专属新闻流 → fetchNews路由跳过tags含"合规政策"的RSS源
 - [x] 新增：rss.fetchComplianceNews专用路由，只抓取tags含"合规政策"的RSS源

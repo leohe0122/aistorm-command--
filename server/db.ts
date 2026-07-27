@@ -214,6 +214,12 @@ export async function updateSignal(id: number, data: Partial<InsertIntelligenceS
   await db.update(intelligenceSignals).set(data).where(eq(intelligenceSignals.id, id));
 }
 
+export async function deleteSignal(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(intelligenceSignals).where(eq(intelligenceSignals.id, id));
+}
+
 // ── Action Items ───────────────────────────────────────────────────────────
 export async function getActionsByClientId(clientId: number): Promise<ActionItem[]> {
   const db = await getDb();
@@ -314,6 +320,14 @@ export async function deleteMeeting(id: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.delete(meetingMinutes).where(eq(meetingMinutes.id, id));
+}
+
+export async function deleteMeetingBatch(ids: number[]): Promise<void> {
+  if (!ids.length) return;
+  const db = await getDb();
+  if (!db) return;
+  const { inArray } = await import('drizzle-orm');
+  await db.delete(meetingMinutes).where(inArray(meetingMinutes.id, ids));
 }
 
 // ── POD Tasks ──────────────────────────────────────────────────────────────

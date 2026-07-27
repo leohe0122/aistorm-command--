@@ -17,11 +17,12 @@ import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient
   getMeddpiccByClientId, upsertMeddpicc,
   insertClient, deleteClientCascade,
   getSignalsByClientId, getAllRecentSignals, insertSignal, updateSignal,
+  deleteSignal,
   getActionsByClientId, getActionsByRole, insertActions, completeAction, deleteActionById, clearPendingActionsByClient,
   getOnePagersByClientId, insertOnePager,
   getAmmoByClientId, insertAmmo,
   getMeetingsByClientId, insertMeeting, updateMeeting,
-  deleteMeeting,
+  deleteMeeting, deleteMeetingBatch,
   getPodTasksByRole, insertPodTask, completePodTask, deletePodTask, clearCompletedPodTasks, clearPodTasksByRole,
   getLatestScoreByClientId, insertScore,
   getDealReviews, insertDealReview,
@@ -329,6 +330,10 @@ export const appRouter = router({
         opportunityId: input.opportunityId ?? undefined,
       });
       return { id: signalId, ...parsed };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteSignal(input.id);
+      return { success: true };
     }),
   }),
 
@@ -1186,6 +1191,10 @@ ${contentSource}
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       await deleteMeeting(input.id);
       return { success: true };
+    }),
+    deleteBatch: protectedProcedure.input(z.object({ ids: z.array(z.number()) })).mutation(async ({ input }) => {
+      await deleteMeetingBatch(input.ids);
+      return { success: true, deleted: input.ids.length };
     }),
   }),
 

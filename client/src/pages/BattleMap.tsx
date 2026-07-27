@@ -811,6 +811,7 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
   const [showChainPanel, setShowChainPanel] = useState(false);
   const [newContact, setNewContact] = useState({
     name: "", title: "", department: "", influence: "影响者", relationship: "未接触", email: "", linkedinUrl: "", notes: ""
+    , buyingRole: "未知"
   });
   const [editData, setEditData] = useState<any>({});
 
@@ -822,7 +823,7 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
       utils.contacts.listByClient.invalidate({ clientId });
       toast.success("关键人已添加");
       setShowAdd(false);
-      setNewContact({ name: "", title: "", department: "", influence: "影响者", relationship: "未接触", email: "", linkedinUrl: "", notes: "" });
+      setNewContact({ name: "", title: "", department: "", influence: "影响者", relationship: "未接触", email: "", linkedinUrl: "", notes: "", buyingRole: "未知" });
     },
   });
 
@@ -1137,6 +1138,13 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
             <label className="text-[10px] text-muted-foreground mb-0.5 block">备注（背景、切入点等）</label>
             <Textarea className="text-xs h-14 resize-none" placeholder="关键背景信息、触达建议..." value={newContact.notes}
               onChange={(e) => setNewContact({ ...newContact, notes: e.target.value })} />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">Buying Group 角色</label>
+            <Select value={newContact.buyingRole} onValueChange={(v) => setNewContact({ ...newContact, buyingRole: v })}>
+              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>{BUYING_ROLE_OPTIONS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
           <div className="flex gap-2">
             <Button size="sm" className="h-7 text-xs gap-1" disabled={!newContact.name || addContact.isPending}
