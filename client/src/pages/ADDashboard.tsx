@@ -873,55 +873,54 @@ export default function ADDashboard() {
                     {/* 该客户下的商机列表 */}
                     <div className="ml-3 space-y-1 border-l-2 border-border/30 pl-2">
 
+                      {/* 列表头 */}
+                      <div className="flex items-center gap-2 px-2 py-0.5 text-[9px] text-muted-foreground/40 font-medium border-b border-border/20 mb-0.5">
+                        <span className="flex-1">商机名称</span>
+                        <span className="w-16 text-right">关单日期</span>
+                        <span className="w-12 text-right">金额</span>
+                        <span className="w-16 text-center">阶段</span>
+                        <span className="w-8 text-right">停留</span>
+                        <span className="w-6 text-center">异常</span>
+                      </div>
                       {group.opps.map((opp: any) => {
                         const allAnomalies = [
                           ...(opp.oppAnomalies ?? []),
                           ...(opp.weakDims?.length > 0 ? [`MEDDPICC缺口:${opp.weakDims.join('/')}`] : []),
                         ];
                         const hasAnomaly = allAnomalies.length > 0;
+                        const anomalyTooltip = allAnomalies.join(' · ');
                         return (
                           <div
                             key={opp.id}
-                            className={`px-2 py-1.5 rounded cursor-pointer transition-colors border ${
+                            title={hasAnomaly ? `⚠ ${anomalyTooltip}` : `${opp.name} · ${opp.stage}`}
+                            className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition-colors text-xs ${
                               opp.isStagnant
-                                ? "bg-red-500/8 border-red-500/20 hover:bg-red-500/12"
+                                ? "bg-red-500/8 border-l-2 border-red-500/50 hover:bg-red-500/12"
                                 : hasAnomaly
-                                ? "bg-orange-500/5 border-orange-500/20 hover:bg-orange-500/10"
+                                ? "bg-orange-500/5 border-l-2 border-orange-500/40 hover:bg-orange-500/10"
                                 : opp.isWarning
-                                ? "bg-yellow-500/5 border-yellow-500/15 hover:bg-yellow-500/10"
-                                : "border-transparent hover:bg-muted/30"
+                                ? "bg-yellow-500/5 border-l-2 border-yellow-500/30 hover:bg-yellow-500/10"
+                                : "border-l-2 border-transparent hover:bg-muted/20"
                             }`}
                             onClick={() => navigate(`/battle-map?clientId=${opp.clientId}&oppId=${opp.id}`)}
                           >
-                            {/* 行1：商机名 + 阶段（紧凑） + 停留天数 + 状态 */}
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-medium truncate flex-1">{opp.name}</span>
-                              <span className="text-[10px] px-1.5 py-0 rounded bg-muted/50 text-muted-foreground whitespace-nowrap flex-shrink-0">{opp.stage}</span>
-                              <span
-                                className={`text-xs font-bold flex-shrink-0 ${opp.isStagnant ? "text-red-400" : opp.isWarning ? "text-yellow-400" : "text-green-400"}`}
-                                title={`阶段参考：黄色>${opp.thresholdYellow}天，红色>${opp.thresholdRed}天`}
-                              >{opp.stageDwellDays}天</span>
-                            </div>
-                            {/* 行2：关单日期 + 金额 + Champion */}
-                            <div className="flex items-center gap-3 mt-0.5 text-[9px] text-muted-foreground/70">
-                              <span className={!opp.expectedCloseDate ? "text-orange-400/80" : ""}>
-                                {opp.expectedCloseDate ? `📅 ${opp.expectedCloseDate}` : "⚠ 未设关单日期"}
-                              </span>
-                              <span className={!opp.estimatedValue || opp.estimatedValue === '$0' ? "text-orange-400/80" : ""}>
-                                {opp.estimatedValue ? `💰 ${opp.estimatedValue}` : "⚠ 未填金额"}
-                              </span>
-                              {opp.champion && (
-                                <span className="text-cyan-400/70">👤 {opp.champion}</span>
-                              )}
-                            </div>
-                            {/* 行3：异常标签 */}
-                            {hasAnomaly && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {allAnomalies.map((a: string, i: number) => (
-                                  <span key={i} className="text-[9px] px-1 py-0.5 rounded bg-orange-500/15 text-orange-400">⚠ {a}</span>
-                                ))}
-                              </div>
-                            )}
+                            <span className="font-medium truncate min-w-0 flex-1">{opp.name}</span>
+                            <span className={`w-16 text-right text-[9px] flex-shrink-0 ${!opp.expectedCloseDate ? "text-orange-400/60" : "text-muted-foreground/60"}`}>
+                              {opp.expectedCloseDate ?? "TBD"}
+                            </span>
+                            <span className={`w-12 text-right text-[9px] font-mono flex-shrink-0 ${!opp.estimatedValue ? "text-orange-400/60" : "text-muted-foreground/70"}`}>
+                              {opp.estimatedValue ?? "—"}
+                            </span>
+                            <span className="w-16 text-center text-[9px] px-1 py-0.5 rounded bg-muted/40 text-muted-foreground flex-shrink-0">{opp.stage}</span>
+                            <span className={`w-8 text-right font-bold flex-shrink-0 ${opp.isStagnant ? "text-red-400" : opp.isWarning ? "text-yellow-400" : "text-green-400"}`}>
+                              {opp.stageDwellDays}天
+                            </span>
+                            <span className="w-6 text-center flex-shrink-0">
+                              {hasAnomaly
+                                ? <span className="text-[9px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400 font-bold">⚠{allAnomalies.length}</span>
+                                : <span className="text-[9px] text-green-400/50">✓</span>
+                              }
+                            </span>
                           </div>
                         );
                       })}
