@@ -312,3 +312,5 @@
 - [ ] AI解析速度慢：拜访日志4个AI调用串行执行，需改为并行（第1个完成后2/3/4同时发起）
 - [ ] MEDDPICC建议持久化：AI生成的更新建议页面刷新后消失，需存入DB（meetingMinutes表加meddpiccSuggestions字段），历史记录里随时可采纳
 - [ ] 演示视频制作暂停：脚本V5和素材已保留在/home/ubuntu/videos/aistorm-command-demo/，待系统稳定后继续
+- [x] AI解析速度慢：拜访日志4个AI调用串行执行 → 已修复（第2/3/4个改为Promise.all并行，第2个从gpt-5降为gpt-4o-mini）
+- [x] MEDDPICC建议持久化：确认不需要持久化，建议是一次性判断，SAM应在录入后立即采纳
