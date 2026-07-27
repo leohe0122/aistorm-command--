@@ -413,6 +413,31 @@ export default function MeetingMinutes() {
                 <Sparkles className="w-4 h-4" />
                 {generating ? "AI 解析中..." : "生成拜访作战日志"}
               </Button>
+
+              {/* Progress indicator shown while generating */}
+              {generating && (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                    <span className="text-sm font-medium text-primary">AI 正在解析拜访记录</span>
+                  </div>
+                  <div className="space-y-1.5 pl-6">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                      <span>生成结构化拜访纪要（约 20-40 秒）</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
+                      <span>提取 MEDDPICC 更新建议</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
+                      <span>识别竞品 & 生成策略建议</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground pl-6">请勿关闭页面，解析完成后自动展示结果</p>
+                </div>
+              )}
             </div>
           </div>
 

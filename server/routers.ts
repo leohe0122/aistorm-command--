@@ -1036,7 +1036,7 @@ ${contentSource}
 （本次拜访发现的潜在风险或需要注意的信号）`;
 
             const res = await invokeLLM({
-        model: "gpt-5",
+        model: "gpt-5-mini",
         messages: [{ role: "user", content: prompt }],
       });
       const aiMinutes = String(res.choices[0].message.content || "");
