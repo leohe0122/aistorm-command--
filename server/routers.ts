@@ -436,6 +436,10 @@ export const appRouter = router({
         const customSources = await db!.select().from(rssSources).where(eq(rssSources.isActive, true));
 
         for (const source of customSources) {
+          // 跳过合规政策类RSS源（这类源不含客户专属新闻，应在合规政策专区单独展示）
+          const tags = (source.tags as string[]) || [];
+          if (tags.includes('合规政策')) continue;
+
           try {
             const res = await fetch(source.url, {
               headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RSS Reader)' },
@@ -479,6 +483,53 @@ export const appRouter = router({
       });
 
       return results.slice(0, input.limit);
+    }),
+    // Fetch compliance policy RSS news (合规政策类RSS，不过滤客户名)
+    fetchComplianceNews: publicProcedure.input(z.object({
+      limit: z.number().default(20),
+    })).query(async ({ input }) => {
+      const fetch = (await import('node-fetch')).default;
+      const { XMLParser } = await import('fast-xml-parser');
+      const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+      const db = await getDb();
+      const { rssSources } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const allSources = await db!.select().from(rssSources).where(eq(rssSources.isActive, true));
+      const complianceSources = allSources.filter((s: any) => {
+        const tags = (s.tags as string[]) || [];
+        return tags.includes('合规政策');
+      });
+      const compResults: Array<{
+        title: string; link: string; pubDate: string; description: string; source: string;
+      }> = [];
+      for (const source of complianceSources) {
+        try {
+          const res = await fetch(source.url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RSS Reader)' },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (!res.ok) continue;
+          const xml = await res.text();
+          const parsed = parser.parse(xml);
+          const items = parsed?.rss?.channel?.item || parsed?.feed?.entry || [];
+          const arr = Array.isArray(items) ? items : [items];
+          arr.slice(0, 5).forEach((item: any) => {
+            compResults.push({
+              title: String(item.title || '').replace(/<[^>]+>/g, ''),
+              link: String(item.link?.['@_href'] || item.link || item.guid || ''),
+              pubDate: String(item.pubDate || item.updated || item.published || ''),
+              description: String(item.description || item.summary || '').replace(/<[^>]+>/g, '').slice(0, 200),
+              source: source.name,
+            });
+          });
+        } catch (e) { /* skip */ }
+      }
+      compResults.sort((a, b) => {
+        const da = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+        const db2 = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+        return db2 - da;
+      });
+      return compResults.slice(0, input.limit);
     }),
   }),
 

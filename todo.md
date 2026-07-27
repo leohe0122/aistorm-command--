@@ -341,17 +341,13 @@
 - [x] 前端：情报信号历史列表中已关联商机的信号显示"🎯商机窗口"标签
 
 ## Round 44 — 决策层覆盖率大盘 + 合规政策RSS（2026-07-27）
-- [ ] 后端：dashboard.summary新增decisionLayerCoverage聚合数据（各客户C-Level角色覆盖情况）
-- [ ] 前端：AD指挥台新增"决策层覆盖率"面板（全局C-Level触达率统计，按客户展示覆盖缺口）
-- [ ] 系统设置：预置港澳+东南亚合规政策RSS源（PDPC Singapore/PDPA Thailand/PDPA Malaysia/PCPD HK/GPDP Macau/PDPA Indonesia/PDPA Philippines）
-- [ ] 情报雷达：新增"合规政策"信号类型，合规政策RSS自动归类
 - [x] 后端：dashboard.summary新增decisionLayerCoverage聚合数据（各客户C-Level角色覆盖情况）
 - [x] 前端：AD指挥台新增"决策层覆盖率"面板（全局C-Level触达率统计，按客户展示覆盖缺口）
 - [x] 系统设置：预置港澳+东南亚合规政策RSS源（PDPC Singapore/PDPA Thailand/PDPA Malaysia/PCPD HK/GPDP Macau/CSA Singapore/Google News合规动态）
 - [x] 情报雷达：新增"合规政策"信号类型（紫色标签，Shield图标），合规政策RSS自动归类
 
-## Round 44 — 决策层覆盖率大盘 + 合规政策RSS（2026-07-27）
-- [ ] 后端：dashboard.summary新增decisionLayerCoverage聚合数据（各客户C-Level角色覆盖情况）
-- [ ] 前端：AD指挥台新增"决策层覆盖率"面板（全局C-Level触达率统计，按客户展示覆盖缺口）
-- [ ] 系统设置：预置东南亚合规政策RSS源（PDPC Singapore/PDPA Thailand/PDPA Malaysia/PCPD HK）
-- [ ] 情报雷达：新增"合规政策"信号类型，合规政策RSS自动归类
+## Round 45 — 情报雷达RSS分离修复（2026-07-27）
+- [x] 修复：合规政策RSS源（菲律宾NPC等）被混入客户专属新闻流 → fetchNews路由跳过tags含"合规政策"的RSS源
+- [x] 新增：rss.fetchComplianceNews专用路由，只抓取tags含"合规政策"的RSS源
+- [x] 前端：情报雷达底部新增"港澳+东南亚合规政策动态"折叠面板（紫色主题，Shield图标，可展开/收起，支持"用作信号"）
+- [x] 客户专属新闻（外部新闻Tab）现在只显示Google News搜索结果，不再混入合规政策RSS
