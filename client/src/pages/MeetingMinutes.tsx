@@ -177,8 +177,29 @@ export default function MeetingMinutes() {
 
   const handleApplyAll = async () => {
     const pending = meddpiccSuggestions.filter((s) => !appliedDims.has(s.dim));
-    for (const s of pending) await handleApplySuggestion(s);
-    toast.success(`已将 ${pending.length} 条 MEDDPICC 更新同步到战场地图`);
+    if (pending.length === 0) return;
+    const results = await Promise.allSettled(pending.map(async (s) => {
+      if (!selectedClientId) throw new Error("no client");
+      const scoreField = dimToScoreField[s.dim];
+      if (!scoreField) throw new Error(`未知维度: ${s.dim}`);
+      await updateMeddpicc.mutateAsync({ clientId: selectedClientId, [scoreField]: s.suggestedScore } as any);
+      await addMeddpiccLog.mutateAsync({
+        clientId: selectedClientId,
+        dimension: s.dim,
+        score: s.suggestedScore,
+        note: `[来自拜访日志] ${s.reason}`,
+        authorRole: "SAM",
+      });
+      return s.dim;
+    }));
+    const succeeded = results.filter(r => r.status === "fulfilled").map(r => (r as PromiseFulfilledResult<string>).value);
+    if (succeeded.length > 0) {
+      setAppliedDims((prev) => { const next = new Set(Array.from(prev)); succeeded.forEach(d => next.add(d)); return next; });
+      utils.meddpicc.get.invalidate({ clientId: selectedClientId! });
+    }
+    const failed = results.filter(r => r.status === "rejected").length;
+    if (failed > 0) toast.error(`${failed} 条更新失败，其余 ${succeeded.length} 条已同步`);
+    else toast.success(`已将 ${succeeded.length} 条 MEDDPICC 更新同步到战场地图`);
   };
 
   const handleApplyHookTopic = async () => {
