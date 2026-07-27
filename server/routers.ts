@@ -1040,13 +1040,14 @@ ${contentSource}
 ### 风险与注意事项
 （本次拜访发现的潜在风险或需要注意的信号）`;
 
-            const res = await invokeLLM({
+      const res = await invokeLLM({
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
       });
       const aiMinutes = String(res.choices[0].message.content || "");
 
       // Calls 2/3/4 all depend on aiMinutes but are independent of each other — run in parallel
+      console.log("[PARALLEL_START] aiMinutes len:", aiMinutes.length);
       const [meddpiccSuggestions, strategyResult, detectedCompetitors] = await Promise.all([
         // Call 2: extract structured MEDDPICC suggestions (using gpt-5-mini — JSON extraction task)
         invokeLLM({
@@ -1066,7 +1067,7 @@ ${contentSource}
             const firstArr = Object.values(parsed).find(v => Array.isArray(v));
             return firstArr || [];
           } catch { return []; }
-        }).catch(() => [] as Array<{dim: string; label: string; suggestedScore: number; reason: string; confidence: string}>),
+        }).catch((e) => { console.error("[MEDDPICC_CATCH]", String(e).slice(0,200)); return [] as Array<{dim: string; label: string; suggestedScore: number; reason: string; confidence: string}>; }),
 
         // Call 3: extract hookTopic and securityAngle
         invokeLLM({
