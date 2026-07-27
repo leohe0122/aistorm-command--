@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { AISTORM_LOGO_SRC } from "@/lib/logoData";
+import AIStormLogo from "@/components/AIStormLogo";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Mail, Lock, User, Eye, EyeOff, LogIn } from "lucide-react";
@@ -88,14 +88,9 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
             style={{ background: "linear-gradient(135deg, transparent 30%, rgba(0,168,214,0.9) 50%, transparent 70%)" }} />
         </div>
 
-        {/* Logo */}
+       {/* Logo */}
         <div className="relative z-10">
-         <img
-            src={AISTORM_LOGO_SRC}
-            alt="AIStorm"
-            className="h-12 w-auto object-contain"
-            style={{ filter: "brightness(3) contrast(1.2) saturate(1.3)" }}
-          />
+          <AIStormLogo height={40} showText={true} />
         </div>
 
         {/* Center content */}
@@ -133,14 +128,9 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
         {/* Subtle right-side glow */}
         <div className="absolute top-1/4 right-0 w-96 h-96 rounded-full pointer-events-none"
           style={{ background: "radial-gradient(circle, rgba(0,168,214,0.06) 0%, transparent 70%)" }} />
-        {/* Mobile logo */}
+       {/* Mobile logo */}
         <div className="md:hidden mb-8">
-          <img
-            src={AISTORM_LOGO_SRC}
-            alt="AIStorm"
-            className="h-10 w-auto object-contain"
-            style={{ filter: "brightness(3) contrast(1.2) saturate(1.3)" }}
-          />
+          <AIStormLogo height={36} showText={true} />
         </div>
 
         <div className="w-full max-w-md">

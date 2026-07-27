@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { AISTORM_LOGO_SRC } from "@/lib/logoData";
+import AIStormLogo from "@/components/AIStormLogo";
 import { useRole } from "@/contexts/RoleContext";
 import { cn } from "@/lib/utils";
 import {
@@ -90,12 +90,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           {/* Top brand accent line */}
           <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: "linear-gradient(90deg, #00A8D6 0%, #1B6FBF 60%, transparent 100%)" }} />
           {/* AIStorm Logo */}
-          <img
-            src={AISTORM_LOGO_SRC}
-            alt="AIStorm"
-            className="h-8 w-auto object-contain mb-2.5"
-            style={{ filter: "brightness(2) contrast(1.1) saturate(1.2)" }}
-          />
+          <AIStormLogo height={28} showText={true} className="mb-2.5" />
           {/* System name */}
           <div className="flex items-center gap-2">
             <div className="flex-1">
