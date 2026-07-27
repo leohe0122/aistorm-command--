@@ -259,7 +259,7 @@ export default function ActionCommand() {
       })),
       visitCount: (selectedClient as any)?.visitCount ?? 0,
       lastVisitDate: (selectedClient as any)?.lastVisitDate
-        ? new Date((selectedClient as any).lastVisitDate).toISOString()
+        ? (() => { try { return new Date((selectedClient as any).lastVisitDate).toISOString(); } catch { return null; } })()
         : null,
     });
   };
