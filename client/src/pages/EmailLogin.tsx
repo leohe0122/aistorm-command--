@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { AISTORM_LOGO_SRC } from "@/lib/logoData";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Mail, Lock, User, Eye, EyeOff, LogIn } from "lucide-react";
@@ -89,8 +90,8 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
 
         {/* Logo */}
         <div className="relative z-10">
-          <img
-            src="/manus-storage/aistorm-logo_534d597d.webp"
+         <img
+            src={AISTORM_LOGO_SRC}
             alt="AIStorm"
             className="h-12 w-auto object-contain"
             style={{ filter: "brightness(3) contrast(1.2) saturate(1.3)" }}
@@ -135,7 +136,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
         {/* Mobile logo */}
         <div className="md:hidden mb-8">
           <img
-            src="/manus-storage/aistorm-logo_534d597d.webp"
+            src={AISTORM_LOGO_SRC}
             alt="AIStorm"
             className="h-10 w-auto object-contain"
             style={{ filter: "brightness(3) contrast(1.2) saturate(1.3)" }}
