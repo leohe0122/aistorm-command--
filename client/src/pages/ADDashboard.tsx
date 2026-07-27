@@ -701,7 +701,7 @@ export default function ADDashboard() {
                         )}
                         <button
                           className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex-shrink-0"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/actions?clientId=${c.id}`); }}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/action-command?clientId=${c.id}`); }}
                         >
                           → 指令台
                         </button>
@@ -929,7 +929,7 @@ export default function ADDashboard() {
                             </span>
                             <button
                               className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex-shrink-0"
-                              onClick={(e) => { e.stopPropagation(); navigate(`/actions?clientId=${opp.clientId}`); }}
+                              onClick={(e) => { e.stopPropagation(); navigate(`/action-command?clientId=${opp.clientId}`); }}
                               title="前往AI行动指令台，为此客户生成针对性指令"
                             >
                               →
