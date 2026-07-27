@@ -10,6 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { dailyBriefingHandler } from "../scheduled/dailyBriefing";
 import { visitReminderHandler } from "../scheduled/visitReminder";
+import multer from "multer";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -38,6 +39,26 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+
+  // ── Multipart file upload endpoint (bypasses tRPC JSON 32MB limit) ──
+  const upload = multer({ storage: multer.memoryStorage() });
+  app.post("/api/upload-doc", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) { res.status(400).json({ error: "No file provided" }); return; }
+      const { storagePut } = await import("../storage");
+      const hash = Math.random().toString(36).slice(2, 10);
+      const filename = req.file.originalname;
+      const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
+      const base = filename.includes(".") ? filename.slice(0, filename.lastIndexOf(".")) : filename;
+      const fileKey = `product-docs/${Date.now()}-${base}_${hash}${ext}`;
+      const { key, url } = await storagePut(fileKey, req.file.buffer, req.file.mimetype || "application/octet-stream");
+      res.json({ fileKey: key, fileUrl: url, filename, mimeType: req.file.mimetype, fileSize: req.file.size });
+    } catch (e: any) {
+      console.error("[upload-doc]", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // tRPC API
   app.use(
     "/api/trpc",

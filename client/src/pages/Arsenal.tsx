@@ -35,7 +35,6 @@ function ProductDocsTab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: docs = [], refetch } = trpc.productDocs.list.useQuery(undefined);
-  const getUploadUrlMut = trpc.productDocs.getUploadUrl.useMutation();
   const confirmUploadMut = trpc.productDocs.confirmUpload.useMutation({
     onSuccess: () => {
       toast.success("文档上传成功");
@@ -56,19 +55,19 @@ function ProductDocsTab() {
     if (!selectedFile || !uploadForm.title) return;
     setUploading(true);
     try {
-      // Step 1: 获取预签名上传URL（服务器生成，不传文件数据）
-      const { fileKey, uploadUrl, fileUrl } = await getUploadUrlMut.mutateAsync({
-        filename: selectedFile.name,
-        mimeType: selectedFile.type || "application/octet-stream",
+      // Step 1: multipart 上传文件到服务器（服务器写入S3，无大小限制）
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      const uploadResp = await fetch("/api/upload-doc", {
+        method: "POST",
+        body: formData,
       });
-      // Step 2: 前端直接PUT到S3（无大小限制，不经过服务器）
-      const uploadResp = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": selectedFile.type || "application/octet-stream" },
-        body: selectedFile,
-      });
-      if (!uploadResp.ok) throw new Error(`上传到存储失败 (${uploadResp.status})`);
-      // Step 3: 通知服务器写入数据库
+      if (!uploadResp.ok) {
+        const errData = await uploadResp.json().catch(() => ({}));
+        throw new Error(errData.error || `上传失败 (${uploadResp.status})`);
+      }
+      const { fileKey, fileUrl } = await uploadResp.json();
+      // Step 2: 写入数据库
       await confirmUploadMut.mutateAsync({
         title: uploadForm.title,
         description: uploadForm.description || undefined,
