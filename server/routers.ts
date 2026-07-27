@@ -13,7 +13,7 @@ function extractJSON(raw: string): string {
   return match ? match[1].trim() : raw.trim();
 }
 
-import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient,
+import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient, invalidateClientsCache,
   getMeddpiccByClientId, upsertMeddpicc,
   insertClient, deleteClientCascade,
   getSignalsByClientId, getAllRecentSignals, insertSignal, updateSignal,
@@ -63,6 +63,7 @@ export const appRouter = router({
       plannedFirstVisitDate: z.number().nullable().optional(),
     })).mutation(({ input }) => {
       const { id, ...data } = input;
+      invalidateClientsCache();
       return updateClient(id, data as any);
     }),
     create: publicProcedure.input(z.object({
@@ -77,12 +78,14 @@ export const appRouter = router({
       monitorKeywords: z.array(z.string()).optional(),
     })).mutation(async ({ input }) => {
       const newId = await insertClient(input);
+      invalidateClientsCache();
       return { id: newId };
     }),
     delete: publicProcedure.input(z.object({
       id: z.number(),
     })).mutation(async ({ input }) => {
       await deleteClientCascade(input.id);
+      invalidateClientsCache();
       return { ok: true };
     }),
     importBatch: publicProcedure.input(z.object({
@@ -2564,7 +2567,7 @@ ${contactList}
         const { eq } = await import('drizzle-orm');
         const existing = await db.select().from(emailUsers).where(eq(emailUsers.email, input.email.toLowerCase())).limit(1);
         if (existing.length > 0) throw new Error('该邮箱已注册，请直接登录');
-        const passwordHash = await bcrypt.hash(input.password, 12);
+        const passwordHash = await bcrypt.hash(input.password, 10);
         await db.insert(emailUsers).values({ email: input.email.toLowerCase(), passwordHash, name: input.name });
         return { success: true };
       }),
@@ -2640,7 +2643,7 @@ ${contactList}
         if (userRows.length === 0) throw new Error('用户不存在');
         const valid = await bcrypt.compare(input.currentPassword, userRows[0].passwordHash);
         if (!valid) throw new Error('当前密码错误');
-        const newHash = await bcrypt.hash(input.newPassword, 12);
+        const newHash = await bcrypt.hash(input.newPassword, 10);
         await db.update(emailUsers).set({ passwordHash: newHash }).where(eq(emailUsers.id, userRows[0].id));
         return { success: true };
       }),

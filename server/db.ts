@@ -67,6 +67,10 @@ export async function getUserByOpenId(openId: string) {
 }
 
 // ── Clients ────────────────────────────────────────────────────────────────
+// In-memory cache for clients list (TTL 30s)
+let _clientsCache: { data: (Client & { visitCount: number; lastVisitDate: Date | null })[]; expiresAt: number } | null = null;
+export function invalidateClientsCache() { _clientsCache = null; }
+
 export async function getAllClients(): Promise<Client[]> {
   const db = await getDb();
   if (!db) return [];
@@ -77,6 +81,7 @@ export async function getAllClients(): Promise<Client[]> {
 export async function getAllClientsWithVisitStats(): Promise<(Client & { visitCount: number; lastVisitDate: Date | null })[]> {
   const db = await getDb();
   if (!db) return [];
+  if (_clientsCache && _clientsCache.expiresAt > Date.now()) return _clientsCache.data;
   const allClients = await db.select().from(clients).orderBy(desc(clients.isTest), clients.priority, clients.id);
   // Get visit counts and last visit dates for all clients in one query
   const stats = await db
@@ -88,11 +93,13 @@ export async function getAllClientsWithVisitStats(): Promise<(Client & { visitCo
     .from(meetingMinutes)
     .groupBy(meetingMinutes.clientId);
   const statsMap = new Map(stats.map((s) => [s.clientId, s]));
-  return allClients.map((c) => ({
+  const result = allClients.map((c) => ({
     ...c,
     visitCount: statsMap.get(c.id)?.visitCount ?? 0,
     lastVisitDate: statsMap.get(c.id)?.lastVisitDate ?? null,
   }));
+  _clientsCache = { data: result, expiresAt: Date.now() + 30_000 };
+  return result;
 }
 
 export async function getClientById(id: number): Promise<Client | undefined> {
