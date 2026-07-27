@@ -90,7 +90,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
 
        {/* Logo */}
         <div className="relative z-10">
-          <AIStormLogo height={40} showText={true} />
+          <AIStormLogo height={28} showText={true} />
         </div>
 
         {/* Center content */}
@@ -130,7 +130,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
           style={{ background: "radial-gradient(circle, rgba(0,168,214,0.06) 0%, transparent 70%)" }} />
        {/* Mobile logo */}
         <div className="md:hidden mb-8">
-          <AIStormLogo height={36} showText={true} />
+          <AIStormLogo height={24} showText={true} />
         </div>
 
         <div className="w-full max-w-md">

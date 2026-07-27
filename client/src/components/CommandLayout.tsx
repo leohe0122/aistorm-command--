@@ -90,7 +90,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           {/* Top brand accent line */}
           <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: "linear-gradient(90deg, #00A8D6 0%, #1B6FBF 60%, transparent 100%)" }} />
           {/* AIStorm Logo */}
-          <AIStormLogo height={28} showText={true} className="mb-2.5" />
+          <AIStormLogo height={20} showText={true} className="mb-2" />
           {/* System name */}
           <div className="flex items-center gap-2">
             <div className="flex-1">
