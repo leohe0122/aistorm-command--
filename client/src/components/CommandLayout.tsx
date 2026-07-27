@@ -90,7 +90,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: "linear-gradient(90deg, #00A8D6 0%, #1B6FBF 60%, transparent 100%)" }} />
           {/* AIStorm Logo */}
           <img
-            src="/manus-storage/aistorm-logo_a2e3b479.webp"
+            src="/manus-storage/aistorm-logo_534d597d.webp"
             alt="AIStorm"
             className="h-8 w-auto object-contain mb-2.5"
             style={{ filter: "brightness(2) contrast(1.1) saturate(1.2)" }}

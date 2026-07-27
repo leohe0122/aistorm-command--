@@ -90,7 +90,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
         {/* Logo */}
         <div className="relative z-10">
           <img
-            src="/manus-storage/aistorm-logo_a2e3b479.webp"
+            src="/manus-storage/aistorm-logo_534d597d.webp"
             alt="AIStorm"
             className="h-12 w-auto object-contain"
             style={{ filter: "brightness(3) contrast(1.2) saturate(1.3)" }}
@@ -135,7 +135,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
         {/* Mobile logo */}
         <div className="md:hidden mb-8">
           <img
-            src="/manus-storage/aistorm-logo_a2e3b479.webp"
+            src="/manus-storage/aistorm-logo_534d597d.webp"
             alt="AIStorm"
             className="h-10 w-auto object-contain"
             style={{ filter: "brightness(3) contrast(1.2) saturate(1.3)" }}
