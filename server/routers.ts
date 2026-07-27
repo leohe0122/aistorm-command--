@@ -2184,7 +2184,36 @@ ${contactList}
       }),
 
     // 上传产品文档
-    upload: protectedProcedure
+    // 获取预签名上传URL（前端直传S3，无大小限制）
+    getUploadUrl: protectedProcedure
+      .input(z.object({
+        filename: z.string(),
+        mimeType: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const { ENV } = await import('./_core/env');
+        const forgeUrl = (ENV.forgeApiUrl || '').replace(/\/+$/, '');
+        const forgeKey = ENV.forgeApiKey;
+        if (!forgeUrl || !forgeKey) throw new Error('Storage config missing');
+        const hash = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
+        const ext = input.filename.includes('.') ? input.filename.slice(input.filename.lastIndexOf('.')) : '';
+        const base = input.filename.includes('.') ? input.filename.slice(0, input.filename.lastIndexOf('.')) : input.filename;
+        const fileKey = `product-docs/${Date.now()}-${base}_${hash}${ext}`;
+        const presignUrl = new URL('v1/storage/presign/put', forgeUrl + '/');
+        presignUrl.searchParams.set('path', fileKey);
+        const presignResp = await fetch(presignUrl.toString(), {
+          headers: { Authorization: `Bearer ${forgeKey}` },
+        });
+        if (!presignResp.ok) {
+          const msg = await presignResp.text().catch(() => presignResp.statusText);
+          throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
+        }
+        const { url: s3Url } = await presignResp.json() as { url: string };
+        return { fileKey, uploadUrl: s3Url, fileUrl: `/manus-storage/${fileKey}` };
+      }),
+
+    // 确认上传完成，写入数据库
+    confirmUpload: protectedProcedure
       .input(z.object({
         title: z.string().min(1),
         description: z.string().optional(),
@@ -2192,32 +2221,27 @@ ${contactList}
         tags: z.array(z.string()).optional(),
         filename: z.string(),
         mimeType: z.string(),
-        base64Data: z.string(),
+        fileKey: z.string(),
+        fileUrl: z.string(),
         fileSize: z.number().optional(),
-        extractedText: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const { storagePut } = await import('./storage');
         const db = await getDb();
         if (!db) throw new Error('Database unavailable');
         const { productDocs } = await import('../drizzle/schema');
-        const buffer = Buffer.from(input.base64Data, 'base64');
-        const fileKey = `product-docs/${Date.now()}-${input.filename}`;
-        const { key, url } = await storagePut(fileKey, buffer, input.mimeType);
         const [result] = await db.insert(productDocs).values({
           title: input.title,
           description: input.description,
           productLine: input.productLine,
           tags: input.tags,
           filename: input.filename,
-          fileKey: key,
-          fileUrl: url,
+          fileKey: input.fileKey,
+          fileUrl: input.fileUrl,
           mimeType: input.mimeType,
           fileSize: input.fileSize,
-          extractedText: input.extractedText,
           uploadedBy: ctx.user?.name || 'unknown',
         });
-        return { id: (result as any).insertId, fileKey: key, fileUrl: url };
+        return { id: (result as any).insertId, fileKey: input.fileKey, fileUrl: input.fileUrl };
       }),
 
     // 删除产品文档

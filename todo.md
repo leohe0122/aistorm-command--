@@ -360,6 +360,12 @@
 - [x] 前端：情报雷达历史信号列表顶部全选+批量删除（复选框+确认弹窗）
 - [x] 前端：拜访日志每条记录添加铅笔编辑按钮，弹出编辑表单（日期/类型/参会人/要点）
 
+## Round 49 — 武器库文档上传修复（2026-07-27）
+- [x] 后端：新增 productDocs.getUploadUrl 预签名接口，支持任意大小文件
+- [x] 后端：新增 productDocs.confirmUpload 接口，前端上传完成后写入数据库
+- [x] 前端：Arsenal.tsx 改为前端直接 PUT 到 S3（三步流程：获取URL→直传→确认）
+- [x] 前端：支持 PDF/PPT/PPTX/DOC/DOCX/XLS/XLSX/MP4/MOV/AVI，移除文件大小限制
+
 ## Round 45 — 情报雷达RSS分离修复（2026-07-27）
 - [x] 修复：合规政策RSS源（菲律宾NPC等）被混入客户专属新闻流 → fetchNews路由跳过tags含"合规政策"的RSS源
 - [x] 新增：rss.fetchComplianceNews专用路由，只抓取tags含"合规政策"的RSS源

@@ -35,35 +35,47 @@ function ProductDocsTab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: docs = [], refetch } = trpc.productDocs.list.useQuery(undefined);
-  const uploadMut = trpc.productDocs.upload.useMutation({
+  const getUploadUrlMut = trpc.productDocs.getUploadUrl.useMutation();
+  const confirmUploadMut = trpc.productDocs.confirmUpload.useMutation({
     onSuccess: () => { toast.success("文档上传成功"); refetch(); setUploadDialog(false); setSelectedFile(null); setUploadForm({ title: "", description: "", productLine: "", tags: "" }); },
-    onError: (e) => toast.error("上传失败: " + e.message),
+    onError: (e: any) => toast.error("上传失败: " + e.message),
   });
   const deleteMut = trpc.productDocs.delete.useMutation({
     onSuccess: () => { toast.success("已删除"); refetch(); },
-    onError: (e) => toast.error("删除失败: " + e.message),
+    onError: (e: any) => toast.error("删除失败: " + e.message),
   });
 
   const handleUpload = async () => {
     if (!selectedFile || !uploadForm.title) return;
     setUploading(true);
     try {
-      const buffer = await selectedFile.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      const base64 = btoa(binary);
-      await uploadMut.mutateAsync({
+      // Step 1: 获取预签名上传URL（服务器生成，不传文件数据）
+      const { fileKey, uploadUrl, fileUrl } = await getUploadUrlMut.mutateAsync({
+        filename: selectedFile.name,
+        mimeType: selectedFile.type || "application/octet-stream",
+      });
+      // Step 2: 前端直接PUT到S3（无大小限制，不经过服务器）
+      const uploadResp = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": selectedFile.type || "application/octet-stream" },
+        body: selectedFile,
+      });
+      if (!uploadResp.ok) throw new Error(`上传到存储失败 (${uploadResp.status})`);
+      // Step 3: 通知服务器写入数据库
+      await confirmUploadMut.mutateAsync({
         title: uploadForm.title,
         description: uploadForm.description || undefined,
         productLine: uploadForm.productLine || undefined,
         tags: uploadForm.tags ? uploadForm.tags.split(",").map((t: string) => t.trim()).filter(Boolean) : undefined,
         filename: selectedFile.name,
-        mimeType: selectedFile.type,
-        base64Data: base64,
+        mimeType: selectedFile.type || "application/octet-stream",
+        fileKey,
+        fileUrl,
         fileSize: selectedFile.size,
       });
-    } catch { /* handled by onError */ } finally { setUploading(false); }
+    } catch (err: any) {
+      toast.error("上传失败: " + (err.message || "未知错误"));
+    } finally { setUploading(false); }
   };
 
   const filtered = (docs as any[]).filter((d) => {
@@ -174,11 +186,11 @@ function ProductDocsTab() {
                 ) : (
                   <div className="text-muted-foreground text-sm">
                     <Upload className="h-6 w-6 mx-auto mb-1 opacity-50" />
-                    <p>点击选择 PDF / PPTX / DOCX</p>
+                    <p>点击选择文件（PDF / PPT / DOC / Excel / MP4，不限大小）</p>
                   </div>
                 )}
               </div>
-              <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.pptx,.ppt,.docx,.doc,.txt" onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
+              <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.pptx,.ppt,.docx,.doc,.xls,.xlsx,.mp4,.mov,.avi" onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
             </div>
           </div>
           <DialogFooter>
