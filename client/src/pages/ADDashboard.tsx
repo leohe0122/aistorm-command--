@@ -572,7 +572,7 @@ export default function ADDashboard() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl">
+    <div className="p-4 md:p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -630,13 +630,13 @@ export default function ADDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* 0→1 客户推进看板 */}
-        <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div className="lg:col-span-2 rounded-xl border bg-card p-4 space-y-3">
           <div className="flex items-center gap-2 font-semibold text-sm">
             <BarChart3 className="w-4 h-4 text-[#00A8D6]" />
             0→1 客户推进
-            <span className="text-xs text-muted-foreground font-normal ml-1">— 阶段停留天数</span>
+            <span className="text-xs text-muted-foreground font-normal ml-1">— 阶段推进 · 异常检测</span>
           </div>
           {(() => {
             const board = (data as any).zeroToOneBoard ?? [];
@@ -644,53 +644,72 @@ export default function ADDashboard() {
               return <div className="text-xs text-muted-foreground text-center py-4">暂无 0→1 阶段客户</div>;
             }
             return (
-              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-                {board.map((c: any) => (
-                  <div
-                    key={c.id}
-                    className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
-                      c.isStagnant
-                        ? "bg-red-500/8 border border-red-500/25 hover:bg-red-500/15"
-                        : c.hasActionThisWeek
-                        ? "bg-green-500/5 border border-green-500/20 hover:bg-green-500/10"
-                        : "bg-muted/20 border border-border/30 hover:bg-muted/40"
-                    }`}
-                    onClick={() => navigate(`/battle-map?clientId=${c.id}`)}
-                  >
-                    {/* 客户名 + 阶段 */}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold truncate">{c.name}</span>
-                        {c.priority === "P0" && (
-                          <span className="text-[9px] px-1 py-0 rounded bg-red-500/20 text-red-400 font-bold flex-shrink-0">P0</span>
+              <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                {board.map((c: any) => {
+                  const hasAnomaly = c.anomalies?.length > 0;
+                  return (
+                    <div
+                      key={c.id}
+                      className={`p-2 rounded-lg cursor-pointer transition-colors border ${
+                        hasAnomaly
+                          ? "bg-orange-500/5 border-orange-500/25 hover:bg-orange-500/10"
+                          : c.isStagnant
+                          ? "bg-red-500/8 border-red-500/25 hover:bg-red-500/15"
+                          : c.hasActionThisWeek
+                          ? "bg-green-500/5 border-green-500/20 hover:bg-green-500/10"
+                          : "bg-muted/20 border-border/30 hover:bg-muted/40"
+                      }`}
+                      onClick={() => navigate(`/battle-map?clientId=${c.id}`)}
+                    >
+                      {/* 行1：客户名 + 阶段 + 停留天数 */}
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                          <span className="text-xs font-semibold truncate">{c.name}</span>
+                          {c.priority === "P0" && (
+                            <span className="text-[9px] px-1 py-0 rounded bg-red-500/20 text-red-400 font-bold flex-shrink-0">P0</span>
+                          )}
+                          <span className="text-[10px] px-1.5 py-0 rounded bg-muted/50 text-muted-foreground flex-shrink-0">{c.stage}</span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className={`text-xs font-bold ${c.stageDwellDays > 14 ? "text-red-400" : c.stageDwellDays > 7 ? "text-yellow-400" : "text-green-400"}`}>
+                            {c.stageDwellDays}天
+                          </div>
+                          {c.hasActionThisWeek
+                            ? <span className="text-[10px] text-green-400">✓本周</span>
+                            : <span className="text-[10px] text-muted-foreground/50">无动作</span>
+                          }
+                        </div>
+                      </div>
+                      {/* 行2：异常标签 */}
+                      {hasAnomaly && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(c.anomalies as string[]).map((a: string, i: number) => (
+                            <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 font-medium">
+                              ⚠ {a}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* 行3：拜访次数 + 关键人数 */}
+                      <div className="flex items-center gap-3 mt-1 text-[9px] text-muted-foreground/60">
+                        <span>拜访 {c.visitCount ?? 0} 次</span>
+                        <span>关键人 {c.contactCount ?? 0} 人</span>
+                        {c.daysSinceLastVisit !== null && (
+                          <span className={c.daysSinceLastVisit > 21 ? "text-red-400/70" : ""}>
+                            上次拜访 {c.daysSinceLastVisit} 天前
+                          </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className={`text-[10px] px-1 py-0 rounded ${STAGE_COLORS[c.stage] ? "text-white" : "text-muted-foreground"} bg-muted/50`}>
-                          {c.stage}
-                        </span>
-                        {c.hasActionThisWeek
-                          ? <span className="text-[10px] text-green-400">✓ 本周有动作</span>
-                          : <span className="text-[10px] text-muted-foreground/60">本周无动作</span>
-                        }
-                      </div>
                     </div>
-                    {/* 停留天数 */}
-                    <div className="text-right flex-shrink-0">
-                      <div className={`text-sm font-bold ${c.stageDwellDays > 14 ? "text-red-400" : c.stageDwellDays > 7 ? "text-yellow-400" : "text-green-400"}`}>
-                        {c.stageDwellDays}天
-                      </div>
-                      <div className="text-[9px] text-muted-foreground">停留</div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })()}
         </div>
 
         {/* Risk Alerts */}
-        <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div className="lg:col-span-2 rounded-xl border bg-card p-4 space-y-3">
           <div className="flex items-center gap-2 font-semibold text-sm">
             <AlertTriangle className="w-4 h-4 text-red-400" />
             高风险预警
@@ -853,51 +872,59 @@ export default function ADDashboard() {
                     </div>
                     {/* 该客户下的商机列表 */}
                     <div className="ml-3 space-y-1 border-l-2 border-border/30 pl-2">
-                      {/* 子表头 */}
-                      <div className="grid gap-2 px-1 text-[9px] text-muted-foreground/60 font-medium" style={{ gridTemplateColumns: "1fr 90px 60px 60px 80px" }}>
-                        <div>商机名称</div>
-                        <div>当前阶段</div>
-                        <div className="text-center">停留</div>
-                        <div className="text-center">缺口</div>
-                        <div className="text-center">状态</div>
-                      </div>
-                      {group.opps.map((opp: any) => (
-                        <div
-                          key={opp.id}
-                          className={`grid items-center gap-2 px-1 py-1.5 rounded cursor-pointer transition-colors ${
-                            opp.isStagnant
-                              ? "bg-red-500/8 border border-red-500/20 hover:bg-red-500/12"
-                              : opp.isWarning
-                              ? "bg-yellow-500/5 border border-yellow-500/15 hover:bg-yellow-500/10"
-                              : "hover:bg-muted/30"
-                          }`}
-                          style={{ gridTemplateColumns: "1fr 90px 60px 60px 80px" }}
-                          onClick={() => navigate(`/battle-map?clientId=${opp.clientId}&oppId=${opp.id}`)}
-                        >
-                          <div className="text-xs font-medium truncate text-muted-foreground">{opp.name}</div>
-                          <div className="text-[10px] text-muted-foreground truncate">{opp.stage}</div>
+
+                      {group.opps.map((opp: any) => {
+                        const allAnomalies = [
+                          ...(opp.oppAnomalies ?? []),
+                          ...(opp.weakDims?.length > 0 ? [`MEDDPICC缺口:${opp.weakDims.join('/')}`] : []),
+                        ];
+                        const hasAnomaly = allAnomalies.length > 0;
+                        return (
                           <div
-                            className={`text-xs font-bold text-center ${opp.isStagnant ? "text-red-400" : opp.isWarning ? "text-yellow-400" : "text-green-400"}`}
-                            title={`该阶段参考周期：黄色预警 >${opp.thresholdYellow}天，红色停滞 >${opp.thresholdRed}天`}
+                            key={opp.id}
+                            className={`px-2 py-1.5 rounded cursor-pointer transition-colors border ${
+                              opp.isStagnant
+                                ? "bg-red-500/8 border-red-500/20 hover:bg-red-500/12"
+                                : hasAnomaly
+                                ? "bg-orange-500/5 border-orange-500/20 hover:bg-orange-500/10"
+                                : opp.isWarning
+                                ? "bg-yellow-500/5 border-yellow-500/15 hover:bg-yellow-500/10"
+                                : "border-transparent hover:bg-muted/30"
+                            }`}
+                            onClick={() => navigate(`/battle-map?clientId=${opp.clientId}&oppId=${opp.id}`)}
                           >
-                            {opp.stageDwellDays}天
+                            {/* 行1：商机名 + 阶段（紧凑） + 停留天数 + 状态 */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium truncate flex-1">{opp.name}</span>
+                              <span className="text-[10px] px-1.5 py-0 rounded bg-muted/50 text-muted-foreground whitespace-nowrap flex-shrink-0">{opp.stage}</span>
+                              <span
+                                className={`text-xs font-bold flex-shrink-0 ${opp.isStagnant ? "text-red-400" : opp.isWarning ? "text-yellow-400" : "text-green-400"}`}
+                                title={`阶段参考：黄色>${opp.thresholdYellow}天，红色>${opp.thresholdRed}天`}
+                              >{opp.stageDwellDays}天</span>
+                            </div>
+                            {/* 行2：关单日期 + 金额 + Champion */}
+                            <div className="flex items-center gap-3 mt-0.5 text-[9px] text-muted-foreground/70">
+                              <span className={!opp.expectedCloseDate ? "text-orange-400/80" : ""}>
+                                {opp.expectedCloseDate ? `📅 ${opp.expectedCloseDate}` : "⚠ 未设关单日期"}
+                              </span>
+                              <span className={!opp.estimatedValue || opp.estimatedValue === '$0' ? "text-orange-400/80" : ""}>
+                                {opp.estimatedValue ? `💰 ${opp.estimatedValue}` : "⚠ 未填金额"}
+                              </span>
+                              {opp.champion && (
+                                <span className="text-cyan-400/70">👤 {opp.champion}</span>
+                              )}
+                            </div>
+                            {/* 行3：异常标签 */}
+                            {hasAnomaly && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {allAnomalies.map((a: string, i: number) => (
+                                  <span key={i} className="text-[9px] px-1 py-0.5 rounded bg-orange-500/15 text-orange-400">⚠ {a}</span>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <div className="text-center">
-                            {opp.weakDims.length > 0
-                              ? <span className="text-[9px] text-orange-400 font-mono">{opp.weakDims.join(' ')}</span>
-                              : <span className="text-[9px] text-green-400">—</span>
-                            }
-                          </div>
-                          <div className="text-center">
-                            {opp.isStagnant
-                              ? <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/20 text-red-400">⚠ 停滞</span>
-                              : opp.isWarning
-                              ? <span className="text-[9px] px-1 py-0.5 rounded bg-yellow-500/20 text-yellow-400">⚡ 关注</span>
-                              : <span className="text-[9px] px-1 py-0.5 rounded bg-green-500/10 text-green-400">正常</span>
-                            }
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ));

@@ -2930,6 +2930,36 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
       });
 
       // 8b. 商机阶段停滞数据（stageChangedAt）
+      // 全量 POD 任务（用于判断商机是否有行动分配）
+      const allPodTasksForDash = await db.select({
+        opportunityId: podTasks.opportunityId,
+        isCompleted: podTasks.isCompleted,
+      }).from(podTasks);
+      const oppHasTaskSet = new Set(
+        allPodTasksForDash
+          .filter(t => !t.isCompleted && t.opportunityId)
+          .map(t => t.opportunityId!)
+      );
+
+      // 拜访记录按clientId分组（用于0→1失联检测）
+      const lastVisitByClient = new Map<number, Date | null>();
+      const visitCountByClient = new Map<number, number>();
+      allMeetings.forEach(m => {
+        const prev = lastVisitByClient.get(m.clientId);
+        if (!prev || (m.visitDate && m.visitDate > prev)) {
+          lastVisitByClient.set(m.clientId, m.visitDate ?? null);
+        }
+        visitCountByClient.set(m.clientId, (visitCountByClient.get(m.clientId) ?? 0) + 1);
+      });
+
+      // 关键人数量（用于0→1汇报链路检测）
+      const { keyContacts } = await import('../drizzle/schema');
+      const allContacts = await db.select({ clientId: keyContacts.clientId }).from(keyContacts);
+      const contactCountByClient = new Map<number, number>();
+      allContacts.forEach(c => {
+        contactCountByClient.set(c.clientId, (contactCountByClient.get(c.clientId) ?? 0) + 1);
+      });
+
       const allOppsWithStage = await db.select({
         id: opportunities.id,
         clientId: opportunities.clientId,
@@ -2937,6 +2967,9 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
         stage: opportunities.stage,
         status: opportunities.status,
         estimatedValue: opportunities.estimatedValue,
+        expectedCloseDate: opportunities.expectedCloseDate,
+        champion: opportunities.champion,
+        championStance: opportunities.championStance,
         stageChangedAt: opportunities.stageChangedAt,
         updatedAt: opportunities.updatedAt,
       }).from(opportunities);
@@ -2953,9 +2986,46 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
           const hasActionThisWeek = visitedThisWeek.has(c.id);
           const visitStats = visitStatsByClient.get(c.id);
           const mScore = meddpiccMap.get(c.id)?.avg ?? 0;
-          // 门控达标检查（简化版）
-          const keyContacts = (c as any).keyContactCount ?? 0;
+          const mDetails = meddpiccMap.get(c.id)?.details;
           const isStagnant = stageDwellDays > 14 && !hasActionThisWeek;
+
+          // 关键人数量
+          const contactCount = contactCountByClient.get(c.id) ?? 0;
+          // 最后拜访距今天数
+          const lastVisit = lastVisitByClient.get(c.id) ?? null;
+          const daysSinceLastVisit = lastVisit
+            ? Math.floor((now - new Date(lastVisit).getTime()) / 86400000)
+            : null;
+          // 拜访次数
+          const visitCount = visitCountByClient.get(c.id) ?? 0;
+          // Champion评分
+          const championScore = mDetails?.championScore ?? 0;
+
+          // ── 0→1 业务异常检测 ──────────────────────────────────────────────
+          const anomalies: string[] = [];
+          // 1. 无Champion且已在"定痛"阶段超过7天
+          if (c.stage === '定痛' && championScore === 0 && stageDwellDays > 7) {
+            anomalies.push('定痛阶段无Champion');
+          }
+          // 2. 拜访次数=0且已建图超过14天
+          if (c.stage === '建图' && visitCount === 0 && stageDwellDays > 14) {
+            anomalies.push('建图超14天未拜访');
+          }
+          // 3. 关键人数量=0
+          if (contactCount === 0) {
+            anomalies.push('汇报链路未摸清');
+          }
+          // 4. 最后一次拜访距今超过21天
+          if (daysSinceLastVisit !== null && daysSinceLastVisit > 21) {
+            anomalies.push(`失联${daysSinceLastVisit}天`);
+          } else if (daysSinceLastVisit === null && stageDwellDays > 21) {
+            anomalies.push('从未拜访');
+          }
+          // 5. MEDDPICC总分<20且阶段已到"找人"
+          if (c.stage === '找人' && mScore < 20) {
+            anomalies.push('MEDDPICC严重滞后');
+          }
+
           return {
             id: c.id,
             name: c.name,
@@ -2964,12 +3034,16 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
             stageDwellDays,
             hasActionThisWeek,
             lastVisitDate: visitStats?.lastVisitDate ?? null,
-            visitCount: visitStats?.visitCount ?? 0,
+            visitCount,
+            contactCount,
+            daysSinceLastVisit,
+            championScore,
             meddpiccAvg: mScore,
             isStagnant,
+            anomalies,
           };
         })
-        .sort((a, b) => b.stageDwellDays - a.stageDwellDays); // 停滞最久的排前面
+        .sort((a, b) => b.anomalies.length - a.anomalies.length || b.stageDwellDays - a.stageDwellDays);
 
       // 1→N 商机推进看板：每条活跃商机的停滞天数和MEDDPICC缺口
       const oneToNBoard = allOppsWithStage
@@ -3007,6 +3081,55 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
           const clientName = allClients.find(c => c.id === opp.clientId)?.name ?? '';
           const isStagnant = stageDwellDays >= threshold.red;
           const isWarning = !isStagnant && stageDwellDays >= threshold.yellow;
+
+          // ── 1→N 业务异常检测 ──────────────────────────────────────────────
+          const oppAnomalies: string[] = [];
+          // 3. 商机无POD任务
+          if (!oppHasTaskSet.has(opp.id)) {
+            oppAnomalies.push('无行动分配');
+          }
+          // 4. 商机无拜访记录（通过clientId的visitCount判断，近似处理）
+          const clientVisitCount = visitCountByClient.get(opp.clientId) ?? 0;
+          if (clientVisitCount === 0) {
+            oppAnomalies.push('客户无拜访记录');
+          }
+          // 5. E维度=0且阶段已到"方案提案"以后
+          const eScore = meddpicc ? (meddpicc as any).economicBuyerScore ?? 0 : 0;
+          const lateStages = ['方案提案', '商务谈判'];
+          if (eScore === 0 && lateStages.includes(opp.stage)) {
+            oppAnomalies.push('无预算决策人(E=0)');
+          }
+          // 6. 商机金额为空或"$0"
+          const hasValue = opp.estimatedValue && opp.estimatedValue.trim() !== '' && opp.estimatedValue !== '$0' && opp.estimatedValue !== '0';
+          if (!hasValue) {
+            oppAnomalies.push('未填写金额');
+          }
+          // 7. Champion评分=0且阶段已到"技术验证"以后
+          const cScore = meddpicc ? (meddpicc as any).championScore ?? 0 : 0;
+          const techStages = ['技术验证', '方案提案', '商务谈判'];
+          if (cScore === 0 && techStages.includes(opp.stage)) {
+            oppAnomalies.push('无Champion(C=0)');
+          }
+          // 8. 无关单日期
+          if (!opp.expectedCloseDate || opp.expectedCloseDate.trim() === '') {
+            oppAnomalies.push('未设定关单日期');
+          }
+          // 9. 关单日期在90天内但阶段还在"需求挖掘"或更早
+          if (opp.expectedCloseDate && opp.expectedCloseDate.trim() !== '') {
+            // Parse Q4 2026 style or YYYY-MM-DD style
+            const earlyStages = ['初步需求', '需求挖掘'];
+            if (earlyStages.includes(opp.stage)) {
+              // rough check: if close date mentions current or next quarter within 90 days
+              const closeStr = opp.expectedCloseDate.toLowerCase();
+              const nowDate = new Date(now);
+              const q = nowDate.getMonth() < 3 ? 'q1' : nowDate.getMonth() < 6 ? 'q2' : nowDate.getMonth() < 9 ? 'q3' : 'q4';
+              const yr = nowDate.getFullYear();
+              if (closeStr.includes(`q${parseInt(q[1])} ${yr}`) || closeStr.includes(`${yr}-`) || closeStr.includes(`${yr}/`)) {
+                oppAnomalies.push('关单临近但阶段过早');
+              }
+            }
+          }
+
           return {
             id: opp.id,
             clientId: opp.clientId,
@@ -3014,12 +3137,17 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
             name: opp.name,
             stage: opp.stage,
             estimatedValue: opp.estimatedValue,
+            expectedCloseDate: opp.expectedCloseDate,
+            champion: opp.champion,
+            championStance: opp.championStance,
             stageDwellDays,
             weakDims,
             isStagnant,
             isWarning,
             thresholdYellow: threshold.yellow,
             thresholdRed: threshold.red,
+            oppAnomalies,
+            hasPendingTask: oppHasTaskSet.has(opp.id),
           };
         })
         .sort((a, b) => b.stageDwellDays - a.stageDwellDays);
