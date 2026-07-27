@@ -309,9 +309,6 @@
 ## Round 41 — 系统优化（2026-07-27）
 
 - [x] MEDDPICC面板：无DB记录的客户点不开评分维度 → 已修复（effectiveMeddpicc默认全0，始终可展开编辑）
-- [ ] AI解析速度慢：拜访日志4个AI调用串行执行，需改为并行（第1个完成后2/3/4同时发起）
-- [ ] MEDDPICC建议持久化：AI生成的更新建议页面刷新后消失，需存入DB（meetingMinutes表加meddpiccSuggestions字段），历史记录里随时可采纳
-- [ ] 演示视频制作暂停：脚本V5和素材已保留在/home/ubuntu/videos/aistorm-command-demo/，待系统稳定后继续
 - [x] AI解析速度慢（已修复，见上方记录）
 - [x] MEDDPICC建议持久化（已确认不需要，见上方记录）
 - [x] 演示视频制作暂停（保留素材，待后续继续）
@@ -345,6 +342,10 @@
 - [x] 前端：AD指挥台新增"决策层覆盖率"面板（全局C-Level触达率统计，按客户展示覆盖缺口）
 - [x] 系统设置：预置港澳+东南亚合规政策RSS源（PDPC Singapore/PDPA Thailand/PDPA Malaysia/PCPD HK/GPDP Macau/CSA Singapore/Google News合规动态）
 - [x] 情报雷达：新增"合规政策"信号类型（紫色标签，Shield图标），合规政策RSS自动归类
+
+## Round 46 — 拜访日志删除功能（2026-07-27）
+- [x] 后端：meetings.delete 接口（按 id 删除）
+- [x] 前端：拜访日志历史列表每条记录右侧加删除按钮（垃圾桶图标），点击弹出确认对话框后删除
 
 ## Round 45 — 情报雷达RSS分离修复（2026-07-27）
 - [x] 修复：合规政策RSS源（菲律宾NPC等）被混入客户专属新闻流 → fetchNews路由跳过tags含"合规政策"的RSS源

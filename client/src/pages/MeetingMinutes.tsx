@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   BookOpen, Sparkles, ChevronDown, ChevronUp, Download, Calendar,
   Send, CheckCircle2, TrendingUp, AlertCircle, Upload, FileText,
-  Target, Shield, Clock, Users, Crosshair, Zap, Info, X
+  Target, Shield, Clock, Users, Crosshair, Zap, Info, X, Trash2
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -126,6 +126,8 @@ export default function MeetingMinutes() {
   const [showReviewDialog, setShowReviewDialog] = useState(false);
   const [detectedCompetitors, setDetectedCompetitors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const { data: clients = [] } = trpc.clients.list.useQuery();
   const { data: meetings = [], refetch } = trpc.meetings.listByClient.useQuery(
@@ -138,6 +140,24 @@ export default function MeetingMinutes() {
   const updateMeddpicc = trpc.meddpicc.update.useMutation();
   const addMeddpiccLog = trpc.meddpicc.addLog.useMutation();
   const updateClient = trpc.clients.update.useMutation();
+
+  const deleteMeeting = trpc.meetings.delete.useMutation({
+    onSuccess: () => {
+      refetch();
+      setConfirmDeleteId(null);
+      setDeletingId(null);
+      toast.success("日志已删除");
+    },
+    onError: () => {
+      setDeletingId(null);
+      toast.error("删除失败，请重试");
+    },
+  });
+
+  const handleDelete = (id: number) => {
+    setDeletingId(id);
+    deleteMeeting.mutate({ id });
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -541,6 +561,13 @@ export default function MeetingMinutes() {
                         </>
                       )}
                       {expandedId === meeting.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(meeting.id); }}
+                        className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
+                        title="删除此日志"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
 
@@ -754,6 +781,32 @@ export default function MeetingMinutes() {
               <AlertCircle className="w-3 h-3" />
               应用后将覆盖战场地图中该客户的现有值。你也可以稍后在拜访日志展开区查看并手动应用。
             </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={confirmDeleteId !== null} onOpenChange={(open) => { if (!open) setConfirmDeleteId(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-400">
+              <Trash2 className="w-4 h-4" />
+              确认删除拜访日志
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-muted-foreground">此操作不可撤销，该条拜访日志及其 AI 生成内容将被永久删除。</p>
+          </div>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDeleteId(null)}>取消</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deletingId !== null}
+              onClick={() => confirmDeleteId && handleDelete(confirmDeleteId)}
+            >
+              {deletingId !== null ? "删除中..." : "确认删除"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

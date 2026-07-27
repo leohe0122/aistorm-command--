@@ -310,6 +310,12 @@ export async function updateMeeting(id: number, data: Partial<InsertMeetingMinut
   await db.update(meetingMinutes).set(data).where(eq(meetingMinutes.id, id));
 }
 
+export async function deleteMeeting(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(meetingMinutes).where(eq(meetingMinutes.id, id));
+}
+
 // ── POD Tasks ──────────────────────────────────────────────────────────────
 export async function getPodTasksByRole(role: "AD" | "SAM" | "SA" | "RSM"): Promise<PodTask[]> {
   const db = await getDb();

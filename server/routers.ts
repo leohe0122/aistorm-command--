@@ -21,6 +21,7 @@ import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient
   getOnePagersByClientId, insertOnePager,
   getAmmoByClientId, insertAmmo,
   getMeetingsByClientId, insertMeeting, updateMeeting,
+  deleteMeeting,
   getPodTasksByRole, insertPodTask, completePodTask, deletePodTask, clearCompletedPodTasks, clearPodTasksByRole,
   getLatestScoreByClientId, insertScore,
   getDealReviews, insertDealReview,
@@ -1181,6 +1182,10 @@ ${contentSource}
         securityAngleSuggestion: undefined,
       });
       return { id };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteMeeting(input.id);
+      return { success: true };
     }),
   }),
 
