@@ -312,6 +312,9 @@
 - [ ] AI解析速度慢：拜访日志4个AI调用串行执行，需改为并行（第1个完成后2/3/4同时发起）
 - [ ] MEDDPICC建议持久化：AI生成的更新建议页面刷新后消失，需存入DB（meetingMinutes表加meddpiccSuggestions字段），历史记录里随时可采纳
 - [ ] 演示视频制作暂停：脚本V5和素材已保留在/home/ubuntu/videos/aistorm-command-demo/，待系统稳定后继续
+- [x] AI解析速度慢（已修复，见上方记录）
+- [x] MEDDPICC建议持久化（已确认不需要，见上方记录）
+- [x] 演示视频制作暂停（保留素材，待后续继续）
 - [x] AI解析速度慢：拜访日志4个AI调用串行执行 → 已修复（第2/3/4个改为Promise.all并行，第2个从gpt-5降为gpt-4o-mini）
 - [x] MEDDPICC建议持久化：确认不需要持久化，建议是一次性判断，SAM应在录入后立即采纳
 
@@ -322,3 +325,14 @@
 - [x] 1→N看板增加完整业务异常检测：无行动分配/无拜访记录/无预算决策人/未填金额/无Champion/无关单日期/关单临近但阶段过早
 - [x] 1→N看板增加关单日期、金额、Champion时间线信息显示
 - [x] 后端新增关键人数量、最后拜访距今天数、POD任务关联等数据字段
+
+## Round 43 — Buying Group角色细化 + 情报信号商机关联（2026-07-27）
+- [x] 数据库：key_contacts表新增buyingRole字段（经济决策人/技术决策人/用户影响者/阻碍者/Champion/信息来源/未知）
+- [x] 数据库：intelligence_signals表新增opportunityId和opportunityWindowNote字段
+- [x] 后端：contacts.update/add支持buyingRole字段
+- [x] 后端：intelligence.analyze支持opportunityId参数
+- [x] 前端：关键人图谱编辑表单加Buying Group角色下拉
+- [x] 前端：关键人卡片显示buyingRole彩色标签（阻碍者红色，经济决策人金色，Champion绿色等）
+- [x] 前端：关键人Tab顶部Buying Group覆盖缺口分析（未覆盖经济决策人/技术决策人/Champion时显示警告）
+- [x] 前端：情报雷达录入信号时可关联具体商机（下拉选择）
+- [x] 前端：情报信号历史列表中已关联商机的信号显示"🎯商机窗口"标签

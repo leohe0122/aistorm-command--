@@ -1461,7 +1461,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
       name: z.string().optional(),
       title: z.string().optional(),
       department: z.string().optional(),
-      influence: z.enum(['决策者', '影响者', 'Champion候选', '技术评估者', '信息来源']).optional(),
+      influence: z.enum(['决策者', '影响者', 'Champion候选', '技术评估者', '内部线人']).optional(),
       relationship: z.enum(['待接触', '已识别', '初步接触', '已接触', '建立关系', 'Champion', '已拒绝']).optional(),
       linkedinUrl: z.string().optional(),
       email: z.string().optional(),
@@ -1470,7 +1470,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
       persona: z.string().optional(),
       breakthroughTip: z.string().optional(),
       stance: z.enum(['支持', '中立', '反对', '未知']).optional(),
-      buyingRole: z.enum(['经济决策人', '技术决策人', '用户影响者', '阻碍者', 'Champion', '信息来源', '未知']).optional(),
+      buyingRole: z.enum(['经济决策人', '技术决策人', '用户影响者', '阻碍者', 'Champion', '内部线人', '未知']).optional(),
     })).mutation(({ input }) => {
       const { id, ...data } = input;
       return updateContact(id, data as any);
@@ -1480,13 +1480,13 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
       name: z.string(),
       title: z.string().optional(),
       department: z.string().optional(),
-      influence: z.enum(['决策者', '影响者', 'Champion候选', '技术评估者', '信息来源']).optional(),
+      influence: z.enum(['决策者', '影响者', 'Champion候选', '技术评估者', '内部线人']).optional(),
       relationship: z.enum(['待接触', '已识别', '初步接触', '已接触', '建立关系', 'Champion', '已拒绝']).optional(),
       linkedinUrl: z.string().optional(),
       email: z.string().optional(),
       notes: z.string().optional(),
       reportingTo: z.string().optional(),
-      buyingRole: z.enum(['经济决策人', '技术决策人', '用户影响者', '阻碍者', 'Champion', '信息来源', '未知']).optional(),
+      buyingRole: z.enum(['经济决策人', '技术决策人', '用户影响者', '阻碍者', 'Champion', '内部线人', '未知']).optional(),
     })).mutation(({ input }) => insertContact(input as any)),
     delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
       deleteContact(input.id)

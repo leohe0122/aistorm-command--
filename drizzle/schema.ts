@@ -286,8 +286,8 @@ export const keyContacts = mysqlTable("key_contacts", {
   name: varchar("name", { length: 100 }).notNull(),
   title: varchar("title", { length: 150 }),           // 职位
   department: varchar("department", { length: 100 }), // 部门
-  influence: mysqlEnum("influence", ["决策者", "影响者", "Champion候选", "技术评估者", "信息来源"]).default("影响者"),
-  buyingRole: mysqlEnum("buyingRole", ["经济决策人", "技术决策人", "用户影响者", "阻碍者", "Champion", "信息来源", "未知"]).default("未知"),
+  influence: mysqlEnum("influence", ["决策者", "影响者", "Champion候选", "技术评估者", "内部线人"]).default("影响者"),
+  buyingRole: mysqlEnum("buyingRole", ["经济决策人", "技术决策人", "用户影响者", "阻碍者", "Champion", "内部线人", "未知"]).default("未知"),
   relationship: mysqlEnum("relationship", ["待接触", "已识别", "初步接触", "已接触", "建立关系", "Champion", "已拒绝"]).default("待接触"),
   linkedinUrl: varchar("linkedinUrl", { length: 300 }),
   email: varchar("email", { length: 200 }),

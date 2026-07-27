@@ -31,15 +31,15 @@ const MEDDPICC_ITEMS = [
 
 const STAGES = ["建图", "进门", "定痛", "找人", "进入商机"];
 const PRIORITIES = ["P0", "P1", "P2"];
-const INFLUENCE_OPTIONS = ["决策者", "影响者", "Champion候选", "技术评估者", "信息来源"];
-const BUYING_ROLE_OPTIONS = ["经济决策人", "技术决策人", "用户影响者", "阻碍者", "Champion", "信息来源", "未知"];
+const INFLUENCE_OPTIONS = ["决策者", "影响者", "Champion候选", "技术评估者", "内部线人"];
+const BUYING_ROLE_OPTIONS = ["经济决策人", "技术决策人", "用户影响者", "阻碍者", "Champion", "内部线人", "未知"];
 const buyingRoleColor: Record<string, string> = {
   "经济决策人": "bg-amber-500/20 text-amber-400 border-amber-500/40",
   "技术决策人": "bg-blue-500/20 text-blue-400 border-blue-500/40",
   "用户影响者": "bg-cyan-500/20 text-cyan-400 border-cyan-500/40",
   "阻碍者": "bg-red-500/20 text-red-400 border-red-500/40",
   "Champion": "bg-green-500/20 text-green-400 border-green-500/40",
-  "信息来源": "bg-muted text-muted-foreground border-border",
+  "内部线人": "bg-muted text-muted-foreground border-border",
   "未知": "bg-muted/50 text-muted-foreground/60 border-border/40",
 };
 const RELATIONSHIP_OPTIONS = ["待接触", "已识别", "初步接触", "已接触", "建立关系", "Champion", "已拒绝"];
@@ -67,7 +67,7 @@ const influenceColor: Record<string, string> = {
   "影响者": "bg-blue-500/20 text-blue-400 border-blue-500/30",
   "Champion候选": "bg-green-500/20 text-green-400 border-green-500/30",
   "技术评估者": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  "信息来源": "bg-muted text-muted-foreground border-border",
+  "内部线人": "bg-muted text-muted-foreground border-border",
 };
 
 const relationshipColor: Record<string, string> = {
