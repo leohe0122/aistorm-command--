@@ -690,7 +690,7 @@ export default function ADDashboard() {
                           ))}
                         </div>
                       )}
-                      {/* 行3：拜访次数 + 关键人数 */}
+                      {/* 行3：拜访次数 + 关键人数 + 指令台快捷按钮 */}
                       <div className="flex items-center gap-3 mt-1 text-[9px] text-muted-foreground/60">
                         <span>拜访 {c.visitCount ?? 0} 次</span>
                         <span>关键人 {c.contactCount ?? 0} 人</span>
@@ -699,6 +699,12 @@ export default function ADDashboard() {
                             上次拜访 {c.daysSinceLastVisit} 天前
                           </span>
                         )}
+                        <button
+                          className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex-shrink-0"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/actions?clientId=${c.id}`); }}
+                        >
+                          → 指令台
+                        </button>
                       </div>
                     </div>
                   );
@@ -921,6 +927,13 @@ export default function ADDashboard() {
                                 : <span className="text-[9px] text-green-400/50">✓</span>
                               }
                             </span>
+                            <button
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex-shrink-0"
+                              onClick={(e) => { e.stopPropagation(); navigate(`/actions?clientId=${opp.clientId}`); }}
+                              title="前往AI行动指令台，为此客户生成针对性指令"
+                            >
+                              →
+                            </button>
                           </div>
                         );
                       })}

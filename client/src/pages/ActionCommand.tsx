@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -110,6 +111,12 @@ function exportActionsToPDF(actions: any[], clientName: string, generatedAt: str
 
 export default function ActionCommand() {
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  // 支持URL参数预填clientId（从AD指挥台跳转时使用）
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("clientId");
+    if (id && !isNaN(Number(id))) setSelectedClientId(Number(id));
+  }, []);
   const [generating, setGenerating] = useState(false);
   const [generatingCoord, setGeneratingCoord] = useState(false);
   const [coordContext, setCoordContext] = useState("");
