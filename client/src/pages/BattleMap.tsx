@@ -1123,6 +1123,13 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
 
   const utils = trpc.useUtils();
   const { data: meddpicc } = trpc.meddpicc.get.useQuery({ clientId: client.id });
+  // When no DB record exists yet, fall back to all-zero defaults so the panel is always interactive
+  const DEFAULT_MEDDPICC = {
+    metricsScore: 0, economicBuyerScore: 0, decisionCriteriaScore: 0,
+    decisionProcessScore: 0, paperProcessScore: 0, implicatePainScore: 0,
+    championScore: 0, competitionScore: 0, economicBuyerName: "", championName: "",
+  };
+  const effectiveMeddpicc: any = meddpicc ?? DEFAULT_MEDDPICC;
   // 始终查询商机级 MEDDPICC，用于聚合显示
   const { data: oppMeddpiccList = [] } = trpc.opportunities.listMeddpiccByClient.useQuery({ clientId: client.id });
   const { data: contacts = [] } = trpc.contacts.listByClient.useQuery({ clientId: client.id });
@@ -1167,11 +1174,9 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
       return Math.round(oppAvgs.reduce((a, b) => a + b, 0) / oppAvgs.length);
     }
     // 回退到客户级手动评分
-    return meddpicc
-      ? Math.round((meddpicc.metricsScore + meddpicc.economicBuyerScore + meddpicc.decisionCriteriaScore +
-        meddpicc.decisionProcessScore + meddpicc.paperProcessScore + meddpicc.implicatePainScore +
-        meddpicc.championScore + meddpicc.competitionScore) / 8)
-      : 0;
+    return Math.round((effectiveMeddpicc.metricsScore + effectiveMeddpicc.economicBuyerScore + effectiveMeddpicc.decisionCriteriaScore +
+      effectiveMeddpicc.decisionProcessScore + effectiveMeddpicc.paperProcessScore + effectiveMeddpicc.implicatePainScore +
+      effectiveMeddpicc.championScore + effectiveMeddpicc.competitionScore) / 8);
   })();
 
   const handleSave = () => {
@@ -1184,7 +1189,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const contactProgressPct = contacts.length > 0 ? Math.round((contactedCount / contacts.length) * 100) : 0;
 
   // 建图缺口预警
-  const hasEconomicBuyer = contacts.some(c => c.influence === "决策者") || (meddpicc && (meddpicc as any).economicBuyerName);
+  const hasEconomicBuyer = contacts.some(c => c.influence === "决策者") || effectiveMeddpicc.economicBuyerName;
   const hasChampion = contacts.some(c => c.relationship === "Champion" || c.influence === "Champion候选");
   const gapWarnings: string[] = [];
   if (!hasEconomicBuyer) gapWarnings.push("缺 Economic Buyer");
@@ -1192,11 +1197,11 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
 
   // 阶段门控：每个阶段的完成标准检查
   const visitCount = (client as any).visitCount ?? 0;
-  const mScore = meddpicc ? (meddpicc as any).metricsScore ?? 0 : 0;
-  const eScore = meddpicc ? (meddpicc as any).economicBuyerScore ?? 0 : 0;
-  const iScore = meddpicc ? (meddpicc as any).implicatePainScore ?? 0 : 0;
-  const cScore = meddpicc ? (meddpicc as any).championScore ?? 0 : 0;
-  const championName = meddpicc ? (meddpicc as any).championName : null;
+  const mScore = effectiveMeddpicc.metricsScore ?? 0;
+  const eScore = effectiveMeddpicc.economicBuyerScore ?? 0;
+  const iScore = effectiveMeddpicc.implicatePainScore ?? 0;
+  const cScore = effectiveMeddpicc.championScore ?? 0;
+  const championName = effectiveMeddpicc.championName || null;
   const hasKeywords = !!(client.monitorKeywords && client.monitorKeywords.length > 0);
   const hasHookTopic = !!(client.hookTopic && client.hookTopic.trim());
 
@@ -1399,13 +1404,13 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
               </div>
             );
           }
-          return meddpicc ? (
+          return (
             <div className="mt-3 grid grid-cols-4 gap-x-4 gap-y-1.5">
               {MEDDPICC_ITEMS.map((item) => (
-                <MeddpiccBar key={item.key} label={item.label} score={(meddpicc as any)[item.scoreKey]} fullLabel={item.label} />
+                <MeddpiccBar key={item.key} label={item.label} score={effectiveMeddpicc[item.scoreKey] ?? 0} fullLabel={item.label} />
               ))}
             </div>
-          ) : null;
+          );
         })()}
 
         {/* Hook & Security */}
@@ -1688,7 +1693,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
               );
             }
             // 0→1 阶段：手动评分界面
-            return meddpicc ? (
+            return (
             <div className="p-4 bg-muted/5">
               {/* Stage-based MEDDPICC focus hint */}
               {(() => {
@@ -1723,7 +1728,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
               </div>
               <div className="space-y-3">
                 {MEDDPICC_DIMENSIONS.map((dim) => {
-                  const currentScore: number = (meddpicc as any)[dim.key] ?? 0;
+                  const currentScore: number = effectiveMeddpicc[dim.key] ?? 0;
                   const dimLogs = allLogs.filter((l: any) => l.dimension === dim.key);
                   const isExpanded = expandedDim === dim.key;
                   const selectedLevel = dim.levels.find(l => l.score === currentScore) || dim.levels[0];
@@ -1762,7 +1767,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                           {nameKey && (
                             <input type="text" className="w-full bg-muted/30 border border-border rounded px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
                               placeholder={dim.code === "C1" ? "Champion 姓名（内部推手）..." : "预算决策人姓名..."}
-                              defaultValue={(meddpicc as any)[nameKey] || ""}
+                              defaultValue={effectiveMeddpicc[nameKey] || ""}
                               onChange={(e) => setMeddpiccEdit((prev: any) => ({ ...prev, [nameKey]: e.target.value })) }
                               onBlur={() => updateMeddpicc.mutate({ clientId: client.id, ...meddpiccEdit })} />
                           )}
@@ -1857,7 +1862,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                 })}
               </div>
             </div>
-            ) : null;
+            );
           })()}
 
 

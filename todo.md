@@ -305,3 +305,10 @@
 - [x] SPIN提问库：在战场地图客户卡片中独立展示预置SPIN问题（S/P/I/N四类，基于客户公开数据）
 - [x] 48小时纪要提醒架构：拜访后48h无日志则触发飞书提醒（架构支持，配置入口在系统设置）
 - [x] 季度数据导出：AD指挥台一键导出健康度报告/商机漏斗/MEDDPICC矩阵（Markdown/CSV格式）
+
+## Round 41 — 系统优化（2026-07-27）
+
+- [x] MEDDPICC面板：无DB记录的客户点不开评分维度 → 已修复（effectiveMeddpicc默认全0，始终可展开编辑）
+- [ ] AI解析速度慢：拜访日志4个AI调用串行执行，需改为并行（第1个完成后2/3/4同时发起）
+- [ ] MEDDPICC建议持久化：AI生成的更新建议页面刷新后消失，需存入DB（meetingMinutes表加meddpiccSuggestions字段），历史记录里随时可采纳
+- [ ] 演示视频制作暂停：脚本V5和素材已保留在/home/ubuntu/videos/aistorm-command-demo/，待系统稳定后继续

@@ -195,6 +195,7 @@ export const meetingMinutes = mysqlTable("meeting_minutes", {
   nextSteps: text("nextSteps"), // Next Steps
   hookTopicSuggestion: text("hookTopicSuggestion"), // AI提炼的敲门砖建议
   securityAngleSuggestion: text("securityAngleSuggestion"), // AI提炼的安全切入建议
+  meddpiccSuggestions: text("meddpiccSuggestions"), // AI生成的MEDDPICC更新建议（JSON数组，持久化）
   responsiblePerson: varchar("responsiblePerson", { length: 100 }),
   dueDate: timestamp("dueDate"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
