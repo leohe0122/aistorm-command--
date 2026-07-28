@@ -182,11 +182,14 @@ function ProductDocsTab() {
           </SelectContent>
         </Select>
         <Button onClick={() => setUploadDialog(true)} className="gap-2"><Upload className="h-4 w-4" /> 上传文档</Button>
-        <Button variant="outline" onClick={() => extractTextBatchMut.mutate()} disabled={extractTextBatchMut.isPending} className="gap-2 text-xs">
+      </div>
+      {/* 批量操作按钮行（独立行，避免与Select的Radix Popover DOM冲突） */}
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="outline" onClick={() => extractTextBatchMut.mutate()} disabled={extractTextBatchMut.isPending} className="gap-2 text-xs h-8">
           {extractTextBatchMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
           {extractTextBatchMut.isPending ? "提取中..." : "批量提取文字"}
         </Button>
-        <Button variant="outline" onClick={() => autoTagMut.mutate()} disabled={autoTagMut.isPending} className="gap-2 text-xs">
+        <Button type="button" variant="outline" onClick={() => autoTagMut.mutate()} disabled={autoTagMut.isPending} className="gap-2 text-xs h-8">
           {autoTagMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Tag className="h-3 w-3" />}
           {autoTagMut.isPending ? "识别中..." : "AI识别产品线"}
         </Button>
