@@ -86,6 +86,12 @@ export const PRODUCT_LINES: ProductLineItem[] = [
     category: '亚信安全',
     description: 'AI大模型防火墙、大模型安全、LLM安全、AI防火墙、大模型防护、AI应用安全、提示词注入防护、模型访问控制',
   },
+  {
+    value: 'OEM产品',
+    label: 'OEM 产品',
+    category: '亚信安全',
+    description: 'OEM产品、贴牌产品、合作伙伴集成、OEM安全产品、合作方案',
+  },
 ];
 
 export const PRODUCT_LINE_VALUES = PRODUCT_LINES.map(p => p.value);

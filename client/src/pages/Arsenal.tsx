@@ -44,6 +44,8 @@ const FOLDER_DEFS = [
   { productLine: "安全服务", label: "安全服务", group: "亚信安全", icon: "🎯", color: "from-orange-500/20 to-red-500/10", border: "border-orange-500/30", badge: "bg-orange-500/20 text-orange-400", desc: "EASM / 渗透测试 / 红队 / MDR" },
   { productLine: "AI大模型防火墙", label: "AI 大模型防火墙", group: "亚信安全", icon: "🔥", color: "from-red-600/20 to-orange-500/10", border: "border-red-600/30", badge: "bg-red-600/20 text-red-400", desc: "大模型安全、LLM防护、提示词注入防御" },
   // 其他
+  { productLine: "OEM产品", label: "OEM 产品", group: "亚信安全", icon: "🏷️", color: "from-cyan-500/20 to-teal-500/10", border: "border-cyan-500/30", badge: "bg-cyan-500/20 text-cyan-400", desc: "OEM合作产品、贴牌安全产品、合作伙伴集成方案" },
+  // 其他
   { productLine: "其他参考资料", label: "其他参考资料", group: "其他", icon: "📚", color: "from-slate-500/20 to-gray-500/10", border: "border-slate-500/30", badge: "bg-slate-500/20 text-slate-400", desc: "竞品分析 / 行业报告 / 客户案例" },
 ];
 
