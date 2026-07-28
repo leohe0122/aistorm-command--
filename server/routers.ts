@@ -50,7 +50,33 @@ export const appRouter = router({
 
   // ── Clients ──────────────────────────────────────────────────────────────
   clients: router({
-    list: publicProcedure.query(() => getAllClientsWithVisitStats()),
+    list: publicProcedure.query(async ({ ctx }) => {
+      // Resolve current email session user for role-based filtering
+      const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
+      const allClients = await getAllClientsWithVisitStats();
+      if (!token) return allClients; // unauthenticated: return all (fallback)
+      try {
+        const db = await getDb();
+        if (!db) return allClients;
+        const { emailUsers, emailSessions } = await import('../drizzle/schema');
+        const { eq, and, gt } = await import('drizzle-orm');
+        const sessions = await db.select().from(emailSessions).where(
+          and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+        ).limit(1);
+        if (sessions.length === 0) return allClients;
+        const userRows = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+        if (userRows.length === 0) return allClients;
+        const u = userRows[0];
+        // AD and SA see all clients
+        if (u.podRole === 'AD' || u.podRole === 'SA') return allClients;
+        // SAM and RSM see only clients where they are assigned as SAM or RSM
+        return allClients.filter(c =>
+          (c as any).assignedSamId === u.id || (c as any).assignedRsmId === u.id
+        );
+      } catch {
+        return allClients;
+      }
+    }),
     get: publicProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       const result = await getClientById(input.id);
       return result ?? null;

@@ -82,6 +82,19 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
   const { role, setRole } = useRole();
   const { emailUser } = useEmailAuth();
 
+  // Role-based visibility: AD sees everything, others see restricted items
+  const isAD = !emailUser || emailUser.podRole === 'AD';
+
+  const visibleNavItems = navItems.filter(item => {
+    if (item.path === '/dashboard') return isAD;
+    return true;
+  });
+
+  const visibleSettingsNavItems = settingsNavItems.filter(item => {
+    if (item.path === '/settings' || item.path === '/team') return isAD;
+    return true;
+  });
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar */}
@@ -128,7 +141,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
 
         {/* Navigation */}
         <nav className="flex-1 p-2">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.path || (location === "/" && item.path === "/dashboard");
             return (
@@ -157,7 +170,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
         {/* Settings section */}
         <div className="px-2 pb-1 border-t border-border/50 pt-2">
           <div className="text-[10px] text-muted-foreground px-3 mb-1 font-semibold uppercase tracking-widest">辅助工具</div>
-          {settingsNavItems.map((item) => {
+          {visibleSettingsNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.path;
             return (

@@ -1274,6 +1274,8 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
 
   const utils = trpc.useUtils();
   const { data: meddpicc } = trpc.meddpicc.get.useQuery({ clientId: client.id });
+  const { data: currentUserCard } = trpc.emailAuth.me.useQuery();
+  const isAD = !currentUserCard || currentUserCard.podRole === 'AD';
   // When no DB record exists yet, fall back to all-zero defaults so the panel is always interactive
   const DEFAULT_MEDDPICC = {
     metricsScore: 0, economicBuyerScore: 0, decisionCriteriaScore: 0,
@@ -1537,65 +1539,83 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                   <span>未拜访</span>
                 </div>
               )}
-              {/* 负责 SAM 显示与分配 */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setSamDropdownOpen(v => !v); }}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Users className="w-3 h-3" />
-                  <span>{(client as any).assignedSamName ? `SAM: ${(client as any).assignedSamName}` : '分配 SAM'}</span>
-                </button>
-                {samDropdownOpen && (
-                  <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
-                    <div className="px-3 py-1 text-[10px] text-muted-foreground font-medium border-b border-border mb-1">分配负责 SAM</div>
-                    <button type="button" onClick={() => assignSamMut.mutate({ clientId: client.id, samId: null, samName: null })}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-muted-foreground">
-                      — 取消分配
+              {/* 负责 SAM/RSM 显示（AD 可分配，其他角色只读） */}
+              {isAD ? (
+                <>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setSamDropdownOpen(v => !v); }}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Users className="w-3 h-3" />
+                      <span>{(client as any).assignedSamName ? `SAM: ${(client as any).assignedSamName}` : '分配 SAM'}</span>
                     </button>
-                    {samUsers.map((u: any) => (
-                      <button key={u.id} type="button"
-                        onClick={() => assignSamMut.mutate({ clientId: client.id, samId: u.id, samName: u.name })}
-                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground flex items-center gap-2">
-                        <span className={`text-[10px] px-1 py-0.5 rounded font-medium ${u.podRole === 'SAM' ? 'bg-blue-500/20 text-blue-400' : u.podRole === 'AD' ? 'bg-red-500/20 text-red-400' : 'bg-muted text-muted-foreground'}`}>{u.podRole}</span>
-                        {u.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {/* 负责 RSM 显示与分配 */}
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setRsmDropdownOpen(v => !v); setSamDropdownOpen(false); }}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Users className="w-3 h-3 text-emerald-400/70" />
-                  <span>{(client as any).assignedRsmName ? `RSM: ${(client as any).assignedRsmName}` : '分配 RSM'}</span>
-                </button>
-                {rsmDropdownOpen && (
-                  <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
-                    <div className="px-3 py-1 text-[10px] text-muted-foreground font-medium border-b border-border mb-1">分配属地 RSM</div>
-                    <button type="button" onClick={() => assignRsmMut.mutate({ clientId: client.id, rsmId: null, rsmName: null })}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-muted-foreground">
-                      — 取消分配
-                    </button>
-                    {samUsers.map((u: any) => (
-                      <button key={u.id} type="button"
-                        onClick={() => assignRsmMut.mutate({ clientId: client.id, rsmId: u.id, rsmName: u.name })}
-                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground flex items-center gap-2">
-                        <span className={`text-[10px] px-1 py-0.5 rounded font-medium ${u.podRole === 'SAM' ? 'bg-cyan-500/20 text-cyan-400' : u.podRole === 'RSM' ? 'bg-emerald-500/20 text-emerald-400' : u.podRole === 'AD' ? 'bg-amber-500/20 text-amber-400' : 'bg-muted text-muted-foreground'}`}>{u.podRole}</span>
-                        {u.name}
-                      </button>
-                    ))}
-                    {samUsers.length === 0 && (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">暂无团队成员</div>
+                    {samDropdownOpen && (
+                      <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                        <div className="px-3 py-1 text-[10px] text-muted-foreground font-medium border-b border-border mb-1">分配负责 SAM</div>
+                        <button type="button" onClick={() => assignSamMut.mutate({ clientId: client.id, samId: null, samName: null })}
+                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-muted-foreground">
+                          — 取消分配
+                        </button>
+                        {samUsers.map((u: any) => (
+                          <button key={u.id} type="button"
+                            onClick={() => assignSamMut.mutate({ clientId: client.id, samId: u.id, samName: u.name })}
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground flex items-center gap-2">
+                            <span className={`text-[10px] px-1 py-0.5 rounded font-medium ${u.podRole === 'SAM' ? 'bg-blue-500/20 text-blue-400' : u.podRole === 'AD' ? 'bg-red-500/20 text-red-400' : 'bg-muted text-muted-foreground'}`}>{u.podRole}</span>
+                            {u.name}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setRsmDropdownOpen(v => !v); setSamDropdownOpen(false); }}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Users className="w-3 h-3 text-emerald-400/70" />
+                      <span>{(client as any).assignedRsmName ? `RSM: ${(client as any).assignedRsmName}` : '分配 RSM'}</span>
+                    </button>
+                    {rsmDropdownOpen && (
+                      <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                        <div className="px-3 py-1 text-[10px] text-muted-foreground font-medium border-b border-border mb-1">分配属地 RSM</div>
+                        <button type="button" onClick={() => assignRsmMut.mutate({ clientId: client.id, rsmId: null, rsmName: null })}
+                          className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-muted-foreground">
+                          — 取消分配
+                        </button>
+                        {samUsers.map((u: any) => (
+                          <button key={u.id} type="button"
+                            onClick={() => assignRsmMut.mutate({ clientId: client.id, rsmId: u.id, rsmName: u.name })}
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground flex items-center gap-2">
+                            <span className={`text-[10px] px-1 py-0.5 rounded font-medium ${u.podRole === 'SAM' ? 'bg-cyan-500/20 text-cyan-400' : u.podRole === 'RSM' ? 'bg-emerald-500/20 text-emerald-400' : u.podRole === 'AD' ? 'bg-amber-500/20 text-amber-400' : 'bg-muted text-muted-foreground'}`}>{u.podRole}</span>
+                            {u.name}
+                          </button>
+                        ))}
+                        {samUsers.length === 0 && (
+                          <div className="px-3 py-2 text-xs text-muted-foreground">暂无团队成员</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {(client as any).assignedSamName && (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Users className="w-3 h-3" />
+                      <span>SAM: {(client as any).assignedSamName}</span>
+                    </div>
+                  )}
+                  {(client as any).assignedRsmName && (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Users className="w-3 h-3 text-emerald-400/70" />
+                      <span>RSM: {(client as any).assignedRsmName}</span>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -2554,6 +2574,8 @@ const EMPTY_FORM = { name: "", nameEn: "", industry: "", priority: "P1" as "P0"|
 export default function BattleMap() {
   const utils = trpc.useUtils();
   const { data: clients = [], isLoading } = trpc.clients.list.useQuery();
+  const { data: currentUser } = trpc.emailAuth.me.useQuery();
+  const isAD = !currentUser || currentUser.podRole === 'AD';
 
   const [showCreate, setShowCreate] = useState(false);
   // Single-client focus mode: ?clientId=xxx from dashboard navigation
@@ -2748,18 +2770,22 @@ export default function BattleMap() {
           <p className="text-sm text-muted-foreground mt-1">{clients.length} 户战略客户 MEDDPICC 完成度可视化看板 · 实时更新 · 含关键人图谱</p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <Button size="sm" variant="outline" onClick={openImport} className="gap-1.5">
-            <Upload className="w-3.5 h-3.5" />
-            批量导入
-          </Button>
-          <Button size="sm" onClick={openCreate} className="gap-1.5">
-            <Plus className="w-3.5 h-3.5" />
-            新增客户
-          </Button>
+          {isAD && (
+            <>
+              <Button size="sm" variant="outline" onClick={openImport} className="gap-1.5">
+                <Upload className="w-3.5 h-3.5" />
+                批量导入
+              </Button>
+              <Button size="sm" onClick={openCreate} className="gap-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                新增客户
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* 组合筛选器：SAM × 阶段 × 健康度 */}
+{isAD && (
       <div className="mb-4 p-3 rounded-xl bg-card border border-border space-y-2.5">
         {/* SAM 筛选行 */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -2861,6 +2887,7 @@ export default function BattleMap() {
           )}
         </div>
       </div>
+      )}
 
       {/* Sales pipeline steps */}
       <div className="mb-5 p-4 rounded-xl bg-card border border-border">

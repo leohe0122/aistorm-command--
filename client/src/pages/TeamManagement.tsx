@@ -22,9 +22,101 @@ const POD_ROLE_LABELS: Record<string, string> = {
   RSM: "RSM · 属地销售",
 };
 
+// ClientAssignRow: inline row for client assignment in team management
+function ClientAssignRow({ client, members, onSuccess, showRsmMode }: {
+  client: any;
+  members: any[];
+  onSuccess: () => void;
+  showRsmMode?: boolean;
+}) {
+  const [editSam, setEditSam] = useState(false);
+  const [editRsm, setEditRsm] = useState(false);
+  const assignSamMut = trpc.clients.assignSam.useMutation({ onSuccess: () => { onSuccess(); setEditSam(false); } });
+  const assignRsmMut = trpc.clients.assignRsm.useMutation({ onSuccess: () => { onSuccess(); setEditRsm(false); } });
+
+  const priorityColors: Record<string, string> = {
+    P0: "bg-red-500/20 text-red-400", P1: "bg-orange-500/20 text-orange-400", P2: "bg-blue-500/20 text-blue-400",
+  };
+
+  return (
+    <tr className="border-b border-border/50 hover:bg-muted/10 transition-colors">
+      <td className="px-4 py-2.5 font-medium text-foreground">{client.name}</td>
+      <td className="px-4 py-2.5">
+        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${priorityColors[client.priority] || "bg-muted text-muted-foreground"}`}>{client.priority}</span>
+      </td>
+      <td className="px-4 py-2.5 text-xs text-muted-foreground">{client.stage}</td>
+      <td className="px-4 py-2.5">
+        {showRsmMode ? (
+          // Show SAM info when in RSM mode
+          <span className="text-xs text-muted-foreground">{client.assignedSamName || "—"}</span>
+        ) : (
+          // Show RSM info when in SAM mode
+          editRsm ? (
+            <select className="text-xs bg-card border border-border rounded px-2 py-1"
+              defaultValue={client.assignedRsmId ?? ""}
+              onChange={e => {
+                const u = members.find((m: any) => m.id === parseInt(e.target.value));
+                assignRsmMut.mutate({ clientId: client.id, rsmId: u?.id ?? null, rsmName: u?.name ?? null });
+              }}>
+              <option value="">— 取消分配</option>
+              {members.filter((m: any) => m.isActive).map((m: any) => (
+                <option key={m.id} value={m.id}>{m.name} ({m.podRole})</option>
+              ))}
+            </select>
+          ) : (
+            <button onClick={() => setEditRsm(true)} className="text-xs text-muted-foreground hover:text-[#00A8D6] transition-colors">
+              {client.assignedRsmName || <span className="text-orange-400/70">未分配 RSM</span>}
+            </button>
+          )
+        )}
+      </td>
+      <td className="px-4 py-2.5 text-right">
+        {showRsmMode ? (
+          // Change RSM
+          editRsm ? (
+            <select className="text-xs bg-card border border-border rounded px-2 py-1"
+              defaultValue={client.assignedRsmId ?? ""}
+              onChange={e => {
+                const u = members.find((m: any) => m.id === parseInt(e.target.value));
+                assignRsmMut.mutate({ clientId: client.id, rsmId: u?.id ?? null, rsmName: u?.name ?? null });
+              }}>
+              <option value="">— 取消分配</option>
+              {members.filter((m: any) => m.isActive).map((m: any) => (
+                <option key={m.id} value={m.id}>{m.name} ({m.podRole})</option>
+              ))}
+            </select>
+          ) : (
+            <button onClick={() => setEditRsm(true)} className="text-xs text-[#00A8D6] hover:underline">更换 RSM</button>
+          )
+        ) : (
+          // Change SAM
+          editSam ? (
+            <select className="text-xs bg-card border border-border rounded px-2 py-1"
+              defaultValue={client.assignedSamId ?? ""}
+              onChange={e => {
+                const u = members.find((m: any) => m.id === parseInt(e.target.value));
+                assignSamMut.mutate({ clientId: client.id, samId: u?.id ?? null, samName: u?.name ?? null });
+              }}>
+              <option value="">— 取消分配</option>
+              {members.filter((m: any) => m.isActive).map((m: any) => (
+                <option key={m.id} value={m.id}>{m.name} ({m.podRole})</option>
+              ))}
+            </select>
+          ) : (
+            <button onClick={() => setEditSam(true)} className="text-xs text-[#00A8D6] hover:underline">更换 SAM</button>
+          )
+        )}
+      </td>
+    </tr>
+  );
+}
+
 export default function TeamManagement() {
   const utils = trpc.useUtils();
   const { data: members = [], isLoading } = trpc.admin.listUsers.useQuery();
+  const { data: allClients = [] } = trpc.clients.list.useQuery();
+  const [activeTab, setActiveTab] = useState<"members" | "assignments">("members");
+  const [assignmentMemberId, setAssignmentMemberId] = useState<number | null>(null);
 
   // ── Create ──────────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
@@ -97,10 +189,27 @@ export default function TeamManagement() {
         </Button>
       </div>
 
+      {/* Tab Switcher */}
+      <div className="flex gap-1 p-1 rounded-lg bg-muted/30 border border-border w-fit">
+        <button
+          onClick={() => setActiveTab("members")}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === "members" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          成员列表
+        </button>
+        <button
+          onClick={() => setActiveTab("assignments")}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === "assignments" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          客户分配
+        </button>
+      </div>
+
       {/* Member Table */}
-      {isLoading ? (
+      {activeTab === "members" && (
+        isLoading ? (
         <div className="text-center py-12 text-muted-foreground">加载中...</div>
-      ) : (
+        ) : (
         <div className="rounded-xl border border-border overflow-hidden">
           <table className="w-full text-sm">
             <thead>
@@ -180,6 +289,83 @@ export default function TeamManagement() {
               ))}
             </tbody>
           </table>
+        </div>
+        )
+      )}
+
+      {/* Client Assignment View */}
+      {activeTab === "assignments" && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">选择成员查看其负责的客户，并在此调整 SAM / RSM 归属。</p>
+          <div className="flex flex-wrap gap-2">
+            {members.filter((m: any) => m.isActive).map((m: any) => (
+              <button key={m.id}
+                onClick={() => setAssignmentMemberId(assignmentMemberId === m.id ? null : m.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${assignmentMemberId === m.id ? "bg-[#00A8D6]/20 text-[#00A8D6] border-[#00A8D6]/40" : "bg-muted/20 text-muted-foreground border-border hover:border-[#00A8D6]/30 hover:text-foreground"}`}>
+                <span className={`text-[10px] px-1 py-0.5 rounded font-bold ${POD_ROLE_COLORS[m.podRole] || "bg-muted text-muted-foreground"}`}>{m.podRole}</span>
+                {m.name}
+              </button>
+            ))}
+          </div>
+          {assignmentMemberId && (() => {
+            const asSam = allClients.filter((c: any) => (c as any).assignedSamId === assignmentMemberId);
+            const asRsm = allClients.filter((c: any) => (c as any).assignedRsmId === assignmentMemberId);
+            const unassigned = allClients.filter((c: any) => !(c as any).assignedSamId && !(c as any).assignedRsmId);
+            return (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <div className="px-4 py-2.5 bg-cyan-500/10 border-b border-border">
+                    <span className="text-xs font-semibold text-cyan-400">以 SAM 身份负责的客户 ({asSam.length})</span>
+                  </div>
+                  {asSam.length === 0 ? <div className="px-4 py-3 text-xs text-muted-foreground">暂无</div> : (
+                    <table className="w-full text-sm">
+                      <thead><tr className="border-b border-border bg-muted/20">
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">客户名称</th>
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">优先级</th>
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">阶段</th>
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">属地 RSM</th>
+                        <th className="text-right px-4 py-2 text-xs text-muted-foreground">操作</th>
+                      </tr></thead>
+                      <tbody>{asSam.map((c: any) => <ClientAssignRow key={c.id} client={c} members={members} onSuccess={() => utils.clients.list.invalidate()} />)}</tbody>
+                    </table>
+                  )}
+                </div>
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <div className="px-4 py-2.5 bg-emerald-500/10 border-b border-border">
+                    <span className="text-xs font-semibold text-emerald-400">以 RSM 身份协作的客户 ({asRsm.length})</span>
+                  </div>
+                  {asRsm.length === 0 ? <div className="px-4 py-3 text-xs text-muted-foreground">暂无</div> : (
+                    <table className="w-full text-sm">
+                      <thead><tr className="border-b border-border bg-muted/20">
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">客户名称</th>
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">优先级</th>
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">阶段</th>
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">主责 SAM</th>
+                        <th className="text-right px-4 py-2 text-xs text-muted-foreground">操作</th>
+                      </tr></thead>
+                      <tbody>{asRsm.map((c: any) => <ClientAssignRow key={c.id} client={c} members={members} onSuccess={() => utils.clients.list.invalidate()} showRsmMode />)}</tbody>
+                    </table>
+                  )}
+                </div>
+                {unassigned.length > 0 && (
+                  <div className="rounded-xl border border-orange-500/30 overflow-hidden">
+                    <div className="px-4 py-2.5 bg-orange-500/10 border-b border-orange-500/20">
+                      <span className="text-xs font-semibold text-orange-400">未分配任何成员的客户 ({unassigned.length})</span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead><tr className="border-b border-border bg-muted/20">
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">客户名称</th>
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">优先级</th>
+                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">阶段</th>
+                        <th className="text-right px-4 py-2 text-xs text-muted-foreground">分配</th>
+                      </tr></thead>
+                      <tbody>{unassigned.map((c: any) => <ClientAssignRow key={c.id} client={c} members={members} onSuccess={() => utils.clients.list.invalidate()} />)}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
