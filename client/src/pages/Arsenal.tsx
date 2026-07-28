@@ -61,6 +61,13 @@ function ProductDocsTab() {
     onSuccess: () => { toast.success("已删除"); refetch(); },
     onError: (e: any) => toast.error("删除失败: " + e.message),
   });
+  const extractTextBatchMut = trpc.productDocs.extractTextBatch.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`文字提取完成：成功 ${data.processed}/${data.total} 份，失败 ${data.failed} 份`);
+      refetch();
+    },
+    onError: (e: any) => toast.error("批量提取失败: " + e.message),
+  });
   const extractSummaryMut = trpc.productDocs.extractSummary.useMutation({
     onSuccess: (data: any, variables: any) => {
       setSummaries(prev => ({ ...prev, [variables.id]: data }));
@@ -102,7 +109,8 @@ function ProductDocsTab() {
     xhr.onload = async () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const { fileKey, fileUrl } = JSON.parse(xhr.responseText);
+          const uploadResult = JSON.parse(xhr.responseText);
+          const { fileKey, fileUrl, extractedText } = uploadResult;
           await confirmUploadMut.mutateAsync({
             title: uploadForm.title,
             description: uploadForm.description || undefined,
@@ -113,6 +121,7 @@ function ProductDocsTab() {
             fileKey,
             fileUrl,
             fileSize: selectedFile.size,
+            extractedText: extractedText || undefined,
           });
         } catch (err: any) {
           toast.error("上传失败: " + (err.message || "未知错误"));
@@ -165,6 +174,10 @@ function ProductDocsTab() {
           </SelectContent>
         </Select>
         <Button onClick={() => setUploadDialog(true)} className="gap-2"><Upload className="h-4 w-4" /> 上传文档</Button>
+        <Button variant="outline" onClick={() => extractTextBatchMut.mutate()} disabled={extractTextBatchMut.isPending} className="gap-2 text-xs">
+          {extractTextBatchMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+          {extractTextBatchMut.isPending ? "提取中..." : "批量提取文字"}
+        </Button>
       </div>
 
       {filtered.length === 0 ? (
@@ -193,7 +206,15 @@ function ProductDocsTab() {
                 </button>
               </div>
               <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
-                <span>{doc.filename}</span><span>{formatSize(doc.fileSize)}</span>
+                <span className="truncate max-w-[60%]">{doc.filename}</span>
+                <div className="flex items-center gap-1.5">
+                  {doc.extractedText ? (
+                    <span className="text-emerald-500 flex items-center gap-0.5"><Sparkles className="h-2.5 w-2.5" />已学习</span>
+                  ) : (
+                    <span className="text-muted-foreground/50">未提取</span>
+                  )}
+                  <span>{formatSize(doc.fileSize)}</span>
+                </div>
               </div>
               {/* AI 摘要区域 */}
             {summaryDocId === doc.id && (

@@ -66,12 +66,15 @@
     "framer-motion": "^12.23.22",
     "input-otp": "^1.4.2",
     "jose": "6.1.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.453.0",
+    "mammoth": "^1.12.0",
     "multer": "^2.2.0",
     "mysql2": "^3.15.0",
     "nanoid": "^5.1.5",
     "next-themes": "^0.4.6",
     "node-fetch": "^3.3.2",
+    "pdfjs-dist": "^6.1.200",
     "react": "^19.2.1",
     "react-day-picker": "^9.11.1",
     "react-dom": "^19.2.1",
@@ -86,6 +89,7 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
     "wouter": "^3.3.5",
+    "xlsx": "^0.18.5",
     "zod": "^4.1.12"
   },
   "devDependencies": {

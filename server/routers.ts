@@ -2224,6 +2224,7 @@ ${contactList}
         fileKey: z.string(),
         fileUrl: z.string(),
         fileSize: z.number().optional(),
+        extractedText: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
@@ -2239,11 +2240,52 @@ ${contactList}
           fileUrl: input.fileUrl,
           mimeType: input.mimeType,
           fileSize: input.fileSize,
+          extractedText: input.extractedText || null,
           uploadedBy: ctx.user?.name || 'unknown',
         });
         return { id: (result as any).insertId, fileKey: input.fileKey, fileUrl: input.fileUrl };
       }),
 
+    // 批量补跑文字提取（为已上传但无extractedText的文档）
+    extractTextBatch: protectedProcedure
+      .mutation(async () => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const { isNull, or, eq } = await import('drizzle-orm');
+        // 获取所有没有 extractedText 的文档
+        const docs = await db.select({
+          id: productDocs.id,
+          fileKey: productDocs.fileKey,
+          mimeType: productDocs.mimeType,
+          filename: productDocs.filename,
+        }).from(productDocs).where(or(isNull(productDocs.extractedText), eq(productDocs.extractedText, '')));
+        
+        const { storageGetSignedUrl } = await import('./storage');
+        const { extractTextFromBuffer } = await import('./docExtract');
+        let processed = 0;
+        let failed = 0;
+        
+        for (const doc of docs) {
+          try {
+            // 获取签名 URL 并下载文件
+            const signedUrl = await storageGetSignedUrl(doc.fileKey);
+            const resp = await fetch(signedUrl);
+            if (!resp.ok) { failed++; continue; }
+            const arrayBuffer = await resp.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            const text = await extractTextFromBuffer(buffer, doc.mimeType || '', doc.filename || '');
+            if (text) {
+              await db.update(productDocs).set({ extractedText: text }).where(eq(productDocs.id, doc.id));
+              processed++;
+            }
+          } catch (e: any) {
+            console.error('[extractTextBatch] doc', doc.id, e.message);
+            failed++;
+          }
+        }
+        return { total: docs.length, processed, failed };
+      }),
     // 删除产品文档
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))

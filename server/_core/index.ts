@@ -55,7 +55,14 @@ async function startServer() {
       const safeExt = ext.replace(/[^\x00-\x7F]/g, '').replace(/[^a-zA-Z0-9\.]/g, '').slice(0, 10);
       const fileKey = `product-docs/${Date.now()}-${safeBase}_${hash}${safeExt}`;
       const { key, url } = await storagePut(fileKey, req.file.buffer, req.file.mimetype || "application/octet-stream");
-      res.json({ fileKey: key, fileUrl: url, filename, mimeType: req.file.mimetype, fileSize: req.file.size });
+      // 异步提取文字内容（不阻塞响应）
+      const extractedText = await (async () => {
+        try {
+          const { extractTextFromBuffer } = await import('../docExtract');
+          return await extractTextFromBuffer(req.file!.buffer, req.file!.mimetype || '', filename);
+        } catch { return ''; }
+      })();
+      res.json({ fileKey: key, fileUrl: url, filename, mimeType: req.file.mimetype, fileSize: req.file.size, extractedText });
     } catch (e: any) {
       console.error("[upload-doc]", e.message);
       res.status(500).json({ error: e.message });
