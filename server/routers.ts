@@ -3911,7 +3911,7 @@ ${context}
       }),
 
     logout: publicProcedure.mutation(async ({ ctx }) => {
-      const token = ctx.req.cookies?.email_session;
+      const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
       if (token) {
         const db = await getDb();
         if (db) {
@@ -3926,7 +3926,7 @@ ${context}
     }),
 
     me: publicProcedure.query(async ({ ctx }) => {
-      const token = ctx.req.cookies?.email_session;
+      const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
       if (!token) return null;
       const db = await getDb();
       if (!db) return null;
@@ -3945,7 +3945,7 @@ ${context}
     changePassword: publicProcedure
       .input(z.object({ currentPassword: z.string(), newPassword: z.string().min(8) }))
       .mutation(async ({ input, ctx }) => {
-        const token = ctx.req.cookies?.email_session;
+        const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
         if (!token) throw new Error('未登录');
         const db = await getDb();
         if (!db) throw new Error('Database unavailable');
@@ -4729,7 +4729,7 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
   admin: router({
     listUsers: publicProcedure.query(async ({ ctx }) => {
       // Verify admin session
-      const token = ctx.req.cookies?.email_session;
+      const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
       if (!token) throw new Error('未登录');
       const db = await getDb();
       if (!db) throw new Error('Database unavailable');
@@ -4756,7 +4756,7 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
     toggleUser: publicProcedure
       .input(z.object({ userId: z.number(), isActive: z.boolean() }))
       .mutation(async ({ input, ctx }) => {
-        const token = ctx.req.cookies?.email_session;
+        const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
         if (!token) throw new Error('未登录');
         const db = await getDb();
         if (!db) throw new Error('Database unavailable');
@@ -4775,7 +4775,7 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
     updateUserRole: publicProcedure
       .input(z.object({ userId: z.number(), podRole: z.string(), role: z.string() }))
       .mutation(async ({ input, ctx }) => {
-        const token = ctx.req.cookies?.email_session;
+        const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
         if (!token) throw new Error('未登录');
         const db = await getDb();
         if (!db) throw new Error('Database unavailable');
@@ -4798,7 +4798,7 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
       podRole: z.enum(["AD", "SAM", "SA", "RSM"]),
       password: z.string().min(6).optional(),
     })).mutation(async ({ input, ctx }) => {
-      const token = ctx.req.cookies?.email_session;
+      const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
       if (!token) throw new Error('未登录');
       const db = await getDb();
       if (!db) throw new Error('Database unavailable');
@@ -4829,7 +4829,7 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
       name: z.string().min(1).optional(),
       podRole: z.enum(["AD", "SAM", "SA", "RSM"]).optional(),
     })).mutation(async ({ input, ctx }) => {
-      const token = ctx.req.cookies?.email_session;
+      const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
       if (!token) throw new Error('未登录');
       const db = await getDb();
       if (!db) throw new Error('Database unavailable');
@@ -4858,7 +4858,7 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
       reassignToUserId: z.number().nullable(),  // null = 清空归属
       reassignToUserName: z.string().nullable(),
     })).mutation(async ({ input, ctx }) => {
-      const token = ctx.req.cookies?.email_session;
+      const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
       if (!token) throw new Error('未登录');
       const db = await getDb();
       if (!db) throw new Error('Database unavailable');
