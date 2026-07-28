@@ -2587,15 +2587,49 @@ export default function BattleMap() {
 
   // SAM 筛选 + 阶段筛选 + 健康度筛选
   const [samFilter, setSamFilter] = useState<string>("all"); // "all" | samName | "__unassigned__"
+  const [rsmFilter, setRsmFilter] = useState<string>("all"); // "all" | rsmName | "__unassigned__"
   const [stageFilter, setStageFilter] = useState<string>("all"); // "all" | "0to1" | "1toN"
   const [healthFilter, setHealthFilter] = useState<string>("all"); // "all" | "healthy" | "watch" | "risk"
   const { data: samUsers = [] } = trpc.clients.listSamUsers.useQuery();
-  const samNames = Array.from(new Set(clients.map(c => (c as any).assignedSamName).filter(Boolean)));
+
+  // All unique SAM names from clients
+  const allSamNames = Array.from(new Set(clients.map(c => (c as any).assignedSamName).filter(Boolean))) as string[];
+  // All unique RSM names from clients
+  const allRsmNames = Array.from(new Set(clients.map(c => (c as any).assignedRsmName).filter(Boolean))) as string[];
+
+  // Linkage: when RSM is selected, only show SAM names that appear on clients with that RSM
+  const visibleSamNames = rsmFilter === "all"
+    ? allSamNames
+    : Array.from(new Set(
+        clients
+          .filter(c => (c as any).assignedRsmName === rsmFilter)
+          .map(c => (c as any).assignedSamName)
+          .filter(Boolean)
+      )) as string[];
+
+  // Linkage: when SAM is selected, only show RSM names that appear on clients with that SAM
+  const visibleRsmNames = samFilter === "all"
+    ? allRsmNames
+    : Array.from(new Set(
+        clients
+          .filter(c => (c as any).assignedSamName === samFilter)
+          .map(c => (c as any).assignedRsmName)
+          .filter(Boolean)
+      )) as string[];
+
+  // If current samFilter is no longer in visibleSamNames after RSM change, reset it
+  const effectiveSamFilter = (samFilter !== "all" && samFilter !== "__unassigned__" && !visibleSamNames.includes(samFilter))
+    ? "all" : samFilter;
+  const effectiveRsmFilter = (rsmFilter !== "all" && rsmFilter !== "__unassigned__" && !visibleRsmNames.includes(rsmFilter))
+    ? "all" : rsmFilter;
 
   const filteredClients = clients.filter(c => {
     // SAM filter
-    if (samFilter === "__unassigned__" && (c as any).assignedSamName) return false;
-    if (samFilter !== "all" && samFilter !== "__unassigned__" && (c as any).assignedSamName !== samFilter) return false;
+    if (effectiveSamFilter === "__unassigned__" && (c as any).assignedSamName) return false;
+    if (effectiveSamFilter !== "all" && effectiveSamFilter !== "__unassigned__" && (c as any).assignedSamName !== effectiveSamFilter) return false;
+    // RSM filter
+    if (effectiveRsmFilter === "__unassigned__" && (c as any).assignedRsmName) return false;
+    if (effectiveRsmFilter !== "all" && effectiveRsmFilter !== "__unassigned__" && (c as any).assignedRsmName !== effectiveRsmFilter) return false;
     // Stage filter
     const ZERO_TO_ONE_STAGES = ["建图", "进门", "定痛", "找人"];
     const ONE_TO_N_STAGES = ["进入商机"];
@@ -2609,9 +2643,9 @@ export default function BattleMap() {
     return true;
   });
 
-  const activeFilterCount = [samFilter !== "all", stageFilter !== "all", healthFilter !== "all"].filter(Boolean).length;
+  const activeFilterCount = [samFilter !== "all", rsmFilter !== "all", stageFilter !== "all", healthFilter !== "all"].filter(Boolean).length;
 
-  const clearAllFilters = () => { setSamFilter("all"); setStageFilter("all"); setHealthFilter("all"); };
+  const clearAllFilters = () => { setSamFilter("all"); setRsmFilter("all"); setStageFilter("all"); setHealthFilter("all"); };
 
   // CSV Import state
   const [showImport, setShowImport] = useState(false);
@@ -2731,20 +2765,57 @@ export default function BattleMap() {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider w-10 flex-shrink-0">SAM</span>
           <button onClick={() => setSamFilter("all")}
-            className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${samFilter === "all" ? "bg-[#00A8D6]/20 text-[#00A8D6] border-[#00A8D6]/40" : "bg-muted/20 text-muted-foreground border-border hover:border-[#00A8D6]/30 hover:text-[#00A8D6]"}`}>
+            className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${effectiveSamFilter === "all" ? "bg-[#00A8D6]/20 text-[#00A8D6] border-[#00A8D6]/40" : "bg-muted/20 text-muted-foreground border-border hover:border-[#00A8D6]/30 hover:text-[#00A8D6]"}`}>
             全部
           </button>
-          {samNames.map(name => (
+          {visibleSamNames.map(name => (
             <button key={name} onClick={() => setSamFilter(name)}
-              className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${samFilter === name ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/40" : "bg-muted/20 text-muted-foreground border-border hover:border-cyan-500/30 hover:text-cyan-400"}`}>
+              className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${effectiveSamFilter === name ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/40" : "bg-muted/20 text-muted-foreground border-border hover:border-cyan-500/30 hover:text-cyan-400"}`}>
+              {name}
+            </button>
+          ))}
+          {allSamNames.filter(n => !visibleSamNames.includes(n)).map(name => (
+            <button key={name} disabled
+              className="text-xs px-2.5 py-0.5 rounded-full border font-medium opacity-25 cursor-not-allowed bg-muted/10 text-muted-foreground border-border"
+              title={`选择的 RSM 没有与 ${name} 协作的客户`}>
               {name}
             </button>
           ))}
           {clients.filter(c => !(c as any).assignedSamName).length > 0 && (
             <button onClick={() => setSamFilter("__unassigned__")}
-              className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${samFilter === "__unassigned__" ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "bg-muted/20 text-muted-foreground border-border hover:border-orange-500/30 hover:text-orange-400"}`}>
+              className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${effectiveSamFilter === "__unassigned__" ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "bg-muted/20 text-muted-foreground border-border hover:border-orange-500/30 hover:text-orange-400"}`}>
               未分配
             </button>
+          )}
+          {rsmFilter !== "all" && visibleSamNames.length > 0 && (
+            <span className="text-[10px] text-emerald-400/70 ml-1">← 已按 RSM 联动过滤</span>
+          )}
+        </div>
+        {/* RSM 筛选行 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider w-10 flex-shrink-0">RSM</span>
+          <button onClick={() => setRsmFilter("all")}
+            className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${effectiveRsmFilter === "all" ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "bg-muted/20 text-muted-foreground border-border hover:border-emerald-500/30 hover:text-emerald-400"}`}>
+            全部
+          </button>
+          {visibleRsmNames.map(name => (
+            <button key={name} onClick={() => setRsmFilter(name)}
+              className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${effectiveRsmFilter === name ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "bg-muted/20 text-muted-foreground border-border hover:border-emerald-500/30 hover:text-emerald-400"}`}>
+              {name}
+            </button>
+          ))}
+          {allRsmNames.filter(n => !visibleRsmNames.includes(n)).map(name => (
+            <button key={name} disabled
+              className="text-xs px-2.5 py-0.5 rounded-full border font-medium opacity-25 cursor-not-allowed bg-muted/10 text-muted-foreground border-border"
+              title={`选择的 SAM 没有与 ${name} 协作的客户`}>
+              {name}
+            </button>
+          ))}
+          {allRsmNames.length === 0 && (
+            <span className="text-[10px] text-muted-foreground/50">暂无 RSM 分配</span>
+          )}
+          {samFilter !== "all" && visibleRsmNames.length > 0 && (
+            <span className="text-[10px] text-cyan-400/70 ml-1">← 已按 SAM 联动过滤</span>
           )}
         </div>
         {/* 阶段筛选行 */}
