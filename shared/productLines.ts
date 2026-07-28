@@ -80,6 +80,12 @@ export const PRODUCT_LINES: ProductLineItem[] = [
     category: '亚信安全',
     description: 'EASM、攻击面管理、渗透测试、红队、红蓝对抗、MDR、托管检测响应、安全服务、安全咨询',
   },
+  {
+    value: 'AI大模型防火墙',
+    label: 'AI 大模型防火墙',
+    category: '亚信安全',
+    description: 'AI大模型防火墙、大模型安全、LLM安全、AI防火墙、大模型防护、AI应用安全、提示词注入防护、模型访问控制',
+  },
 ];
 
 export const PRODUCT_LINE_VALUES = PRODUCT_LINES.map(p => p.value);
