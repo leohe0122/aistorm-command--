@@ -693,3 +693,24 @@ export async function getLLMProviderConfig(tier: "primary" | "fast"): Promise<{ 
 
   return null;
 }
+
+// ── Effectiveness Baseline ────────────────────────────────────────────────────
+export async function getEffectivenessBaseline(clientId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const { effectivenessBaselines } = await import('../drizzle/schema');
+  const rows = await db.select().from(effectivenessBaselines).where(eq(effectivenessBaselines.clientId, clientId)).limit(1);
+  return rows[0] || null;
+}
+
+export async function upsertEffectivenessBaseline(clientId: number, data: Partial<typeof effectivenessBaselines.$inferInsert>) {
+  const db = await getDb();
+  if (!db) return;
+  const { effectivenessBaselines } = await import('../drizzle/schema');
+  const existing = await db.select({ id: effectivenessBaselines.id }).from(effectivenessBaselines).where(eq(effectivenessBaselines.clientId, clientId)).limit(1);
+  if (existing.length > 0) {
+    await db.update(effectivenessBaselines).set({ ...data, updatedAt: new Date() }).where(eq(effectivenessBaselines.clientId, clientId));
+  } else {
+    await db.insert(effectivenessBaselines).values({ clientId, ...data } as any);
+  }
+}

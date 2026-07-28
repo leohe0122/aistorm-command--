@@ -380,10 +380,10 @@
 
 ## AI 能力提升路线图（P0→P2→P1）
 - [x] P0：AI洞察打通信息孤岛——自动拼装客户战况快照（阶段+拜访摘要+MEDDPICC薄弱项+情报信号）
-- [ ] P2a：数据库新增stage_entered_at字段（商机表）+ days_in_stage计算
-- [ ] P2b：关键人新增Champion三维评分字段（Access/Will/Credibility各1-3分）
-- [ ] P2c：关键人新增关系边字段（引荐路径 from→to）
-- [ ] P2d：客户档案新增relationship_narrative字段（200字滚动叙事）
+- [x] P2a：数据库新增stage_entered_at字段（已有stageChangedAt，P2a已存在）（商机表）+ days_in_stage计算
+- [x] P2b：关键人新增Champion三维评分字段（Access/Will/Credibility各1-3分）
+- [x] P2c：关键人新增关系边字段（引荐路径 from→to）
+- [x] P2d：客户档案新增relationship_narrative字段（200字滚动叙事）
 - [ ] P1a：0→1 Review功能（AD指挥台/战场地图）
 - [ ] P1b：1→N Review功能（MEDDPICC健康雷达+Blue Sheet战局判断+AI质疑层）
 - [ ] P1c：Buying Group覆盖分析（权力路径+Champion→EB路径完整性）

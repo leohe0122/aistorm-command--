@@ -8,6 +8,7 @@ import {
   Newspaper, Loader2, RefreshCw, ExternalLink, Calendar, Rss, Shield
 } from "lucide-react";
 import { Trash2 } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import ClientSelector from "@/components/ClientSelector";
@@ -89,6 +90,27 @@ export default function IntelRadar() {
   );
 
   // Compliance policy RSS (港澳+东南亚合规政策动态，全局，不过滤客户)
+  const [autoMatchSignalId, setAutoMatchSignalId] = useState<number | null>(null);
+  const [autoMatchResult, setAutoMatchResult] = useState("");
+  const [autoMatchOpen, setAutoMatchOpen] = useState(false);
+  const [autoMatchLoading, setAutoMatchLoading] = useState(false);
+  const autoMatchMut = trpc.intelligence.autoMatch.useMutation();
+
+  const handleAutoMatch = async (signalId: number) => {
+    setAutoMatchSignalId(signalId);
+    setAutoMatchOpen(true);
+    setAutoMatchLoading(true);
+    setAutoMatchResult("");
+    try {
+      const res = await autoMatchMut.mutateAsync({ signalId });
+      setAutoMatchResult(res.content);
+    } catch (e: any) {
+      setAutoMatchResult("关联分析失败：" + (e?.message || "未知错误"));
+    } finally {
+      setAutoMatchLoading(false);
+    }
+  };
+
   const deleteSignal = trpc.intelligence.delete.useMutation({
     onSuccess: () => {
       refetch();
@@ -498,6 +520,13 @@ export default function IntelRadar() {
                               title="删除此信号"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleAutoMatch(signal.id)}
+                              className="p-1 rounded hover:bg-purple-500/10 text-muted-foreground/50 hover:text-purple-400 transition-colors"
+                              title="AI关联推送：分析此信号与哪些客户最相关"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
                             </button>
                             <input
                               type="checkbox"

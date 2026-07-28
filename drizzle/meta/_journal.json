@@ -134,6 +134,13 @@
       "when": 1785138127208,
       "tag": "0018_grey_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1785223256043,
+      "tag": "0019_pale_silver_centurion",
+      "breakpoints": true
     }
   ]
 }

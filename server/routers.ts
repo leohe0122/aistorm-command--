@@ -15,6 +15,7 @@ function extractJSON(raw: string): string {
 }
 
 import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient, invalidateClientsCache,
+  getEffectivenessBaseline, upsertEffectivenessBaseline,
   getMeddpiccByClientId, upsertMeddpicc,
   insertClient, deleteClientCascade,
   getSignalsByClientId, getAllRecentSignals, insertSignal, updateSignal,
@@ -340,6 +341,88 @@ export const appRouter = router({
     deleteBatch: protectedProcedure.input(z.object({ ids: z.array(z.number()) })).mutation(async ({ input }) => {
       await deleteSignalBatch(input.ids);
       return { success: true, deleted: input.ids.length };
+    }),
+
+    // P1e: 情报自动关联推送 — 规则初筛 + AI精判双层架构
+    autoMatch: protectedProcedure.input(z.object({
+      signalId: z.number(),
+    })).mutation(async ({ input }) => {
+      // 获取信号详情
+      const db = await getDb();
+      const { intelligenceSignals } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const signalRows = await db!.select().from(intelligenceSignals).where(eq(intelligenceSignals.id, input.signalId)).limit(1);
+      const signal = signalRows[0];
+      if (!signal) throw new Error("信号不存在");
+
+      // 获取所有活跃客户（规则初筛）
+      const allClients = await getAllClients();
+      const activeClients = allClients.filter((c: any) => !c.isTest);
+
+      // 规则初筛：关键词匹配（客户名称/行业/监控关键词）
+      const signalText = (signal.rawSignal + " " + (signal.aiInterpretation || "")).toLowerCase();
+      const candidates = activeClients.filter((c: any) => {
+        const clientName = c.name.toLowerCase();
+        const clientNameEn = (c.nameEn || "").toLowerCase();
+        const industry = (c.industry || "").toLowerCase();
+        const keywords = (c.monitorKeywords || []).map((k: string) => k.toLowerCase());
+        
+        return (
+          signalText.includes(clientName) ||
+          (clientNameEn && signalText.includes(clientNameEn)) ||
+          keywords.some((k: string) => k.length > 2 && signalText.includes(k)) ||
+          (industry && signalText.includes(industry))
+        );
+      });
+
+      if (candidates.length === 0) {
+        return { 
+          content: "规则初筛未找到匹配客户。\n\n**信号摘要：**\n" + signal.rawSignal.slice(0, 200) + "\n\n**建议：** 如果此信号与某个客户相关，请手动关联。",
+          matches: [] 
+        };
+      }
+
+      // AI精判：对候选客户进行相关性评分
+      const candidateList = candidates.slice(0, 10).map((c: any) => 
+        `- ${c.name}（${c.industry || "未知行业"}，当前阶段：${c.stage}）`
+      ).join("\n");
+
+      const prompt = `你是一位企业级安全销售情报分析师。
+
+情报信号：
+类型：${signal.signalType}
+紧急度：${signal.urgency}
+内容：${signal.rawSignal}
+${signal.aiInterpretation ? "AI分析：" + signal.aiInterpretation.slice(0, 300) : ""}
+
+候选关联客户（已通过关键词初筛）：
+${candidateList}
+
+请对每个候选客户进行相关性评分（0-100分），并说明：
+1. 为什么这条情报与该客户相关
+2. 这条情报对该客户的销售推进有什么价值（进门话题/定痛依据/竞争预警/商机加速）
+3. 建议的行动（发给哪个角色/用什么角度引用）
+
+输出格式（每个客户一段）：
+
+**[客户名]** 相关性：X分
+- 关联理由：
+- 销售价值：
+- 建议行动：
+
+最后给出：**最高优先推送客户：** [客户名]，理由：[一句话]`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const analysisContent = String(res.choices[0].message.content || "");
+
+      return { 
+        content: analysisContent,
+        matches: candidates.map((c: any) => ({ id: c.id, name: c.name, stage: c.stage })),
+        signalSummary: signal.rawSignal.slice(0, 150)
+      };
     }),
   }),
 
@@ -962,12 +1045,7 @@ ${situationSnapshot}
       let hookTopicBasis = "";
       let securityAngleBasis = "";
       try {
-        const strategyPrompt = `根据以下客户拜访简报，提炼关键建议供 SAM 参考。
-
-简报内容：
-${content}
-
-请以JSON格式返回：
+        const strategyPrompt = `根据以下客户拜访简报，提炼关键建议供 SAM 参考。\n\n简报内容：\n${content}\n\n请以JSON格式返回：
 {
   "hookTopic": "一句话总结：建议的敲门砖话题（具体、有针对性，基于公开情报）",
   "hookTopicBasis": "支撑该敲门砖建议的具体依据（引用简报中的具体事件、数据或公开言论，1-2句）",
@@ -1005,6 +1083,470 @@ ${content}
       const { clientId, ...data } = input;
       await updateClient(clientId, data as any);
       return { ok: true };
+    }),
+
+    // P1a: 0→1 Review — 基于客户阶段+关键人+拜访记录生成阶段推进建议
+    reviewZeroToOne: publicProcedure.input(z.object({
+      clientId: z.number(),
+    })).mutation(async ({ input }) => {
+      const [client, contacts, meetings, meddpicc, signals] = await Promise.all([
+        getClientById(input.clientId),
+        getContactsByClientId(input.clientId),
+        getMeetingsByClientId(input.clientId),
+        getMeddpiccByClientId(input.clientId),
+        getSignalsByClientId(input.clientId),
+      ]);
+      if (!client) throw new Error("客户不存在");
+
+      const stage = client.stage;
+      const stageChangedAt = (client as any).stageChangedAt;
+      const daysInStage = stageChangedAt
+        ? Math.floor((Date.now() - new Date(stageChangedAt).getTime()) / 86400000)
+        : 0;
+
+      // 阶段退出标准
+      const exitCriteria: Record<string, string> = {
+        "建图": "识别出 Economic Buyer + 至少3个关键人，组织架构基本清晰",
+        "进门": "与关键人完成首次正式会面，客户同意安排下一次深入交流",
+        "定痛": "客户亲口承认痛点，MEDDPICC I维度评分 ≥ 50",
+        "找人": "Champion确认（MEDDPICC C维度 ≥ 50）+ 完成与Economic Buyer的首次接触",
+        "进入商机": "商机已立项，Blue Sheet已填写，MEDDPICC初始评分完成",
+      };
+
+      // SPIN话术阶段映射
+      const spinMapping: Record<string, string> = {
+        "建图": "Situation Questions（了解现状，摸清组织和业务背景）",
+        "进门": "Situation Questions + Problem Questions（了解现状，初步探索痛点）",
+        "定痛": "Problem Questions + Implication Questions（挖掘痛点并放大影响）",
+        "找人": "Need-Payoff Questions（让Champion自己说出解决方案的价值）",
+        "进入商机": "Need-Payoff Questions（推动Champion向EB传递价值）",
+      };
+
+      const contactsSummary = contacts.slice(0, 10).map(c =>
+        `${c.name}（${c.title || ""}/${c.buyingRole || "未知"}，关系：${c.relationship}，立场：${c.stance}）`
+      ).join("\n");
+
+      const recentVisits = meetings.slice(0, 3).map((m, i) => {
+        const date = new Date(m.meetingDate).toLocaleDateString("zh-CN");
+        const summary = m.aiMinutes ? m.aiMinutes.slice(0, 300) : m.keyPoints?.slice(0, 300) || "";
+        return `第${i+1}次拜访（${date}）：${summary}`;
+      }).join("\n");
+
+      const painScore = meddpicc?.implicatePainScore ?? 0;
+      const championScore = meddpicc?.championScore ?? 0;
+
+      const recentSignals = signals.slice(0, 3).map(s =>
+        `[${s.signalType}/${s.urgency}] ${s.rawSignal.slice(0, 100)}`
+      ).join("\n");
+
+      const prompt = `你是一位企业级安全销售教练，专注于大客户0→1阶段的开发推进。
+
+当前客户阶段: ${stage}
+该阶段的退出标准: ${exitCriteria[stage] || "推进到下一阶段"}
+阶段停留天数: ${daysInStage}天
+${daysInStage > 30 ? "⚠️ 警告：已超过30天，存在停滞风险" : ""}
+
+关键人列表（含角色/关系/立场）:
+${contactsSummary || "暂无关键人记录"}
+
+最近3次拜访摘要:
+${recentVisits || "暂无拜访记录"}
+
+相关情报信号:
+${recentSignals || "暂无情报信号"}
+
+当前MEDDPICC I维度（Identify Pain）得分: ${painScore}
+当前MEDDPICC C维度（Champion）得分: ${championScore}
+
+SPIN话术阶段映射（供话题建议使用）:
+当前阶段建议使用：${spinMapping[stage] || "综合运用SPIN提问"}
+
+请按以下格式输出（不得省略任何一项）:
+
+## 1. 阶段完成度
+**已完成项：**（列出已达成的退出条件）
+**缺失项：**（列出尚未完成的退出条件）
+
+## 2. 核心卡点
+（阻止推进到下一阶段的最关键一件事，只说一件，必须具体）
+
+## 3. 下一步3个具体行动
+- 行动1：做什么 + 找谁 + 建议话题/切入点
+- 行动2：做什么 + 找谁 + 建议话题/切入点
+- 行动3：做什么 + 找谁 + 建议话题/切入点
+
+## 4. 下次拜访开场建议
+（基于最新情报信号定制一句开场话语，如无情报则基于当前阶段目标）
+
+## 5. 商机出现可能性
+**评级：** 低/中/高
+**依据：**（一句话，必须引用具体数据来源）
+
+## 6. 本周优先行动卡
+**1件事：** [最关键的一个行动]
+**1个人：** [最需要接触/突破的一个人]
+**1句话：** [开场或推进的核心话术]
+
+注意：每个结论必须引用数据来源（哪次拜访记录、哪条情报）。如果某项数据缺失，明确标注"缺少X数据，以下判断存在盲区"。`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const content = String(res.choices[0].message.content || "");
+      return { content, stage, daysInStage };
+    }),
+
+    // P1b: 1→N Review — MEDDPICC健康雷达+Blue Sheet战局判断+AI质疑层
+    reviewOneToN: publicProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number(),
+    })).mutation(async ({ input }) => {
+      const [client, contacts, meetings, meddpicc, signals] = await Promise.all([
+        getClientById(input.clientId),
+        getContactsByClientId(input.clientId),
+        getMeetingsByClientId(input.clientId),
+        getMeddpiccByClientId(input.clientId),
+        getSignalsByClientId(input.clientId),
+      ]);
+      if (!client) throw new Error("客户不存在");
+
+      // 获取商机信息
+      const { getDb } = await import('./db.js');
+      const { opportunities } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const db = await getDb();
+      const oppRows = db ? await db.select().from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1) : [];
+      const opp = oppRows[0];
+      if (!opp) throw new Error("商机不存在");
+
+      const stageChangedAt = (opp as any).stageChangedAt;
+      const daysInStage = stageChangedAt
+        ? Math.floor((Date.now() - new Date(stageChangedAt).getTime()) / 86400000)
+        : 0;
+
+      // 阶段停滞预警阈值
+      const stageThresholds: Record<string, {yellow: number; red: number}> = {
+        "初步需求": { yellow: 30, red: 60 },
+        "需求挖掘": { yellow: 30, red: 60 },
+        "技术验证": { yellow: 45, red: 90 },
+        "方案提案": { yellow: 21, red: 45 },
+        "商务谈判": { yellow: 14, red: 30 },
+      };
+      const threshold = stageThresholds[opp.stage] || { yellow: 30, red: 60 };
+      const stagnationRisk = daysInStage >= threshold.red ? "🔴 红色预警" :
+                             daysInStage >= threshold.yellow ? "🟡 黄色预警" : "🟢 正常";
+
+      // 阶段退出条件
+      const exitCriteria: Record<string, string> = {
+        "初步需求": "客户确认需求范围，SA完成初步技术评估",
+        "需求挖掘": "MEDDPICC各维度完成初步评分，需求调研报告提交",
+        "技术验证": "客户技术负责人口头/书面确认方案可行，或POC结果已呈现",
+        "方案提案": "Decision Criteria明确，客户同意评分框架，Blue Sheet完整，MEDDPICC ≥ 60",
+        "商务谈判": "合同进入审批流程",
+      };
+
+      // Champion三维评分
+      const champion = contacts.find(c => c.buyingRole === "Champion" || c.relationship === "Champion");
+      const championScore = meddpicc?.championScore ?? 0;
+      const championAccess = (champion as any)?.championAccessToPower ?? 0;
+      const championWill = (champion as any)?.championPoliticalWill ?? 0;
+      const championCred = (champion as any)?.championCredibility ?? 0;
+      const championTotal = championAccess + championWill + championCred;
+      const championStatus = championTotal >= 7 ? "有效Champion（绿）" :
+                             championTotal >= 5 ? "脆弱Champion，需加固（黄）" :
+                             championTotal > 0 ? "伪Champion，建议重新寻访（红）" : "未评分";
+
+      const m = meddpicc;
+      const meddpiccSummary = m ? `
+M（Metrics可量化价值）: ${m.metricsScore}分 - ${m.metricsNotes?.slice(0,60) || "无备注"}${m.metricsScore >= 70 && (m.metricsNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
+E（Economic Buyer）: ${m.economicBuyerScore}分 - ${m.economicBuyerNotes?.slice(0,60) || "无备注"}${m.economicBuyerScore >= 70 && (m.economicBuyerNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
+D（Decision Criteria）: ${m.decisionCriteriaScore}分 - ${m.decisionCriteriaNotes?.slice(0,60) || "无备注"}${m.decisionCriteriaScore >= 70 && (m.decisionCriteriaNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
+D2（Decision Process）: ${m.decisionProcessScore}分 - ${m.decisionProcessNotes?.slice(0,60) || "无备注"}${m.decisionProcessScore >= 70 && (m.decisionProcessNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
+P（Paper Process）: ${m.paperProcessScore}分 - ${m.paperProcessNotes?.slice(0,60) || "无备注"}${m.paperProcessScore >= 70 && (m.paperProcessNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
+I（Identify Pain）: ${m.implicatePainScore}分 - ${m.implicatePainNotes?.slice(0,60) || "无备注"}${m.implicatePainScore >= 70 && (m.implicatePainNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
+C（Champion）: ${m.championScore}分 - ${m.championNotes?.slice(0,60) || "无备注"}，Champion三维评分: Access ${championAccess}/Will ${championWill}/Credibility ${championCred}（${championStatus}）
+C2（Competition）: ${m.competitionScore}分 - ${m.competitionNotes?.slice(0,60) || "无备注"}${m.competitionScore >= 70 && (m.competitionNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}` : "暂无MEDDPICC评分";
+
+      const recentVisits = meetings.slice(0, 3).map((mt, i) => {
+        const date = new Date(mt.meetingDate).toLocaleDateString("zh-CN");
+        const summary = mt.aiMinutes ? mt.aiMinutes.slice(0, 200) : mt.keyPoints?.slice(0, 200) || "";
+        return `第${i+1}次（${date}）：${summary}`;
+      }).join("\n");
+
+      const recentSignals = signals.slice(0, 3).map(s =>
+        `[${s.signalType}/${s.urgency}] ${s.rawSignal.slice(0, 100)}`
+      ).join("\n");
+
+      const blueSheet = opp.bizObjective || opp.valueProposition || opp.winStrategy
+        ? `业务目标：${opp.bizObjective || "未填写"}
+价值主张：${opp.valueProposition || "未填写"}
+赢单策略：${opp.winStrategy || "未填写"}`
+        : "Blue Sheet尚未填写";
+
+      const prompt = `你是一位MEDDPICC认证的销售战略顾问，专注于企业级安全产品的商机赢单。
+
+商机: ${opp.name}
+当前阶段: ${opp.stage}，在当前阶段已停留 ${daysInStage} 天（${stagnationRisk}，预警阈值：黄${threshold.yellow}天/红${threshold.red}天）
+商机金额: ${opp.estimatedValue || "未填写"}
+当前阶段退出标准: ${exitCriteria[opp.stage] || "推进到下一阶段"}
+主要竞品: ${opp.competitorName || "未知"}
+
+MEDDPICC评分（各维度0-100分，含评分依据）:
+${meddpiccSummary}
+
+关键人覆盖（含Buying Group角色）:
+${contacts.slice(0, 8).map(c => `${c.name}（${c.buyingRole || "未知"}，${c.relationship}，${c.stance}）`).join("\n") || "暂无关键人"}
+
+最近3次拜访摘要:
+${recentVisits || "暂无拜访记录"}
+
+相关情报信号（含竞品动态）:
+${recentSignals || "暂无情报信号"}
+
+Blue Sheet内容:
+${blueSheet}
+
+请按以下格式输出（格式固定，不得省略）:
+
+## 1. MEDDPICC健康雷达
+（每个维度：🟢绿/🟡黄/🔴红 + 一行理由；评分≥70且依据不足的标注⚠️；无数据的标注📭）
+
+## 2. Champion评估
+**Champion状态：** ${championStatus}
+**评估：**（基于三维评分判断，如为伪Champion给出替代人选建议）
+
+## 3. 赢单概率
+**概率：** X%
+**主要依据：**
+1. [依据1]（system_data 或 ai_inference）
+2. [依据2]（system_data 或 ai_inference）
+3. [依据3]（system_data 或 ai_inference）
+
+## 4. 最薄弱2个维度 + 突破行动
+**维度1：**
+- 问题：
+- 突破行动：做什么 + 找谁 + 用什么角度
+
+**维度2：**
+- 问题：
+- 突破行动：做什么 + 找谁 + 用什么角度
+
+## 5. 竞争态势
+**状态：** 领先/胶着/落后
+**依据：**（基于情报信号，非假设）
+
+## 6. 停滞风险评估
+${daysInStage >= threshold.yellow ? `**风险等级：** ${stagnationRisk}
+**影响：**（说明停滞的具体影响）
+**建议：**` : "**状态：** 正常，无停滞风险"}
+
+## 7. Blue Sheet战局判断
+（一段话，不超过100字，包含"当前优势、最大风险、赢单关键"）
+
+## 8. 本周行动分工
+**AD：** [1个优先行动]
+**SAM：** [1个优先行动]
+**SA：** [1个优先行动]`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const reviewContent = String(res.choices[0].message.content || "");
+      return { content: reviewContent, stage: opp.stage, daysInStage, stagnationRisk, championStatus };
+    }),
+
+    // P1c: Buying Group 覆盖分析 — 权力路径分析 + Champion→EB路径完整性
+    reviewBuyingGroup: publicProcedure.input(z.object({
+      clientId: z.number(),
+    })).mutation(async ({ input }) => {
+      const [client, contacts, meetings] = await Promise.all([
+        getClientById(input.clientId),
+        getContactsByClientId(input.clientId),
+        getMeetingsByClientId(input.clientId),
+      ]);
+      if (!client) throw new Error("客户不存在");
+
+      const buyingRoleMap: Record<string, string[]> = {};
+      contacts.forEach(c => {
+        const role = c.buyingRole || "未知";
+        if (!buyingRoleMap[role]) buyingRoleMap[role] = [];
+        buyingRoleMap[role].push(`${c.name}（${c.title || ""}，${c.relationship}，${c.stance}）`);
+      });
+
+      const champion = contacts.find(c => c.buyingRole === "Champion" || c.relationship === "Champion");
+      const eb = contacts.find(c => c.buyingRole === "经济决策人");
+      const techDm = contacts.find(c => c.buyingRole === "技术决策人");
+      const blocker = contacts.find(c => c.buyingRole === "阻碍者");
+
+      const championAccess = (champion as any)?.championAccessToPower ?? 0;
+      const championWill = (champion as any)?.championPoliticalWill ?? 0;
+      const championCred = (champion as any)?.championCredibility ?? 0;
+
+      // 关系路径分析
+      const relationshipPaths: string[] = [];
+      contacts.forEach(c => {
+        const edges = (c as any).relationshipEdges;
+        if (edges && Array.isArray(edges)) {
+          edges.forEach((e: any) => {
+            relationshipPaths.push(`${c.name} → ${e.to}（${e.type}，${e.strength}）`);
+          });
+        }
+        if (c.reportingTo) {
+          relationshipPaths.push(`${c.name} 汇报给 ${c.reportingTo}`);
+        }
+      });
+
+      const recentVisits = meetings.slice(0, 3).map((m, i) => {
+        const date = new Date(m.meetingDate).toLocaleDateString("zh-CN");
+        const summary = m.aiMinutes ? m.aiMinutes.slice(0, 150) : m.keyPoints?.slice(0, 150) || "";
+        return `第${i+1}次（${date}）：${summary}`;
+      }).join("\n");
+
+      const prompt = `你是一位专注于大客户Buying Group分析的销售战略顾问。
+
+客户：${client.name}（${client.industry || "未知行业"}）
+当前阶段：${client.stage}
+
+关键人Buying Group覆盖：
+${Object.entries(buyingRoleMap).map(([role, people]) => `${role}：${people.join("；")}`).join("\n") || "暂无关键人"}
+
+Champion三维评分：
+${champion ? `${champion.name} - Access to Power: ${championAccess}/3，Political Will: ${championWill}/3，Credibility: ${championCred}/3` : "未识别Champion"}
+
+关系路径（汇报链/引荐路径）：
+${relationshipPaths.join("\n") || "暂无关系路径数据"}
+
+最近拜访摘要：
+${recentVisits || "暂无拜访记录"}
+
+请按以下格式输出：
+
+## 1. Buying Group覆盖地图
+（表格形式：角色 | 覆盖人员 | 关系深度 | 立场 | 风险）
+- 经济决策人（EB）：${eb ? eb.name + "（" + eb.relationship + "，" + eb.stance + "）" : "⚠️ 未覆盖"}
+- 技术决策人：${techDm ? techDm.name + "（" + techDm.relationship + "，" + techDm.stance + "）" : "⚠️ 未覆盖"}
+- Champion：${champion ? champion.name + "（" + champion.relationship + "）" : "⚠️ 未识别"}
+- 阻碍者：${blocker ? blocker.name + "（" + blocker.stance + "）" : "暂无已知阻碍者"}
+
+## 2. Champion→EB路径完整性
+**路径状态：** 完整/不完整/未知
+**路径描述：**（Champion能否直接或间接影响EB的决策？通过什么路径？）
+**风险：**（如果路径不完整，说明风险）
+
+## 3. 关键覆盖缺口
+（列出最多3个最需要弥补的覆盖缺口，每个说明：缺什么人/什么角色 + 为什么重要 + 如何通过现有关系建立连接）
+
+## 4. 权力地图分析
+（基于汇报关系和关系路径，描述决策权力如何流动，谁是真正的影响者）
+
+## 5. 下一步建议
+- 最优先接触的1个人：[姓名/角色] + 通过谁引荐 + 切入话题
+- 需要加固的1段关系：[现有关系] + 如何加固
+- 需要中和的1个风险：[风险描述] + 应对策略
+
+注意：每个结论必须引用具体数据来源。如果某项数据缺失，明确标注"缺少X数据"。`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const reviewContent = String(res.choices[0].message.content || "");
+      return { content: reviewContent };
+    }),
+
+    // P1d: 跨拜访趋势分析 — 滚动叙事架构 + 下次拜访建议
+    reviewVisitTrend: publicProcedure.input(z.object({
+      clientId: z.number(),
+    })).mutation(async ({ input }) => {
+      const [client, contacts, meetings, meddpicc] = await Promise.all([
+        getClientById(input.clientId),
+        getContactsByClientId(input.clientId),
+        getMeetingsByClientId(input.clientId),
+        getMeddpiccByClientId(input.clientId),
+      ]);
+      if (!client) throw new Error("客户不存在");
+
+      if (meetings.length === 0) {
+        return { content: "暂无拜访记录，无法进行趋势分析。请先录入至少1次拜访日志。" };
+      }
+
+      // 按时间排序，最新在前
+      const sortedMeetings = [...meetings].sort((a, b) => 
+        new Date(b.meetingDate).getTime() - new Date(a.meetingDate).getTime()
+      );
+
+      // 构建拜访时间线（最多8次，控制token）
+      const visitTimeline = sortedMeetings.slice(0, 8).map((m, i) => {
+        const date = new Date(m.meetingDate).toLocaleDateString("zh-CN");
+        const attendees = m.attendees || "";
+        const summary = m.aiMinutes ? m.aiMinutes.slice(0, 250) : m.keyPoints?.slice(0, 250) || "";
+        return `[第${sortedMeetings.length - i}次拜访 ${date}] 参会：${attendees}\n内容：${summary}`;
+      }).join("\n\n");
+
+      // 关键人态度变化
+      const contactStances = contacts.map(c => 
+        `${c.name}（${c.buyingRole || "未知"}）：${c.stance}`
+      ).join("；");
+
+      // 现有滚动叙事（如果有）
+      const existingNarrative = (client as any).relationshipNarrative || "";
+
+      const prompt = `你是一位大客户销售教练，专注于分析客户关系演变趋势。
+
+客户：${client.name}（${client.industry || "未知行业"}）
+当前阶段：${client.stage}
+总拜访次数：${meetings.length}次
+
+拜访时间线（最近${Math.min(8, meetings.length)}次，时间倒序）：
+${visitTimeline}
+
+关键人当前立场：
+${contactStances || "暂无关键人数据"}
+
+${existingNarrative ? `上次AI生成的关系叙事：
+${existingNarrative}
+` : ""}
+
+请按以下格式输出：
+
+## 1. 客户关系演变叙事（约150字）
+（一段连贯的叙述，描述从第一次拜访到现在，客户态度/关系深度/信任度的变化轨迹。用"从...到..."的叙事结构。）
+
+## 2. 关键转折点
+（列出1-3个改变关系走向的关键事件/拜访，说明为什么重要）
+
+## 3. 当前态势判断
+**客户热度：** 升温/平稳/降温
+**依据：**（基于最近3次拜访的具体变化）
+
+## 4. 下次拜访建议
+**建议时间：** 约X天内
+**建议参会人：** [具体人员] + 理由
+**核心议题：**（1-2个，必须基于上次拜访的未解决问题或新出现的情报）
+**开场话术：**（一句具体的开场语，引用上次拜访的某个细节）
+**期望成果：**（这次拜访要达到什么具体目标）
+
+## 5. 关系风险预警
+（如果有任何信号显示关系在恶化或停滞，明确指出）
+
+注意：所有判断必须引用具体拜访记录。如果某次拜访信息不完整，标注"第X次拜访信息不足，以下判断存在盲区"。`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const reviewContent = String(res.choices[0].message.content || "");
+
+      // 自动更新客户关系滚动叙事（提取第1节内容）
+      const narrativeMatch = reviewContent.match(/## 1\..*?\n([\s\S]*?)\n## 2/);
+      if (narrativeMatch) {
+        const narrative = narrativeMatch[1].trim().slice(0, 500);
+        await updateClient(input.clientId, { relationshipNarrative: narrative } as any);
+      }
+
+      return { content: reviewContent, visitCount: meetings.length };
     }),
   }),
 
@@ -3015,6 +3557,155 @@ ${context}
         await db.update(emailUsers).set({ passwordHash: newHash }).where(eq(emailUsers.id, userRows[0].id));
         return { success: true };
       }),
+  }),
+
+  // ── Effectiveness Baseline (效能账本) ────────────────────────────────────────
+  effectiveness: router({
+    get: publicProcedure.input(z.object({ clientId: z.number() })).query(({ input }) =>
+      getEffectivenessBaseline(input.clientId)
+    ),
+
+    upsert: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      currentMttr: z.string().optional(),
+      currentDetectionRate: z.string().optional(),
+      socHeadcount: z.number().optional(),
+      falsePositiveRate: z.string().optional(),
+      complianceAuditDays: z.number().optional(),
+      complianceIncidentsPerYear: z.number().optional(),
+      downtimeHoursPerYear: z.string().optional(),
+      estimatedIncidentCost: z.string().optional(),
+      dataSource: z.enum(["客户提供", "行业基准", "AI估算", "混合"]).optional(),
+    })).mutation(async ({ input }) => {
+      const { clientId, ...data } = input;
+      await upsertEffectivenessBaseline(clientId, data as any);
+      return { ok: true };
+    }),
+
+    // 定痛阶段：AI生成量化痛点陈述
+    generatePainStatement: protectedProcedure.input(z.object({
+      clientId: z.number(),
+    })).mutation(async ({ input }) => {
+      const [client, baseline, meetings] = await Promise.all([
+        getClientById(input.clientId),
+        getEffectivenessBaseline(input.clientId),
+        getMeetingsByClientId(input.clientId),
+      ]);
+      if (!client) throw new Error("客户不存在");
+
+      const recentPainPoints = meetings.slice(0, 3).map(m =>
+        m.aiMinutes ? m.aiMinutes.slice(0, 200) : m.keyPoints?.slice(0, 200) || ""
+      ).join("\n");
+
+      const baselineText = baseline ? `
+- 平均威胁响应时间（MTTR）：${baseline.currentMttr || "未知"}
+- 威胁检出率：${baseline.currentDetectionRate || "未知"}
+- 安全运营人员：${baseline.socHeadcount || "未知"}人
+- 每年合规审计准备：${baseline.complianceAuditDays || "未知"}天
+- 每年合规违规事件：${baseline.complianceIncidentsPerYear || "未知"}次
+- 每年停机时长：${baseline.downtimeHoursPerYear || "未知"}
+- 每次安全事件损失：${baseline.estimatedIncidentCost || "未知"}
+- 数据来源：${baseline.dataSource || "AI估算"}` : "暂无效能基线数据，请使用行业基准估算";
+
+      const prompt = `你是一位企业级安全销售顾问，专注于将技术问题转化为业务价值陈述。
+
+客户：${client.name}（${client.industry || "未知行业"}）
+当前阶段：${client.stage}
+
+效能基线数据：
+${baselineText}
+
+从拜访记录中提炼的痛点：
+${recentPainPoints || "暂无拜访记录"}
+
+请生成三段式量化痛点陈述（面向Economic Buyer，使用业务语言而非技术语言）：
+
+## 1. 痛点量化陈述（约100字）
+（格式："以贵司目前X名安全人员，平均响应时间Y小时，按行业数据每次安全事件平均损失$Z，贵司每年因响应滞后承担的可估算风险敞口约为$W。"）
+数据来源标注：[客户填写] / [行业基准，来源：Gartner/IDC 2025] / [AI估算，请核实]
+
+## 2. 行业对比（约60字）
+（同规模同行业企业的最佳实践数据，说明差距）
+
+## 3. 不作为的时间成本（约60字）
+（每延迟一个季度决策，对应的额外风险暴露）
+
+注意：如果某项数据为"未知"，使用行业基准值并明确标注"[行业基准]"。`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const painStatement = String(res.choices[0].message.content || "");
+
+      // 自动保存到效能基线
+      await upsertEffectivenessBaseline(input.clientId, { quantifiedPainStatement: painStatement });
+
+      return { content: painStatement };
+    }),
+
+    // 方案提案阶段：AI生成结构化ROI报告
+    generateROI: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      proposedProducts: z.string().optional(), // 拟推方案（如"TrustOne + CloudGuard"）
+    })).mutation(async ({ input }) => {
+      const [client, baseline, contacts] = await Promise.all([
+        getClientById(input.clientId),
+        getEffectivenessBaseline(input.clientId),
+        getContactsByClientId(input.clientId),
+      ]);
+      if (!client) throw new Error("客户不存在");
+
+      const champion = contacts.find(c => c.buyingRole === "Champion" || c.relationship === "Champion");
+
+      const baselineText = baseline ? `
+当前状态：
+- MTTR：${baseline.currentMttr || "行业基准4小时"}
+- 检出率：${baseline.currentDetectionRate || "行业基准75%"}
+- SOC人员：${baseline.socHeadcount || "估算3"}人
+- 合规审计准备：${baseline.complianceAuditDays || "行业基准21"}天/次
+- 每年安全事件损失：${baseline.estimatedIncidentCost || "行业基准$150K/次"}
+- 数据来源：${baseline.dataSource || "AI估算"}` : "使用行业基准数据估算";
+
+      const prompt = `你是一位企业级安全销售ROI分析师。
+
+客户：${client.name}（${client.industry || "未知行业"}）
+拟推方案：${input.proposedProducts || "亚信安全整体方案"}
+${champion ? `Champion：${champion.name}（${champion.title || ""}）` : ""}
+
+${baselineText}
+
+请生成三段式ROI报告（面向Economic Buyer审批，数字必须有依据）：
+
+## 1. 当前状态年化成本
+（分项列出：安全运营人力成本 + 事件响应损失 + 合规准备成本 + 合计）
+数据置信度：高（客户实测）/ 中（行业基准）/ 低（AI估算）
+
+## 2. 部署后预期改善
+（分项列出：MTTR改善 → 人力节省 → 合规效率提升 → 年化价值合计）
+每项标注数据来源（武器库/行业报告/AI估算）
+
+## 3. ROI摘要
+- 方案年费：[需填写]
+- 年化价值：$X
+- ROI：X%
+- 回本周期：X个月
+- 置信度：高/中/低（说明主要不确定因素）
+
+## 4. 给Champion的一句话
+（Champion向EB汇报时可以直接引用的一句话，包含具体数字）`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const roiContent = String(res.choices[0].message.content || "");
+
+      // 自动保存ROI摘要
+      await upsertEffectivenessBaseline(input.clientId, { roiSummary: roiContent });
+
+      return { content: roiContent };
+    }),
   }),
 
   // ── Win Strategy (IBM Blue Sheet 简化版) ─────────────────────────────────

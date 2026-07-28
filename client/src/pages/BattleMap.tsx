@@ -1295,6 +1295,48 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   });
 
   const suggestMutation = trpc.clients.suggestHookAndAngle.useMutation();
+  // P1a/P1b: AI Review
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewContent, setReviewContent] = useState("");
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewType, setReviewType] = useState<"0to1" | "1toN" | "buyingGroup" | "visitTrend">("0to1");
+  const [reviewOppId, setReviewOppId] = useState<number | null>(null);
+  const reviewZeroToOneMut = trpc.insights.reviewZeroToOne.useMutation();
+  const reviewOneToNMut = trpc.insights.reviewOneToN.useMutation();
+  const reviewBuyingGroupMut = trpc.insights.reviewBuyingGroup.useMutation();
+  const reviewVisitTrendMut = trpc.insights.reviewVisitTrend.useMutation();
+  const [reviewDropdownOpen, setReviewDropdownOpen] = useState(false);
+
+  const handleReview = async (type: "0to1" | "1toN" | "buyingGroup" | "visitTrend", oppId?: number) => {
+    setReviewType(type as any);
+    setReviewOppId(oppId ?? null);
+    setReviewOpen(true);
+    setReviewLoading(true);
+    setReviewContent("");
+    setReviewDropdownOpen(false);
+    try {
+      if (type === "0to1") {
+        const res = await reviewZeroToOneMut.mutateAsync({ clientId: client.id });
+        setReviewContent(res.content);
+      } else if (type === "1toN" && oppId) {
+        const res = await reviewOneToNMut.mutateAsync({ clientId: client.id, opportunityId: oppId });
+        setReviewContent(res.content);
+      } else if (type === "buyingGroup") {
+        const res = await reviewBuyingGroupMut.mutateAsync({ clientId: client.id });
+        setReviewContent(res.content);
+      } else if (type === "visitTrend") {
+        const res = await reviewVisitTrendMut.mutateAsync({ clientId: client.id });
+        setReviewContent(res.content);
+      } else {
+        setReviewContent("请先选择一个商机后再进行1→N Review。");
+      }
+    } catch (e: any) {
+      setReviewContent("AI Review 生成失败：" + (e?.message || "未知错误"));
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
   const updateClient = trpc.clients.update.useMutation({
     onSuccess: () => { utils.clients.list.invalidate(); toast.success("客户信息已更新"); setEditing(false); }
   });
@@ -1399,6 +1441,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const canAdvance = criticalFails.length === 0;
 
   return (
+    <>
     <div className={cn("bg-card border rounded-xl overflow-hidden transition-all", expanded ? "border-primary/30" : "border-border hover:border-muted-foreground/50")}>
       {/* Card Header */}
       <div className="p-4">
@@ -1482,6 +1525,39 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                   strokeDasharray={`${avgScore * 0.942} 94.2`} strokeLinecap="round" />
               </svg>
               <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-foreground">{avgScore}</span>
+            </div>
+            {/* AI Review 下拉菜单 */}
+            <div className="relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setReviewDropdownOpen(v => !v); }}
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20 transition-colors font-medium"
+              >
+                <Sparkles className="w-3 h-3" />
+                AI Review ▾
+              </button>
+              {reviewDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                  <button type="button" onClick={() => handleReview("0to1")} className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground">
+                    🗺️ 0→1 阶段推进
+                  </button>
+                  {opps.length > 0 && (
+                    <>
+                      {opps.slice(0, 3).map((opp: any) => (
+                        <button key={opp.id} type="button" onClick={() => handleReview("1toN", opp.id)} className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground truncate">
+                          🎯 1→N: {opp.name.slice(0, 15)}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  <button type="button" onClick={() => handleReview("buyingGroup")} className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground">
+                    👥 Buying Group 分析
+                  </button>
+                  <button type="button" onClick={() => handleReview("visitTrend")} className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground">
+                    📈 拜访趋势分析
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2305,6 +2381,32 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
         </div>
       )}
     </div>
+
+    {/* AI Review Dialog */}
+    <Dialog open={reviewOpen} onOpenChange={(o) => { if (!o) { setTimeout(() => { setReviewContent(""); setReviewLoading(false); }, 300); } setReviewOpen(o); }}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-purple-400">
+            <Sparkles className="w-4 h-4" />
+            {reviewType === "0to1" ? `🗺️ 0→1 阶段推进 Review · ${client.name}` : 
+             reviewType === "1toN" ? `🎯 1→N 商机赢单 Review · ${client.name}` :
+             reviewType === "buyingGroup" ? `👥 Buying Group 覆盖分析 · ${client.name}` :
+             `📈 拜访趋势分析 · ${client.name}`}
+          </DialogTitle>
+        </DialogHeader>
+        {reviewLoading ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-3">
+            <div className="w-8 h-8 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-muted-foreground">AI 正在分析战局，请稍候...</p>
+          </div>
+        ) : (
+          <div className="prose prose-invert prose-sm max-w-none text-sm leading-relaxed whitespace-pre-wrap">
+            {reviewContent || "暂无内容"}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

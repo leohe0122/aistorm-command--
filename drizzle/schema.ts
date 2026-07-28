@@ -49,10 +49,44 @@ export const clients = mysqlTable("clients", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   /** 当前阶段开始时间（每次阶段推进时更新）。用于计算阶段停留天数。 */
   stageChangedAt: timestamp("stageChangedAt").defaultNow().notNull(),
+  /** P2d：客户关系滚动叙事（约200字，每次拜访后AI自动更新，记录态度趋势/MEDDPICC变化/未解决阻碍）*/
+  relationshipNarrative: text("relationshipNarrative"),
 });
 
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = typeof clients.$inferInsert;
+
+/**
+ * 客户效能基线（Customer Effectiveness Baseline）
+ * 用于效能显性化：量化痛点陈述、ROI测算、效能账本视图
+ */
+export const effectivenessBaselines = mysqlTable("effectiveness_baselines", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull().unique(),
+  // 安全运营效率类
+  currentMttr: varchar("currentMttr", { length: 50 }),          // 平均威胁响应时间（如"4小时"）
+  currentDetectionRate: varchar("currentDetectionRate", { length: 50 }), // 已知威胁检出率（如"75%"）
+  socHeadcount: int("socHeadcount"),                             // 安全运营人员数量
+  falsePositiveRate: varchar("falsePositiveRate", { length: 50 }), // 误报率
+  // 合规成本类
+  complianceAuditDays: int("complianceAuditDays"),               // 每次合规审计准备天数
+  complianceIncidentsPerYear: int("complianceIncidentsPerYear"), // 每年合规违规事件数
+  // 业务影响类
+  downtimeHoursPerYear: varchar("downtimeHoursPerYear", { length: 50 }), // 每年安全事件导致停机时长
+  estimatedIncidentCost: varchar("estimatedIncidentCost", { length: 100 }), // 每次安全事件平均损失
+  // 数据来源标记（每个字段的来源）
+  dataSource: mysqlEnum("dataSource", ["客户提供", "行业基准", "AI估算", "混合"]).default("AI估算"),
+  // AI生成的量化痛点陈述（约300字）
+  quantifiedPainStatement: text("quantifiedPainStatement"),
+  // AI生成的ROI摘要（约200字）
+  roiSummary: text("roiSummary"),
+  // 年化价值估算（字符串，如"$120K-$200K"）
+  estimatedAnnualValue: varchar("estimatedAnnualValue", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EffectivenessBaseline = typeof effectivenessBaselines.$inferSelect;
+export type InsertEffectivenessBaseline = typeof effectivenessBaselines.$inferInsert;
 
 /**
  * MEDDPICC 各要素完成度
@@ -296,6 +330,12 @@ export const keyContacts = mysqlTable("key_contacts", {
   stance: mysqlEnum("stance", ["支持", "中立", "反对", "未知"]).default("未知"), // 对项目的立场
   persona: text("persona"),                                  // AI 生成的人物画像摘要
   breakthroughTip: text("breakthroughTip"),                  // AI 生成的突破建议话术
+  // P2b：Champion 三维评分（仅对 Champion 角色有意义）
+  championAccessToPower: int("championAccessToPower").default(0), // 能否触达EB并传递信息 1-3分
+  championPoliticalWill: int("championPoliticalWill").default(0), // 是否真正愿意主动推动 1-3分
+  championCredibility: int("championCredibility").default(0),     // 在决策层说话是否有分量 1-3分
+  // P2c：关系边（引荐路径，JSON数组）[{"to":"李XX","type":"direct_report","strength":"high"}]
+  relationshipEdges: json("relationshipEdges").$type<Array<{to: string; type: string; strength: string}>>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
