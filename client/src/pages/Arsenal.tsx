@@ -27,78 +27,74 @@ function ChampionAmmoTab() {
 
 // ─── 产品文档仓库 Tab ────────────────────────────────────────────────────────
 
-// 文件夹视图的单个文档卡片（紧凑版）
-function DocCard({ doc, onPreview, onDelete, onMoveToFolder, refetch }: {
-  doc: any; onPreview: (doc: any) => void; onDelete: (id: number) => void;
-  onMoveToFolder: (docId: number, targetLine: string) => void; refetch: () => void;
-}) {
-  const [dragging, setDragging] = useState(false);
-  const getMimeIcon = (mime?: string) => {
-    if (!mime) return "📄";
-    if (mime.includes("pdf")) return "📕";
-    if (mime.includes("word") || mime.includes("docx")) return "📘";
-    if (mime.includes("presentation") || mime.includes("pptx")) return "📊";
-    if (mime.includes("spreadsheet") || mime.includes("excel")) return "📗";
-    if (mime.includes("video")) return "🎬";
-    return "📄";
-  };
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return "";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + "KB";
-    return (bytes / 1024 / 1024).toFixed(1) + "MB";
-  };
-  return (
-    <div
-      draggable
-      onDragStart={e => { e.dataTransfer.setData("docId", String(doc.id)); setDragging(true); }}
-      onDragEnd={() => setDragging(false)}
-      className={`group flex items-center gap-2 px-3 py-2 rounded-lg border bg-card hover:bg-accent/30 transition-colors cursor-grab active:cursor-grabbing ${dragging ? "opacity-50 border-primary" : "border-border"}`}
-    >
-      <span className="text-base flex-shrink-0">{getMimeIcon(doc.mimeType)}</span>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{doc.title}</p>
-        <p className="text-xs text-muted-foreground">{formatSize(doc.fileSize)}{doc.extractedText ? " · ✨已学习" : ""}</p>
-      </div>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-        {(doc.mimeType?.includes("pdf") || doc.mimeType?.includes("presentation") || doc.mimeType?.includes("word") || doc.mimeType?.includes("spreadsheet")) && (
-          <button type="button" onClick={() => onPreview(doc)} className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-primary">
-            <Eye className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {doc.fileUrl && (
-          <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-primary">
-            <FileDown className="h-3.5 w-3.5" />
-          </a>
-        )}
-        <button type="button" onClick={() => onDelete(doc.id)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
+// 产品线文件夹定义（专属图标+颜色+描述）
+const FOLDER_DEFS = [
+  // 亚信科技
+  { productLine: "算力", label: "算力", group: "亚信科技", icon: "⚡", color: "from-amber-500/20 to-orange-500/10", border: "border-amber-500/30", badge: "bg-amber-500/20 text-amber-400", desc: "AI算力基础设施、GPU集群、算力租赁" },
+  { productLine: "Token运营平台", label: "Token 运营平台", group: "亚信科技", icon: "🪙", color: "from-yellow-500/20 to-amber-500/10", border: "border-yellow-500/30", badge: "bg-yellow-500/20 text-yellow-400", desc: "Token ERP、数字资产运营管理" },
+  { productLine: "物理AI", label: "物理 AI", group: "亚信科技", icon: "🤖", color: "from-blue-500/20 to-cyan-500/10", border: "border-blue-500/30", badge: "bg-blue-500/20 text-blue-400", desc: "具身智能、机器人、物理世界AI应用" },
+  { productLine: "卫星互联", label: "卫星互联", group: "亚信科技", icon: "🛰️", color: "from-indigo-500/20 to-blue-500/10", border: "border-indigo-500/30", badge: "bg-indigo-500/20 text-indigo-400", desc: "卫星通信、低轨卫星网络、天地一体" },
+  // 亚信安全
+  { productLine: "AI XDR", label: "AI XDR 平台", group: "亚信安全", icon: "🔭", color: "from-violet-500/20 to-purple-500/10", border: "border-violet-500/30", badge: "bg-violet-500/20 text-violet-400", desc: "跨层威胁检测响应、AI驱动XDR平台" },
+  { productLine: "TrustOne", label: "TrustOne", group: "亚信安全", icon: "🛡️", color: "from-green-500/20 to-emerald-500/10", border: "border-green-500/30", badge: "bg-green-500/20 text-green-400", desc: "办公网终端 AV / EDR / 虚拟补丁" },
+  { productLine: "CloudGuard", label: "CloudGuard", group: "亚信安全", icon: "☁️", color: "from-sky-500/20 to-blue-500/10", border: "border-sky-500/30", badge: "bg-sky-500/20 text-sky-400", desc: "CWPP 数据中心及云主机安全防护" },
+  { productLine: "NDR", label: "NDR 系列", group: "亚信安全", icon: "🌐", color: "from-teal-500/20 to-cyan-500/10", border: "border-teal-500/30", badge: "bg-teal-500/20 text-teal-400", desc: "ThreatTrace / ThreatShield / PhishShield" },
+  { productLine: "威胁情报", label: "威胁情报", group: "亚信安全", icon: "🔍", color: "from-red-500/20 to-rose-500/10", border: "border-red-500/30", badge: "bg-red-500/20 text-red-400", desc: "威胁情报平台、IOC、APT追踪" },
+  { productLine: "AI智能体身份安全", label: "AI 智能体身份安全", group: "亚信安全", icon: "🔐", color: "from-pink-500/20 to-rose-500/10", border: "border-pink-500/30", badge: "bg-pink-500/20 text-pink-400", desc: "AI Agent身份认证、零信任访问控制" },
+  { productLine: "安全服务", label: "安全服务", group: "亚信安全", icon: "🎯", color: "from-orange-500/20 to-red-500/10", border: "border-orange-500/30", badge: "bg-orange-500/20 text-orange-400", desc: "EASM / 渗透测试 / 红队 / MDR" },
+  { productLine: "AI大模型防火墙", label: "AI 大模型防火墙", group: "亚信安全", icon: "🔥", color: "from-red-600/20 to-orange-500/10", border: "border-red-600/30", badge: "bg-red-600/20 text-red-400", desc: "大模型安全、LLM防护、提示词注入防御" },
+  // 其他
+  { productLine: "其他参考资料", label: "其他参考资料", group: "其他", icon: "📚", color: "from-slate-500/20 to-gray-500/10", border: "border-slate-500/30", badge: "bg-slate-500/20 text-slate-400", desc: "竞品分析 / 行业报告 / 客户案例" },
+];
 
-// 产品线文件夹组件
-function ProductLineFolder({ productLine, label, docs, onPreview, onDelete, onMoveToFolder, refetch }: {
-  productLine: string; label: string; docs: any[];
-  onPreview: (doc: any) => void; onDelete: (id: number) => void;
-  onMoveToFolder: (docId: number, targetLine: string) => void; refetch: () => void;
-}) {
-  const [open, setOpen] = useState(true);
-  const [dragOver, setDragOver] = useState(false);
+function ProductDocsTab() {
+  const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadDialog, setUploadDialog] = useState(false);
   const [uploadForm, setUploadForm] = useState({ title: "", description: "" });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const { data: docs = [], refetch } = trpc.productDocs.list.useQuery(undefined);
+
+  const deleteMut = trpc.productDocs.delete.useMutation({
+    onSuccess: () => { toast.success("已删除"); refetch(); },
+    onError: (e: any) => toast.error("删除失败: " + e.message),
+  });
+  const updateProductLineMut = trpc.productDocs.updateProductLine.useMutation({
+    onSuccess: () => { toast.success("已移动"); refetch(); },
+    onError: (e: any) => toast.error("移动失败: " + e.message),
+  });
+  const getSignedUrlMut = trpc.productDocs.getSignedUrl.useMutation({
+    onSuccess: (data: any) => {
+      setPreviewUrl(`https://docs.google.com/viewer?url=${encodeURIComponent(data.url)}&embedded=true`);
+      setPreviewLoading(false);
+    },
+    onError: () => { toast.error("无法加载预览"); setPreviewLoading(false); setPreviewOpen(false); },
+  });
   const confirmUploadMut = trpc.productDocs.confirmUpload.useMutation({
-    onSuccess: () => { toast.success("上传成功"); refetch(); setSelectedFile(null); setUploadForm({ title: "", description: "" }); setTimeout(() => setUploadDialog(false), 50); },
+    onSuccess: () => {
+      toast.success("上传成功，文档已归入「" + (FOLDER_DEFS.find(f => f.productLine === activeFolder)?.label || activeFolder) + "」");
+      refetch(); setSelectedFile(null); setUploadForm({ title: "", description: "" });
+      setTimeout(() => setUploadDialog(false), 50);
+    },
     onError: (e: any) => toast.error("上传失败: " + e.message),
   });
 
+  const handlePreview = (doc: any) => {
+    setPreviewDoc(doc); setPreviewUrl(null); setPreviewLoading(true); setPreviewOpen(true);
+    getSignedUrlMut.mutate({ fileKey: doc.fileKey });
+  };
+  const handleDelete = (id: number) => { if (confirm("确认删除此文档？")) deleteMut.mutate({ id }); };
+
   const handleUpload = () => {
-    if (!selectedFile || !uploadForm.title) return;
+    if (!selectedFile || !uploadForm.title || !activeFolder) return;
     setUploading(true); setUploadProgress(0);
     const formData = new FormData();
     formData.append("file", selectedFile);
@@ -110,7 +106,7 @@ function ProductLineFolder({ productLine, label, docs, onPreview, onDelete, onMo
           const { fileKey, fileUrl, extractedText } = JSON.parse(xhr.responseText);
           await confirmUploadMut.mutateAsync({
             title: uploadForm.title, description: uploadForm.description || undefined,
-            productLine, filename: selectedFile.name,
+            productLine: activeFolder, filename: selectedFile.name,
             mimeType: selectedFile.type || "application/octet-stream",
             fileKey, fileUrl, fileSize: selectedFile.size, extractedText: extractedText || undefined,
           });
@@ -126,137 +122,6 @@ function ProductLineFolder({ productLine, label, docs, onPreview, onDelete, onMo
     xhr.send(formData);
   };
 
-  return (
-    <div
-      className={`rounded-xl border transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-border bg-card/50"}`}
-      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={e => {
-        e.preventDefault(); setDragOver(false);
-        const docId = parseInt(e.dataTransfer.getData("docId"));
-        if (docId) onMoveToFolder(docId, productLine);
-      }}
-    >
-      {/* 文件夹头部 */}
-      <div className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none" onClick={() => setOpen(o => !o)}>
-        <span className="text-base">{open ? "📂" : "📁"}</span>
-        <span className="font-medium text-sm flex-1">{label}</span>
-        <Badge variant="secondary" className="text-xs">{docs.length}</Badge>
-        <button type="button" onClick={e => { e.stopPropagation(); setUploadDialog(true); }}
-          className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-primary hover:underline px-2 py-0.5 rounded hover:bg-primary/10 transition-all"
-          style={{ opacity: 1 }}>
-          <Upload className="h-3 w-3" /> 上传
-        </button>
-        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-      </div>
-
-      {/* 文件夹内容 */}
-      {open && (
-        <div className="px-3 pb-3 space-y-1">
-          {docs.length === 0 ? (
-            <div className="flex flex-col items-center py-6 text-muted-foreground/50 gap-1 border-2 border-dashed rounded-lg">
-              <FileText className="h-6 w-6" />
-              <p className="text-xs">拖拽文档到此处，或点击"上传"</p>
-            </div>
-          ) : (
-            docs.map(doc => (
-              <DocCard key={doc.id} doc={doc} onPreview={onPreview} onDelete={onDelete} onMoveToFolder={onMoveToFolder} refetch={refetch} />
-            ))
-          )}
-        </div>
-      )}
-
-      {/* 上传 Dialog */}
-      <Dialog open={uploadDialog} onOpenChange={open => { setUploadDialog(open); if (!open) { setSelectedFile(null); setUploadForm({ title: "", description: "" }); } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>上传文档到「{label}」</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium">文档标题 *</label>
-              <Input className="mt-1" value={uploadForm.title} onChange={e => setUploadForm(f => ({ ...f, title: e.target.value }))} placeholder="例：TrustOne XDR 产品白皮书" />
-            </div>
-            <div>
-              <label className="text-sm font-medium">描述（可选）</label>
-              <Textarea className="mt-1" rows={2} value={uploadForm.description} onChange={e => setUploadForm(f => ({ ...f, description: e.target.value }))} placeholder="简要描述文档内容..." />
-            </div>
-            <div>
-              <label className="text-sm font-medium">选择文件 *</label>
-              <div className="mt-1 border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors" onClick={() => fileInputRef.current?.click()}>
-                {selectedFile ? (
-                  <div className="flex items-center justify-center gap-2 text-sm">
-                    <FileText className="h-4 w-4 text-primary" />
-                    <span className="truncate max-w-[200px]">{selectedFile.name}</span>
-                    <button type="button" onClick={e => { e.stopPropagation(); setSelectedFile(null); }} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
-                  </div>
-                ) : (
-                  <div className="text-muted-foreground text-sm">
-                    <Upload className="h-6 w-6 mx-auto mb-1 opacity-50" />
-                    <p>PDF / PPT / DOC / Excel / MP4，不限大小</p>
-                  </div>
-                )}
-              </div>
-              <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.pptx,.ppt,.docx,.doc,.xls,.xlsx,.mp4,.mov,.avi" onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
-            </div>
-          </div>
-          <DialogFooter className="flex-col gap-2">
-            {uploading && (
-              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                <div className="bg-primary h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
-              </div>
-            )}
-            <div className="flex gap-2 w-full justify-end">
-              <Button type="button" variant="outline" onClick={() => setUploadDialog(false)}>取消</Button>
-              <Button type="button" onClick={handleUpload} disabled={uploading || !selectedFile || !uploadForm.title} className="gap-2">
-                {uploading ? <Spinner className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
-                {uploading ? `上传中 ${uploadProgress}%` : "上传"}
-              </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function ProductDocsTab() {
-  const [search, setSearch] = useState("");
-  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-
-  const { data: docs = [], refetch } = trpc.productDocs.list.useQuery(undefined);
-
-  const deleteMut = trpc.productDocs.delete.useMutation({
-    onSuccess: () => { toast.success("已删除"); refetch(); },
-    onError: (e: any) => toast.error("删除失败: " + e.message),
-  });
-  const updateProductLineMut = trpc.productDocs.updateProductLine.useMutation({
-    onSuccess: () => { toast.success("已移动到新文件夹"); refetch(); },
-    onError: (e: any) => toast.error("移动失败: " + e.message),
-  });
-  const getSignedUrlMut = trpc.productDocs.getSignedUrl.useMutation({
-    onSuccess: (data: any) => {
-      const ext = previewDoc?.filename?.split('.').pop()?.toLowerCase() || '';
-      const isPdf = previewDoc?.mimeType?.includes('pdf') || ext === 'pdf';
-      const viewerUrl = isPdf
-        ? `https://docs.google.com/viewer?url=${encodeURIComponent(data.url)}&embedded=true`
-        : `https://docs.google.com/viewer?url=${encodeURIComponent(data.url)}&embedded=true`;
-      setPreviewUrl(viewerUrl);
-      setPreviewLoading(false);
-    },
-    onError: () => { toast.error("无法加载预览"); setPreviewLoading(false); setPreviewOpen(false); },
-  });
-
-  const handlePreview = (doc: any) => {
-    setPreviewDoc(doc); setPreviewUrl(null); setPreviewLoading(true); setPreviewOpen(true);
-    getSignedUrlMut.mutate({ fileKey: doc.fileKey });
-  };
-  const handleDelete = (id: number) => { if (confirm("确认删除此文档？")) deleteMut.mutate({ id }); };
-  const handleMoveToFolder = (docId: number, targetLine: string) => {
-    updateProductLineMut.mutate({ id: docId, productLine: targetLine });
-  };
-
   // 按产品线分组
   const docsByLine = (docs as any[]).reduce((acc: Record<string, any[]>, doc) => {
     const line = doc.productLine || "其他参考资料";
@@ -265,103 +130,252 @@ function ProductDocsTab() {
     return acc;
   }, {});
 
-  // 搜索过滤
-  const searchFilter = (doc: any) => !search ||
-    doc.title.toLowerCase().includes(search.toLowerCase()) ||
-    (doc.description || "").toLowerCase().includes(search.toLowerCase());
+  const getMimeIcon = (mime?: string) => {
+    if (!mime) return "📄";
+    if (mime.includes("pdf")) return "📕";
+    if (mime.includes("word") || mime.includes("docx")) return "📘";
+    if (mime.includes("presentation") || mime.includes("pptx")) return "📊";
+    if (mime.includes("spreadsheet") || mime.includes("excel")) return "📗";
+    if (mime.includes("video")) return "🎬";
+    return "📄";
+  };
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return "";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + "KB";
+    return (bytes / 1024 / 1024).toFixed(1) + "MB";
+  };
 
-  // 产品线文件夹定义（按顺序）
-  const FOLDERS = [
-    // 亚信科技
-    { productLine: "算力", label: "算力", group: "亚信科技" },
-    { productLine: "Token运营平台", label: "Token 运营平台 / Token ERP", group: "亚信科技" },
-    { productLine: "物理AI", label: "物理 AI", group: "亚信科技" },
-    { productLine: "卫星互联", label: "卫星互联", group: "亚信科技" },
-    // 亚信安全
-    { productLine: "AI XDR", label: "AI XDR 平台", group: "亚信安全" },
-    { productLine: "TrustOne", label: "TrustOne（办公网终端 AV/EDR/虚拟补丁）", group: "亚信安全" },
-    { productLine: "CloudGuard", label: "CloudGuard（CWPP 数据中心/云主机）", group: "亚信安全" },
-    { productLine: "NDR", label: "NDR（ThreatTrace / ThreatShield / PhishShield）", group: "亚信安全" },
-    { productLine: "威胁情报", label: "威胁情报", group: "亚信安全" },
-    { productLine: "AI智能体身份安全", label: "AI 智能体身份安全", group: "亚信安全" },
-    { productLine: "安全服务", label: "安全服务（EASM / 渗透测试 / 红队 / MDR）", group: "亚信安全" },
-    { productLine: "AI大模型防火墙", label: "AI 大模型防火墙", group: "亚信安全" },
-    // 其他
-    { productLine: "其他参考资料", label: "其他参考资料（竞品 / 行业报告 / 客户案例）", group: "其他" },
+  const activeFolderDef = FOLDER_DEFS.find(f => f.productLine === activeFolder);
+  const folderDocs = activeFolder ? (docsByLine[activeFolder] || []).filter((d: any) =>
+    !search || d.title.toLowerCase().includes(search.toLowerCase())
+  ) : [];
+
+  // ── 二级文档列表视图 ──
+  if (activeFolder && activeFolderDef) {
+    return (
+      <div className="space-y-4">
+        {/* 面包屑导航 */}
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => { setActiveFolder(null); setSearch(""); }}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <ChevronDown className="h-4 w-4 rotate-90" /> 武器库
+          </button>
+          <span className="text-muted-foreground">/</span>
+          <span className={`text-sm font-medium px-2 py-0.5 rounded-full ${activeFolderDef.badge}`}>
+            {activeFolderDef.icon} {activeFolderDef.label}
+          </span>
+        </div>
+
+        {/* 工具栏 */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-9" placeholder="搜索文档..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <Button type="button" onClick={() => setUploadDialog(true)} className="gap-2 flex-shrink-0">
+            <Upload className="h-4 w-4" /> 上传文档
+          </Button>
+        </div>
+
+        {/* 文档列表 */}
+        {folderDocs.length === 0 ? (
+          <div className={`flex flex-col items-center py-16 rounded-2xl border-2 border-dashed bg-gradient-to-br ${activeFolderDef.color} ${activeFolderDef.border} gap-3`}>
+            <span className="text-5xl">{activeFolderDef.icon}</span>
+            <p className="text-sm text-muted-foreground">此文件夹暂无文档</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => setUploadDialog(true)} className="gap-1.5">
+              <Upload className="h-3.5 w-3.5" /> 上传第一份文档
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {folderDocs.map((doc: any) => (
+              <div key={doc.id} className="group flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-card hover:bg-accent/20 transition-colors">
+                <span className="text-xl flex-shrink-0">{getMimeIcon(doc.mimeType)}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{doc.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {formatSize(doc.fileSize)}{doc.extractedText ? " · ✨ 已学习" : ""}
+                    {doc.description ? ` · ${doc.description.slice(0, 40)}...` : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {/* 移动到... */}
+                  <Select onValueChange={v => { if (v !== activeFolder) updateProductLineMut.mutate({ id: doc.id, productLine: v }); }}>
+                    <SelectTrigger className="h-7 text-xs w-auto gap-1 px-2 border-dashed opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Tag className="h-3 w-3" /> 移动到
+                    </SelectTrigger>
+                    <SelectContent>
+                      {["亚信科技", "亚信安全", "其他"].map(group => (
+                        <SelectGroup key={group}>
+                          <SelectLabel>{group}</SelectLabel>
+                          {FOLDER_DEFS.filter(f => f.group === group && f.productLine !== activeFolder).map(f => (
+                            <SelectItem key={f.productLine} value={f.productLine}>
+                              {f.icon} {f.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {/* 预览 */}
+                  <button type="button" onClick={() => handlePreview(doc)}
+                    className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-all">
+                    <Eye className="h-4 w-4" />
+                  </button>
+                  {/* 下载 */}
+                  {doc.fileUrl && (
+                    <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer"
+                      className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-all">
+                      <FileDown className="h-4 w-4" />
+                    </a>
+                  )}
+                  {/* 删除 */}
+                  <button type="button" onClick={() => handleDelete(doc.id)}
+                    className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 上传 Dialog */}
+        <Dialog open={uploadDialog} onOpenChange={open => { setUploadDialog(open); if (!open) { setSelectedFile(null); setUploadForm({ title: "", description: "" }); } }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <span>{activeFolderDef.icon}</span> 上传到「{activeFolderDef.label}」
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium">文档标题 *</label>
+                <Input className="mt-1" value={uploadForm.title} onChange={e => setUploadForm(f => ({ ...f, title: e.target.value }))} placeholder="例：TrustOne XDR 产品白皮书 v2.0" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">描述（可选）</label>
+                <Textarea className="mt-1" rows={2} value={uploadForm.description} onChange={e => setUploadForm(f => ({ ...f, description: e.target.value }))} placeholder="简要描述文档内容..." />
+              </div>
+              <div>
+                <label className="text-sm font-medium">选择文件 *</label>
+                <div className="mt-1 border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors" onClick={() => fileInputRef.current?.click()}>
+                  {selectedFile ? (
+                    <div className="flex items-center justify-center gap-2 text-sm">
+                      <FileText className="h-4 w-4 text-primary" />
+                      <span className="truncate max-w-[200px]">{selectedFile.name}</span>
+                      <button type="button" onClick={e => { e.stopPropagation(); setSelectedFile(null); }} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground text-sm">
+                      <Upload className="h-6 w-6 mx-auto mb-1 opacity-50" />
+                      <p>PDF / PPT / DOC / Excel / MP4，不限大小</p>
+                    </div>
+                  )}
+                </div>
+                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.pptx,.ppt,.docx,.doc,.xls,.xlsx,.mp4,.mov,.avi" onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
+              </div>
+            </div>
+            <DialogFooter className="flex-col gap-2">
+              {uploading && (
+                <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-primary h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                </div>
+              )}
+              <div className="flex gap-2 w-full justify-end">
+                <Button type="button" variant="outline" onClick={() => setUploadDialog(false)}>取消</Button>
+                <Button type="button" onClick={handleUpload} disabled={uploading || !selectedFile || !uploadForm.title} className="gap-2">
+                  {uploading ? <Spinner className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+                  {uploading ? `上传中 ${uploadProgress}%` : "上传"}
+                </Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 预览 Dialog */}
+        <Dialog open={previewOpen} onOpenChange={open => {
+          setPreviewOpen(open);
+          if (!open) setTimeout(() => { setPreviewDoc(null); setPreviewUrl(null); setPreviewLoading(false); }, 300);
+        }}>
+          <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
+            <DialogHeader className="px-4 pt-4 pb-2 flex-shrink-0 border-b">
+              <DialogTitle className="flex items-center gap-2 text-sm">
+                <Eye className="h-4 w-4" />
+                <span className="truncate flex-1">{previewDoc?.title}</span>
+                {previewDoc?.fileUrl && (
+                  <a href={previewDoc.fileUrl} target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-primary hover:underline flex items-center gap-1 flex-shrink-0">
+                    <ExternalLink className="h-3 w-3" /> 下载原文件
+                  </a>
+                )}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 relative">
+              {previewLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">正在加载预览...</p>
+                </div>
+              )}
+              {previewUrl && (
+                <iframe src={previewUrl} className="w-full h-full border-0 rounded-b-lg" title={previewDoc?.title} onLoad={() => setPreviewLoading(false)} />
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  // ── 主视图：产品线文件夹网格 ──
+  const groups = [
+    { name: "亚信科技", subtitle: "热点敲门砖产品线（定制化方案）", folders: FOLDER_DEFS.filter(f => f.group === "亚信科技") },
+    { name: "亚信安全", subtitle: "安全标品（可直接交付）", folders: FOLDER_DEFS.filter(f => f.group === "亚信安全") },
+    { name: "其他", subtitle: "参考资料库", folders: FOLDER_DEFS.filter(f => f.group === "其他") },
   ];
 
-  const groups = ["亚信科技", "亚信安全", "其他"];
-
   return (
-    <div className="space-y-4">
-      {/* 搜索栏 */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input className="pl-9" placeholder="搜索文档标题或描述..." value={search} onChange={e => setSearch(e.target.value)} />
-      </div>
-
-      {/* 说明文字 */}
-      <p className="text-xs text-muted-foreground">💡 点击文件夹内的"上传"按钮上传文档，文档会自动归入该产品线。可拖拽文档到其他文件夹重新归档。</p>
-
-      {/* 文件夹分组 */}
-      {groups.map(group => {
-        const groupFolders = FOLDERS.filter(f => f.group === group);
-        return (
-          <div key={group} className="space-y-2">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">{group}</h3>
-            <div className="space-y-2">
-              {groupFolders.map(folder => {
-                const folderDocs = (docsByLine[folder.productLine] || []).filter(searchFilter);
-                if (search && folderDocs.length === 0) return null;
-                return (
-                  <ProductLineFolder
-                    key={folder.productLine}
-                    productLine={folder.productLine}
-                    label={folder.label}
-                    docs={folderDocs}
-                    onPreview={handlePreview}
-                    onDelete={handleDelete}
-                    onMoveToFolder={handleMoveToFolder}
-                    refetch={refetch}
-                  />
-                );
-              })}
-            </div>
+    <div className="space-y-8">
+      {groups.map(group => (
+        <div key={group.name} className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold">{group.name}</h3>
+            <p className="text-xs text-muted-foreground">{group.subtitle}</p>
           </div>
-        );
-      })}
-
-      {/* 预览 Dialog */}
-      <Dialog open={previewOpen} onOpenChange={open => {
-        setPreviewOpen(open);
-        if (!open) setTimeout(() => { setPreviewDoc(null); setPreviewUrl(null); setPreviewLoading(false); }, 300);
-      }}>
-        <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
-          <DialogHeader className="px-4 pt-4 pb-2 flex-shrink-0 border-b">
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <Eye className="h-4 w-4" />
-              <span className="truncate flex-1">{previewDoc?.title}</span>
-              {previewDoc?.fileUrl && (
-                <a href={previewDoc.fileUrl} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline flex items-center gap-1 flex-shrink-0">
-                  <ExternalLink className="h-3 w-3" /> 下载原文件
-                </a>
-              )}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 relative">
-            {previewLoading && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/80">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">正在加载预览...</p>
-              </div>
-            )}
-            {previewUrl && (
-              <iframe src={previewUrl} className="w-full h-full border-0 rounded-b-lg" title={previewDoc?.title} onLoad={() => setPreviewLoading(false)} />
-            )}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {group.folders.map(folder => {
+              const count = (docsByLine[folder.productLine] || []).length;
+              return (
+                <button
+                  key={folder.productLine}
+                  type="button"
+                  onClick={() => setActiveFolder(folder.productLine)}
+                  className={`relative flex flex-col items-start gap-2 p-4 rounded-2xl border bg-gradient-to-br ${folder.color} ${folder.border} hover:scale-[1.02] active:scale-[0.98] transition-transform text-left group`}
+                >
+                  {/* 文档数量角标 */}
+                  {count > 0 && (
+                    <span className={`absolute top-2.5 right-2.5 text-xs font-bold px-1.5 py-0.5 rounded-full ${folder.badge}`}>
+                      {count}
+                    </span>
+                  )}
+                  {/* 图标 */}
+                  <span className="text-3xl">{folder.icon}</span>
+                  {/* 标题 */}
+                  <div>
+                    <p className="text-sm font-semibold leading-tight">{folder.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-snug line-clamp-2">{folder.desc}</p>
+                  </div>
+                  {/* 空文件夹提示 */}
+                  {count === 0 && (
+                    <p className="text-xs text-muted-foreground/60 mt-auto">暂无文档</p>
+                  )}
+                </button>
+              );
+            })}
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      ))}
     </div>
   );
 }
