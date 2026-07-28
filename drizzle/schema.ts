@@ -55,6 +55,10 @@ export const clients = mysqlTable("clients", {
   assignedSamId: int("assignedSamId"),
   /** 负责 SAM 的姓名（冗余字段，避免 JOIN，快速展示用） */
   assignedSamName: varchar("assignedSamName", { length: 100 }),
+  /** 负责 RSM 的 email_users.id（属地销售） */
+  assignedRsmId: int("assignedRsmId"),
+  /** 负责 RSM 的姓名（冗余字段） */
+  assignedRsmName: varchar("assignedRsmName", { length: 100 }),
 });
 
 /**
@@ -79,6 +83,26 @@ export type InsertClient = typeof clients.$inferInsert;
  * 客户效能基线（Customer Effectiveness Baseline）
  * 用于效能显性化：量化痛点陈述、ROI测算、效能账本视图
  */
+/**
+ * AD 教练辅导建议 Action Items（AD 从教练 Review 中下发给 SAM 的具体辅导任务）
+ */
+export const coachingActions = mysqlTable("coaching_actions", {
+  id: int("id").autoincrement().primaryKey(),
+  samId: int("samId").notNull(),           // 被辅导的 SAM（email_users.id）
+  samName: varchar("samName", { length: 100 }).notNull(),
+  clientId: int("clientId"),               // 关联客户（可选，全局辅导时为 null）
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description"),
+  dueDate: timestamp("dueDate"),
+  isCompleted: boolean("isCompleted").default(false).notNull(),
+  completedAt: timestamp("completedAt"),
+  createdBy: varchar("createdBy", { length: 100 }), // AD 姓名
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CoachingAction = typeof coachingActions.$inferSelect;
+export type InsertCoachingAction = typeof coachingActions.$inferInsert;
+
 export const effectivenessBaselines = mysqlTable("effectiveness_baselines", {
   id: int("id").autoincrement().primaryKey(),
   clientId: int("clientId").notNull().unique(),

@@ -1317,6 +1317,12 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const assignSamMut = trpc.clients.assignSam.useMutation({
     onSuccess: () => { utils.clients.list.invalidate(); toast.success("SAM 分配已更新"); setSamDropdownOpen(false); },
   });
+  // 负责 RSM 分配
+  const [rsmDropdownOpen, setRsmDropdownOpen] = useState(false);
+  const assignRsmMut = trpc.clients.assignRsm.useMutation({
+    onSuccess: () => { utils.clients.list.invalidate(); toast.success("RSM 分配已更新"); setRsmDropdownOpen(false); },
+  });
+  const rsmUsers = samUsers.filter((u: any) => u.podRole === 'RSM');
 
   const handleReview = async (type: "0to1" | "1toN" | "buyingGroup" | "visitTrend", oppId?: number) => {
     setReviewType(type as any);
@@ -1556,6 +1562,37 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                         {u.name}
                       </button>
                     ))}
+                  </div>
+                )}
+              </div>
+              {/* 负责 RSM 显示与分配 */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setRsmDropdownOpen(v => !v); setSamDropdownOpen(false); }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Users className="w-3 h-3 text-emerald-400/70" />
+                  <span>{(client as any).assignedRsmName ? `RSM: ${(client as any).assignedRsmName}` : '分配 RSM'}</span>
+                </button>
+                {rsmDropdownOpen && (
+                  <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                    <div className="px-3 py-1 text-[10px] text-muted-foreground font-medium border-b border-border mb-1">分配属地 RSM</div>
+                    <button type="button" onClick={() => assignRsmMut.mutate({ clientId: client.id, rsmId: null, rsmName: null })}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-muted-foreground">
+                      — 取消分配
+                    </button>
+                    {samUsers.filter((u: any) => u.podRole === 'RSM').map((u: any) => (
+                      <button key={u.id} type="button"
+                        onClick={() => assignRsmMut.mutate({ clientId: client.id, rsmId: u.id, rsmName: u.name })}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground flex items-center gap-2">
+                        <span className="text-[10px] px-1 py-0.5 rounded font-medium bg-emerald-500/20 text-emerald-400">{u.podRole}</span>
+                        {u.name}
+                      </button>
+                    ))}
+                    {samUsers.filter((u: any) => u.podRole === 'RSM').length === 0 && (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">暂无 RSM 成员，请先在团队管理中添加</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2548,11 +2585,33 @@ export default function BattleMap() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<(typeof clients)[0] | null>(null);
 
-  // SAM 筛选
-  const [samFilter, setSamFilter] = useState<string>("all"); // "all" | samName
+  // SAM 筛选 + 阶段筛选 + 健康度筛选
+  const [samFilter, setSamFilter] = useState<string>("all"); // "all" | samName | "__unassigned__"
+  const [stageFilter, setStageFilter] = useState<string>("all"); // "all" | "0to1" | "1toN"
+  const [healthFilter, setHealthFilter] = useState<string>("all"); // "all" | "healthy" | "watch" | "risk"
   const { data: samUsers = [] } = trpc.clients.listSamUsers.useQuery();
-  const filteredClients = samFilter === "all" ? clients : clients.filter(c => (c as any).assignedSamName === samFilter);
   const samNames = Array.from(new Set(clients.map(c => (c as any).assignedSamName).filter(Boolean)));
+
+  const filteredClients = clients.filter(c => {
+    // SAM filter
+    if (samFilter === "__unassigned__" && (c as any).assignedSamName) return false;
+    if (samFilter !== "all" && samFilter !== "__unassigned__" && (c as any).assignedSamName !== samFilter) return false;
+    // Stage filter
+    const ZERO_TO_ONE_STAGES = ["建图", "进门", "定痛", "找人"];
+    const ONE_TO_N_STAGES = ["进入商机"];
+    if (stageFilter === "0to1" && !ZERO_TO_ONE_STAGES.includes(c.stage)) return false;
+    if (stageFilter === "1toN" && !ONE_TO_N_STAGES.includes(c.stage)) return false;
+    // Health filter (based on meddpiccAvg)
+    const avg = (c as any).meddpiccAvg ?? 0;
+    if (healthFilter === "healthy" && avg < 60) return false;
+    if (healthFilter === "watch" && (avg < 30 || avg >= 60)) return false;
+    if (healthFilter === "risk" && avg >= 30) return false;
+    return true;
+  });
+
+  const activeFilterCount = [samFilter !== "all", stageFilter !== "all", healthFilter !== "all"].filter(Boolean).length;
+
+  const clearAllFilters = () => { setSamFilter("all"); setStageFilter("all"); setHealthFilter("all"); };
 
   // CSV Import state
   const [showImport, setShowImport] = useState(false);
@@ -2666,40 +2725,70 @@ export default function BattleMap() {
         </div>
       </div>
 
-      {/* SAM 筛选器 */}
-      <div className="mb-4 flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-muted-foreground font-medium">按 SAM 筛选：</span>
-        <button
-          onClick={() => setSamFilter("all")}
-          className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${samFilter === "all" ? "bg-[#00A8D6]/20 text-[#00A8D6] border-[#00A8D6]/40" : "bg-muted/30 text-muted-foreground border-border hover:border-[#00A8D6]/30 hover:text-[#00A8D6]"}`}
-        >
-          全部 ({clients.length})
-        </button>
-        {samNames.map(name => {
-          const count = clients.filter(c => (c as any).assignedSamName === name).length;
-          return (
-            <button
-              key={name}
-              onClick={() => setSamFilter(name)}
-              className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${samFilter === name ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/40" : "bg-muted/30 text-muted-foreground border-border hover:border-cyan-500/30 hover:text-cyan-400"}`}
-            >
-              {name} ({count})
-            </button>
-          );
-        })}
-        {clients.filter(c => !(c as any).assignedSamName).length > 0 && (
-          <button
-            onClick={() => setSamFilter("__unassigned__")}
-            className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${samFilter === "__unassigned__" ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "bg-muted/30 text-muted-foreground border-border hover:border-orange-500/30 hover:text-orange-400"}`}
-          >
-            未分配 ({clients.filter(c => !(c as any).assignedSamName).length})
+      {/* 组合筛选器：SAM × 阶段 × 健康度 */}
+      <div className="mb-4 p-3 rounded-xl bg-card border border-border space-y-2.5">
+        {/* SAM 筛选行 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider w-10 flex-shrink-0">SAM</span>
+          <button onClick={() => setSamFilter("all")}
+            className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${samFilter === "all" ? "bg-[#00A8D6]/20 text-[#00A8D6] border-[#00A8D6]/40" : "bg-muted/20 text-muted-foreground border-border hover:border-[#00A8D6]/30 hover:text-[#00A8D6]"}`}>
+            全部
           </button>
-        )}
-        {samFilter !== "all" && (
-          <span className="text-xs text-muted-foreground ml-1">
-            显示 {samFilter === "__unassigned__" ? clients.filter(c => !(c as any).assignedSamName).length : filteredClients.length} 个客户
+          {samNames.map(name => (
+            <button key={name} onClick={() => setSamFilter(name)}
+              className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${samFilter === name ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/40" : "bg-muted/20 text-muted-foreground border-border hover:border-cyan-500/30 hover:text-cyan-400"}`}>
+              {name}
+            </button>
+          ))}
+          {clients.filter(c => !(c as any).assignedSamName).length > 0 && (
+            <button onClick={() => setSamFilter("__unassigned__")}
+              className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${samFilter === "__unassigned__" ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "bg-muted/20 text-muted-foreground border-border hover:border-orange-500/30 hover:text-orange-400"}`}>
+              未分配
+            </button>
+          )}
+        </div>
+        {/* 阶段筛选行 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider w-10 flex-shrink-0">阶段</span>
+          {[
+            { key: "all", label: "全部", color: "text-muted-foreground border-border", active: "bg-muted/40 text-foreground border-muted-foreground/40" },
+            { key: "0to1", label: "0→1 开拓期", color: "hover:border-blue-500/30 hover:text-blue-400", active: "bg-blue-500/20 text-blue-400 border-blue-500/40" },
+            { key: "1toN", label: "1→N 商机期", color: "hover:border-green-500/30 hover:text-green-400", active: "bg-green-500/20 text-green-400 border-green-500/40" },
+          ].map(opt => (
+            <button key={opt.key} onClick={() => setStageFilter(opt.key)}
+              className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${stageFilter === opt.key ? opt.active : `bg-muted/20 text-muted-foreground border-border ${opt.color}`}`}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {/* 健康度筛选行 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider w-10 flex-shrink-0">健康</span>
+          {[
+            { key: "all", label: "全部", active: "bg-muted/40 text-foreground border-muted-foreground/40" },
+            { key: "healthy", label: "✓ 健康 (≥60)", active: "bg-green-500/20 text-green-400 border-green-500/40", hover: "hover:border-green-500/30 hover:text-green-400" },
+            { key: "watch", label: "⚠ 需关注 (30-59)", active: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40", hover: "hover:border-yellow-500/30 hover:text-yellow-400" },
+            { key: "risk", label: "✗ 高风险 (<30)", active: "bg-red-500/20 text-red-400 border-red-500/40", hover: "hover:border-red-500/30 hover:text-red-400" },
+          ].map(opt => (
+            <button key={opt.key} onClick={() => setHealthFilter(opt.key)}
+              className={`text-xs px-2.5 py-0.5 rounded-full border transition-colors font-medium ${healthFilter === opt.key ? opt.active : `bg-muted/20 text-muted-foreground border-border ${(opt as any).hover || ""}`}`}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {/* 筛选结果摘要 */}
+        <div className="flex items-center justify-between pt-1 border-t border-border/50">
+          <span className="text-xs text-muted-foreground">
+            命中 <strong className="text-foreground">{filteredClients.length}</strong> / {clients.length} 个客户
+            {activeFilterCount > 0 && <span className="ml-1 text-[#00A8D6]">（{activeFilterCount} 个筛选条件激活）</span>}
           </span>
-        )}
+          {activeFilterCount > 0 && (
+            <button onClick={clearAllFilters}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+              ✕ 清除全部筛选
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sales pipeline steps */}
@@ -2832,7 +2921,7 @@ export default function BattleMap() {
           })()
         ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {(samFilter === "__unassigned__" ? clients.filter(c => !(c as any).assignedSamName) : filteredClients).map(client => (
+          {filteredClients.map(client => (
             <div key={client.id} id={`client-card-${client.id}`} className="relative group">
               <ClientCard
                 client={client}

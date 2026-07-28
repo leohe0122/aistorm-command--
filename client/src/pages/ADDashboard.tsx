@@ -18,6 +18,8 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
+  CheckSquare,
+  Trash2,
   ClipboardList,
   PlusCircle,
   FileEdit,
@@ -483,6 +485,39 @@ export default function ADDashboard() {
       setCoachReviewLoading(false);
     }
   };
+
+  // 辅导建议下发
+  const [coachActionsOpen, setCoachActionsOpen] = useState(false);
+  const [coachActionItems, setCoachActionItems] = useState<Array<{ title: string; description: string; dueDate: string }>>([]);
+  const [coachActionsLoading, setCoachActionsLoading] = useState(false);
+  const createCoachingMut = trpc.insights.createCoachingActions.useMutation({
+    onSuccess: (res) => {
+      toast.success(`已下发 ${res.count} 条辅导建议给 ${coachReviewSamName}`);
+      setCoachActionsOpen(false);
+    },
+    onError: (e) => toast.error("下发失败：" + e.message),
+  });
+  const { data: allCoachingActions = [] } = trpc.insights.listAllCoachingActions.useQuery();
+  const completeCoachingMut = trpc.insights.completeCoachingAction.useMutation({
+    onSuccess: () => { trpc.useUtils().insights.listAllCoachingActions.invalidate(); },
+  });
+  const deleteCoachingMut = trpc.insights.deleteCoachingAction.useMutation({
+    onSuccess: () => { trpc.useUtils().insights.listAllCoachingActions.invalidate(); },
+  });
+
+  const handlePrepareCoachActions = async () => {
+    if (!coachReviewContent) return;
+    setCoachActionsLoading(true);
+    // 从 AI 诊断文本中提取 3 条默认辅导建议
+    const defaultItems = [
+      { title: "MEDDPICC 系统性短板提升", description: "基于教练 Review 诊断，重点补强最薄弱的 MEDDPICC 维度", dueDate: "" },
+      { title: "Champion 识别与培养", description: "在名下客户中加速找到并培养 Champion，提升 Champion 质量评分", dueDate: "" },
+      { title: "拜访频率优化", description: "对停滞超过 30 天的 P0/P1 客户制定拜访计划并执行", dueDate: "" },
+    ];
+    setCoachActionItems(defaultItems);
+    setCoachActionsLoading(false);
+    setCoachActionsOpen(true);
+  };
   const { data: saTasks } = trpc.pod.listByRole.useQuery({ role: "SA" });
   const { data: rsmTasks } = trpc.pod.listByRole.useQuery({ role: "RSM" });
 
@@ -923,12 +958,91 @@ export default function ADDashboard() {
             <Button type="button" variant="outline" size="sm" onClick={() => { if (coachReviewContent) { navigator.clipboard.writeText(coachReviewContent); toast.success("已复制到剪贴板"); } }}>
               复制全文
             </Button>
+            {!coachReviewLoading && coachReviewContent && (
+              <Button type="button" size="sm" onClick={handlePrepareCoachActions}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
+                <CheckSquare className="w-3.5 h-3.5" />
+                📋 下发辅导建议
+              </Button>
+            )}
             <Button type="button" variant="outline" size="sm" onClick={() => setCoachReviewOpen(false)}>关闭</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* KPI Cards */}
+      {/* 辅导建议下发 Dialog */}
+      <Dialog open={coachActionsOpen} onOpenChange={setCoachActionsOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-400">
+              <CheckSquare className="w-4 h-4" />
+              下发辅导建议给 {coachReviewSamName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">以下是基于 AI 教练诊断生成的辅导 Action Items，你可以编辑后下发给 {coachReviewSamName}。</p>
+            {coachActionItems.map((item, i) => (
+              <div key={i} className="rounded-lg border border-border bg-muted/10 p-3 space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-xs font-bold text-emerald-400 mt-0.5 flex-shrink-0">#{i + 1}</span>
+                  <div className="flex-1 space-y-2">
+                    <input
+                      value={item.title}
+                      onChange={(e) => setCoachActionItems(prev => prev.map((it, idx) => idx === i ? { ...it, title: e.target.value } : it))}
+                      className="w-full text-sm bg-transparent border-b border-border/50 focus:border-emerald-500/50 outline-none pb-1 text-foreground"
+                      placeholder="辅导建议标题"
+                    />
+                    <textarea
+                      value={item.description}
+                      onChange={(e) => setCoachActionItems(prev => prev.map((it, idx) => idx === i ? { ...it, description: e.target.value } : it))}
+                      className="w-full text-xs bg-muted/20 border border-border/30 rounded p-2 outline-none focus:border-emerald-500/30 text-muted-foreground resize-none"
+                      rows={2}
+                      placeholder="具体辅导内容（可选）"
+                    />
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground">截止日期：</span>
+                      <input
+                        type="date"
+                        value={item.dueDate}
+                        onChange={(e) => setCoachActionItems(prev => prev.map((it, idx) => idx === i ? { ...it, dueDate: e.target.value } : it))}
+                        className="text-xs bg-muted/20 border border-border/30 rounded px-2 py-0.5 outline-none focus:border-emerald-500/30 text-muted-foreground"
+                      />
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => setCoachActionItems(prev => prev.filter((_, idx) => idx !== i))}
+                    className="text-muted-foreground hover:text-red-400 transition-colors flex-shrink-0">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button type="button"
+              onClick={() => setCoachActionItems(prev => [...prev, { title: "", description: "", dueDate: "" }])}
+              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors">
+              + 添加辅导建议
+            </button>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setCoachActionsOpen(false)}>取消</Button>
+            <Button size="sm" onClick={() => {
+              if (!coachReviewSamId) return;
+              createCoachingMut.mutate({
+                samId: coachReviewSamId,
+                samName: coachReviewSamName,
+                actions: coachActionItems.filter(a => a.title.trim()),
+                createdBy: "AD",
+              });
+            }}
+              disabled={createCoachingMut.isPending || coachActionItems.filter(a => a.title.trim()).length === 0}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5">
+              {createCoachingMut.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckSquare className="w-3.5 h-3.5" />}
+              确认下发 ({coachActionItems.filter(a => a.title.trim()).length} 条)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="rounded-xl border bg-card p-4 space-y-1">
           <div className="flex items-center gap-2 text-muted-foreground text-xs">

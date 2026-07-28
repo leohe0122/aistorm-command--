@@ -458,3 +458,39 @@
 - [x] 前端：侧边栏新增"团队成员管理"页面（/team 路由）
 - [x] 前端：支持增删改停用，删除时弹出客户归属重分配对话框
 - [x] 前端：改名时自动同步更新 clients.assignedSamName（后端同步）
+
+## Round 57 — RSM 字段 + 辅导建议下发 + 组合筛选
+
+### RSM 字段展示与分配
+- [ ] 数据库：clients 表新增 assignedRsmId/assignedRsmName 字段
+- [ ] 后端：clients.assignRsm 接口（分配/取消分配 RSM）
+- [ ] 后端：clients.list 返回 assignedRsmName 字段
+- [ ] 前端：客户卡片展示负责 RSM，支持下拉分配（仅显示 RSM 角色用户）
+- [ ] 前端：战场地图支持按 RSM 筛选（与 SAM 筛选并列）
+- [x] 数据库：clients 表新增 assignedRsmId/assignedRsmName 字段
+- [x] 后端：clients.assignRsm 接口（分配/取消分配 RSM）
+- [x] 前端：客户卡片展示负责 RSM，支持下拉分配（仅显示 RSM 角色用户）
+- [x] 前端：RSM 分配与 SAM 分配并列显示在客户卡片
+
+### AD 教练辅导建议下发
+- [ ] 数据库：coaching_actions 表（coachingId/clientId/samId/title/description/dueDate/isCompleted/createdBy/createdAt）
+- [ ] 后端：insights.createCoachingActions 接口（从教练 Review 中提取并保存 Action Items）
+- [ ] 后端：insights.listCoachingActions 接口（SAM 查询自己的辅导 Action Items）
+- [ ] 后端：insights.completeCoachingAction 接口（SAM 标记完成）
+- [ ] 前端：AD 教练 Review Dialog 底部新增"📋 下发辅导建议"按钮
+- [ ] 前端：下发后弹出 Action Items 编辑确认框（可调整标题/截止日期）
+- [ ] 前端：SAM 视图（战场地图/POD中枢）可见来自 AD 的辅导 Action Items
+- [x] 数据库：coaching_actions 表创建完成
+- [x] 后端：insights.createCoachingActions / listCoachingActions / listAllCoachingActions / completeCoachingAction / deleteCoachingAction 接口
+- [x] 前端：AD 教练 Review Dialog 底部"📋 下发辅导建议"按钮
+- [x] 前端：下发确认 Dialog（可编辑标题/描述/截止日期，支持增删）
+
+### 战场地图组合筛选
+- [ ] 阶段筛选：0→1（建图/进门/定痛/找人）vs 1→N（进入商机）
+- [ ] 健康度筛选：健康（MEDDPICC均分≥60）/ 需关注（30-60）/ 高风险（<30）
+- [ ] 组合筛选：SAM × 阶段 × 健康度三维组合，实时显示命中数量
+- [ ] 筛选状态显示：当前激活的筛选条件 badge 展示，一键清除
+- [x] 阶段筛选：0→1（建图/进门/定痛/找人）vs 1→N（进入商机）
+- [x] 健康度筛选：健康(≥60) / 需关注(30-59) / 高风险(<30)
+- [x] 组合筛选：SAM × 阶段 × 健康度三维组合，实时显示命中数量
+- [x] 筛选状态：激活数量显示 + 一键清除全部筛选

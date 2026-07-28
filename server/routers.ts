@@ -212,6 +212,20 @@ export const appRouter = router({
         podRole: emailUsers.podRole,
       }).from(emailUsers).where(eqFn(emailUsers.isActive, true));
     }),
+
+    // 分配负责 RSM（属地销售）
+    assignRsm: publicProcedure.input(z.object({
+      clientId: z.number(),
+      rsmId: z.number().nullable(),
+      rsmName: z.string().nullable(),
+    })).mutation(async ({ input }) => {
+      invalidateClientsCache();
+      await updateClient(input.clientId, {
+        assignedRsmId: input.rsmId ?? undefined,
+        assignedRsmName: input.rsmName ?? undefined,
+      } as any);
+      return { ok: true };
+    }),
   }),
 
   // ── MEDDPICC ─────────────────────────────────────────────────────────────
@@ -1863,6 +1877,82 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
         stagnantCount: stagnantClients.length,
         noChampionCount: noChampionClients.length,
       };
+    }),
+
+    // ── 辅导 Action Items ────────────────────────────────────────────────────
+    // AD 下发辅导建议（从教练 Review 中提取并保存 Action Items）
+    createCoachingActions: publicProcedure.input(z.object({
+      samId: z.number(),
+      samName: z.string(),
+      actions: z.array(z.object({
+        title: z.string(),
+        description: z.string().optional(),
+        dueDate: z.string().optional(), // ISO date string
+        clientId: z.number().optional(),
+      })),
+      createdBy: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const { coachingActions } = await import('../drizzle/schema');
+      const inserted = [];
+      for (const a of input.actions) {
+        const [r] = await db.insert(coachingActions).values({
+          samId: input.samId,
+          samName: input.samName,
+          clientId: a.clientId ?? null,
+          title: a.title,
+          description: a.description ?? null,
+          dueDate: a.dueDate ? new Date(a.dueDate) : null,
+          createdBy: input.createdBy ?? null,
+        });
+        inserted.push((r as any).insertId);
+      }
+      return { count: inserted.length, ids: inserted };
+    }),
+
+    // SAM 查询自己的辅导 Action Items
+    listCoachingActions: publicProcedure.input(z.object({
+      samId: z.number(),
+    })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { coachingActions } = await import('../drizzle/schema');
+      const { eq: eqFn, desc: descFn } = await import('drizzle-orm');
+      return db.select().from(coachingActions).where(eqFn(coachingActions.samId, input.samId)).orderBy(descFn(coachingActions.createdAt));
+    }),
+
+    // 获取所有辅导 Action Items（AD 视角）
+    listAllCoachingActions: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const { coachingActions } = await import('../drizzle/schema');
+      const { desc: descFn } = await import('drizzle-orm');
+      return db.select().from(coachingActions).orderBy(descFn(coachingActions.createdAt));
+    }),
+
+    // SAM 标记辅导 Action Item 完成
+    completeCoachingAction: publicProcedure.input(z.object({
+      id: z.number(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const { coachingActions } = await import('../drizzle/schema');
+      const { eq: eqFn } = await import('drizzle-orm');
+      await db.update(coachingActions).set({ isCompleted: true, completedAt: new Date() }).where(eqFn(coachingActions.id, input.id));
+      return { ok: true };
+    }),
+
+    // 删除辅导 Action Item
+    deleteCoachingAction: publicProcedure.input(z.object({
+      id: z.number(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const { coachingActions } = await import('../drizzle/schema');
+      const { eq: eqFn } = await import('drizzle-orm');
+      await db.delete(coachingActions).where(eqFn(coachingActions.id, input.id));
+      return { ok: true };
     }),
   }),
 
