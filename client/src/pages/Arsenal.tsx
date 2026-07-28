@@ -35,7 +35,7 @@ const FOLDER_DEFS = [
   { productLine: "物理AI", label: "物理 AI", group: "亚信科技", icon: "🤖", color: "from-blue-500/20 to-cyan-500/10", border: "border-blue-500/30", badge: "bg-blue-500/20 text-blue-400", desc: "具身智能、机器人、物理世界AI应用" },
   { productLine: "卫星互联", label: "卫星互联", group: "亚信科技", icon: "🛰️", color: "from-indigo-500/20 to-blue-500/10", border: "border-indigo-500/30", badge: "bg-indigo-500/20 text-indigo-400", desc: "卫星通信、低轨卫星网络、天地一体" },
   // 亚信安全
-  { productLine: "AI XDR", label: "AI XDR 平台", group: "亚信安全", icon: "🔭", color: "from-violet-500/20 to-purple-500/10", border: "border-violet-500/30", badge: "bg-violet-500/20 text-violet-400", desc: "跨层威胁检测响应、AI驱动XDR平台" },
+  { productLine: "AI XDR", label: "AI XDR 平台", group: "亚信安全", icon: "🏛️", color: "from-violet-500/20 to-purple-500/10", border: "border-violet-500/30", badge: "bg-violet-500/20 text-violet-400", desc: "跨层威胁检测响应、AI驱动XDR平台" },
   { productLine: "TrustOne", label: "TrustOne", group: "亚信安全", icon: "🛡️", color: "from-green-500/20 to-emerald-500/10", border: "border-green-500/30", badge: "bg-green-500/20 text-green-400", desc: "办公网终端 AV / EDR / 虚拟补丁" },
   { productLine: "CloudGuard", label: "CloudGuard", group: "亚信安全", icon: "☁️", color: "from-sky-500/20 to-blue-500/10", border: "border-sky-500/30", badge: "bg-sky-500/20 text-sky-400", desc: "CWPP 数据中心及云主机安全防护" },
   { productLine: "NDR", label: "NDR 系列", group: "亚信安全", icon: "🌐", color: "from-teal-500/20 to-cyan-500/10", border: "border-teal-500/30", badge: "bg-teal-500/20 text-teal-400", desc: "ThreatTrace / ThreatShield / PhishShield" },
