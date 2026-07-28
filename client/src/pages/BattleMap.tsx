@@ -1307,6 +1307,16 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const reviewBuyingGroupMut = trpc.insights.reviewBuyingGroup.useMutation();
   const reviewVisitTrendMut = trpc.insights.reviewVisitTrend.useMutation();
   const [reviewDropdownOpen, setReviewDropdownOpen] = useState(false);
+  // L2: Review 持久化
+  const saveReviewMut = trpc.insights.saveReview.useMutation();
+  const { data: latestReviews = [] } = trpc.insights.getLatestReviews.useQuery({ clientId: client.id });
+  const [reviewSavedAt, setReviewSavedAt] = useState<Date | null>(null);
+  // 负责 SAM 分配
+  const [samDropdownOpen, setSamDropdownOpen] = useState(false);
+  const { data: samUsers = [] } = trpc.clients.listSamUsers.useQuery();
+  const assignSamMut = trpc.clients.assignSam.useMutation({
+    onSuccess: () => { utils.clients.list.invalidate(); toast.success("SAM 分配已更新"); setSamDropdownOpen(false); },
+  });
 
   const handleReview = async (type: "0to1" | "1toN" | "buyingGroup" | "visitTrend", oppId?: number) => {
     setReviewType(type as any);
@@ -1316,25 +1326,51 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
     setReviewContent("");
     setReviewDropdownOpen(false);
     try {
+      let generatedContent = "";
       if (type === "0to1") {
         const res = await reviewZeroToOneMut.mutateAsync({ clientId: client.id });
-        setReviewContent(res.content);
+        generatedContent = res.content;
       } else if (type === "1toN" && oppId) {
         const res = await reviewOneToNMut.mutateAsync({ clientId: client.id, opportunityId: oppId });
-        setReviewContent(res.content);
+        generatedContent = res.content;
       } else if (type === "buyingGroup") {
         const res = await reviewBuyingGroupMut.mutateAsync({ clientId: client.id });
-        setReviewContent(res.content);
+        generatedContent = res.content;
       } else if (type === "visitTrend") {
         const res = await reviewVisitTrendMut.mutateAsync({ clientId: client.id });
-        setReviewContent(res.content);
+        generatedContent = res.content;
       } else {
-        setReviewContent("请先选择一个商机后再进行1→N Review。");
+        generatedContent = "请先选择一个商机后再进行1→N Review。";
+      }
+      setReviewContent(generatedContent);
+      // L2: 自动保存 Review 结果到数据库
+      if (generatedContent && !generatedContent.startsWith("请先") && !generatedContent.startsWith("AI Review 生成失败")) {
+        const now = new Date();
+        setReviewSavedAt(now);
+        saveReviewMut.mutate({
+          clientId: client.id,
+          opportunityId: oppId ?? undefined,
+          reviewType: type,
+          content: generatedContent,
+        });
       }
     } catch (e: any) {
       setReviewContent("AI Review 生成失败：" + (e?.message || "未知错误"));
     } finally {
       setReviewLoading(false);
+    }
+  };
+
+  // 加载历史 Review（打开 Dialog 时如果没有新内容，显示上次结果）
+  const loadHistoryReview = (type: "0to1" | "1toN" | "buyingGroup" | "visitTrend", oppId?: number) => {
+    const key = type + (oppId ? `_${oppId}` : '');
+    const hist = latestReviews.find((r: any) => {
+      const rKey = r.reviewType + (r.opportunityId ? `_${r.opportunityId}` : '');
+      return rKey === key;
+    });
+    if (hist) {
+      setReviewContent(hist.content);
+      setReviewSavedAt(new Date(hist.createdAt));
     }
   };
 
@@ -1495,6 +1531,34 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                   <span>未拜访</span>
                 </div>
               )}
+              {/* 负责 SAM 显示与分配 */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setSamDropdownOpen(v => !v); }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Users className="w-3 h-3" />
+                  <span>{(client as any).assignedSamName ? `SAM: ${(client as any).assignedSamName}` : '分配 SAM'}</span>
+                </button>
+                {samDropdownOpen && (
+                  <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+                    <div className="px-3 py-1 text-[10px] text-muted-foreground font-medium border-b border-border mb-1">分配负责 SAM</div>
+                    <button type="button" onClick={() => assignSamMut.mutate({ clientId: client.id, samId: null, samName: null })}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-muted-foreground">
+                      — 取消分配
+                    </button>
+                    {samUsers.map((u: any) => (
+                      <button key={u.id} type="button"
+                        onClick={() => assignSamMut.mutate({ clientId: client.id, samId: u.id, samName: u.name })}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground flex items-center gap-2">
+                        <span className={`text-[10px] px-1 py-0.5 rounded font-medium ${u.podRole === 'SAM' ? 'bg-blue-500/20 text-blue-400' : u.podRole === 'AD' ? 'bg-red-500/20 text-red-400' : 'bg-muted text-muted-foreground'}`}>{u.podRole}</span>
+                        {u.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -2384,7 +2448,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
     </div>
 
     {/* AI Review Dialog */}
-    <Dialog open={reviewOpen} onOpenChange={(o) => { if (!o) { setTimeout(() => { setReviewContent(""); setReviewLoading(false); }, 300); } setReviewOpen(o); }}>
+    <Dialog open={reviewOpen} onOpenChange={(o) => { if (!o) { setTimeout(() => { setReviewContent(""); setReviewLoading(false); setReviewSavedAt(null); }, 300); } setReviewOpen(o); }}>
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-purple-400">
@@ -2395,6 +2459,15 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
              `📈 拜访趋势分析 · ${client.name}`}
           </DialogTitle>
         </DialogHeader>
+        {reviewSavedAt && !reviewLoading && (
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-md">
+            <span className="text-green-400">✓ 已保存</span>
+            <span>生成于 {reviewSavedAt.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+            <button type="button" onClick={() => loadHistoryReview(reviewType, reviewOppId ?? undefined)} className="ml-auto text-purple-400 hover:text-purple-300 underline">
+              加载上次结果
+            </button>
+          </div>
+        )}
         {reviewLoading ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <div className="w-8 h-8 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
@@ -2420,6 +2493,17 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
             >
               {reviewContent || "暂无内容"}
             </ReactMarkdown>
+          </div>
+        )}
+        {!reviewLoading && reviewContent && (
+          <div className="flex justify-end pt-2 border-t border-border/50">
+            <button
+              type="button"
+              onClick={() => { navigator.clipboard.writeText(reviewContent); toast.success("已复制到剪贴板"); }}
+              className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              📋 复制全文
+            </button>
           </div>
         )}
       </DialogContent>

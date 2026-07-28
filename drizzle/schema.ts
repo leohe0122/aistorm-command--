@@ -51,7 +51,26 @@ export const clients = mysqlTable("clients", {
   stageChangedAt: timestamp("stageChangedAt").defaultNow().notNull(),
   /** P2d：客户关系滚动叙事（约200字，每次拜访后AI自动更新，记录态度趋势/MEDDPICC变化/未解决阻碍）*/
   relationshipNarrative: text("relationshipNarrative"),
+  /** 负责 SAM 的 email_users.id（用于 AD Review SAM 和 SAM 能力画像） */
+  assignedSamId: int("assignedSamId"),
+  /** 负责 SAM 的姓名（冗余字段，避免 JOIN，快速展示用） */
+  assignedSamName: varchar("assignedSamName", { length: 100 }),
 });
+
+/**
+ * AI Review 持久化记录（SAM 自 Review 结果存档，供 AD 查阅）
+ */
+export const aiReviews = mysqlTable("ai_reviews", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull(),
+  opportunityId: int("opportunityId"),  // 仅 1→N Review 时填写
+  reviewType: mysqlEnum("reviewType", ["0to1", "1toN", "buyingGroup", "visitTrend"]).notNull(),
+  content: text("content").notNull(),   // AI 生成的 Markdown 内容
+  createdBy: varchar("createdBy", { length: 100 }), // 触发者姓名
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AiReview = typeof aiReviews.$inferSelect;
+export type InsertAiReview = typeof aiReviews.$inferInsert;
 
 export type Client = typeof clients.$inferSelect;
 export type InsertClient = typeof clients.$inferInsert;

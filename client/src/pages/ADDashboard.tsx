@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
 
 const STAGE_ORDER = ["建图", "进门", "定痛", "找人", "进入商机"];
 
@@ -433,6 +434,25 @@ export default function ADDashboard() {
   // Load pending tasks from all roles to build pending-task opportunity set
   const { data: adTasks } = trpc.pod.listByRole.useQuery({ role: "AD" });
   const { data: samTasks } = trpc.pod.listByRole.useQuery({ role: "SAM" });
+  // 全局 Review（第五入口）
+  const [globalReviewOpen, setGlobalReviewOpen] = useState(false);
+  const [globalReviewContent, setGlobalReviewContent] = useState("");
+  const [globalReviewLoading, setGlobalReviewLoading] = useState(false);
+  const globalReviewMut = trpc.insights.globalReview.useMutation();
+
+  const handleGlobalReview = async () => {
+    setGlobalReviewOpen(true);
+    setGlobalReviewLoading(true);
+    setGlobalReviewContent("");
+    try {
+      const res = await globalReviewMut.mutateAsync();
+      setGlobalReviewContent(res.content);
+    } catch (e: any) {
+      setGlobalReviewContent("全局 Review 生成失败：" + (e?.message || "未知错误"));
+    } finally {
+      setGlobalReviewLoading(false);
+    }
+  };
   const { data: saTasks } = trpc.pod.listByRole.useQuery({ role: "SA" });
   const { data: rsmTasks } = trpc.pod.listByRole.useQuery({ role: "RSM" });
 
@@ -590,7 +610,60 @@ export default function ADDashboard() {
           <Download className="w-4 h-4" />
           导出季度报告
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleGlobalReview}
+          disabled={globalReviewLoading}
+          className="gap-1.5 text-purple-400 border-purple-500/30 hover:bg-purple-500/10"
+        >
+          {globalReviewLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          🌐 全局 Review
+        </Button>
       </div>
+      {/* 全局战场 Review Dialog */}
+      <Dialog open={globalReviewOpen} onOpenChange={(o) => { if (!o) { setTimeout(() => { setGlobalReviewContent(""); setGlobalReviewLoading(false); }, 300); } setGlobalReviewOpen(o); }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-[#00A8D6]">
+              <Sparkles className="w-4 h-4" />
+              🌐 全局战场 Review · AD 指挥官视角
+            </DialogTitle>
+          </DialogHeader>
+          {globalReviewLoading ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <div className="w-8 h-8 border-2 border-[#00A8D6] border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-muted-foreground">AI 正在分析全局战场态势，请稍候...</p>
+            </div>
+          ) : (
+            <div className="text-sm leading-relaxed">
+              <ReactMarkdown
+                components={{
+                  h1: ({children}) => <h1 className="text-lg font-bold text-[#00A8D6] mt-4 mb-2 pb-1 border-b border-[#00A8D6]/30">{children}</h1>,
+                  h2: ({children}) => <h2 className="text-base font-semibold text-cyan-300 mt-4 mb-2">{children}</h2>,
+                  h3: ({children}) => <h3 className="text-sm font-semibold text-blue-300 mt-3 mb-1">{children}</h3>,
+                  p: ({children}) => <p className="text-foreground/90 mb-2 leading-relaxed">{children}</p>,
+                  ul: ({children}) => <ul className="list-none space-y-1 mb-3">{children}</ul>,
+                  ol: ({children}) => <ol className="list-decimal list-inside space-y-1 mb-3 text-foreground/90">{children}</ol>,
+                  li: ({children}) => <li className="flex items-start gap-2 text-foreground/85"><span className="text-[#00A8D6] mt-0.5 flex-shrink-0">▸</span><span>{children}</span></li>,
+                  strong: ({children}) => <strong className="text-yellow-300 font-semibold">{children}</strong>,
+                  em: ({children}) => <em className="text-cyan-300 not-italic font-medium">{children}</em>,
+                  blockquote: ({children}) => <blockquote className="border-l-2 border-[#00A8D6] pl-3 my-2 text-muted-foreground italic">{children}</blockquote>,
+                  hr: () => <hr className="border-border/50 my-3" />,
+                }}
+              >
+                {globalReviewContent || "暂无内容"}
+              </ReactMarkdown>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" size="sm" onClick={() => { if (globalReviewContent) { navigator.clipboard.writeText(globalReviewContent); toast.success("已复制到剪贴板"); } }}>
+              复制全文
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setGlobalReviewOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

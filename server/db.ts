@@ -19,6 +19,7 @@ import {
   arsenalWeapons, ArsenalWeapon, InsertArsenalWeapon,
   arsenalAttachments, ArsenalAttachment, InsertArsenalAttachment,
   arsenalPricing, ArsenalPricing, InsertArsenalPricing,
+  aiReviews, AiReview, InsertAiReview,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -713,4 +714,39 @@ export async function upsertEffectivenessBaseline(clientId: number, data: Partia
   } else {
     await db.insert(effectivenessBaselines).values({ clientId, ...data } as any);
   }
+}
+
+// ── AI Reviews ────────────────────────────────────────────────────────────────
+export async function saveAiReview(data: InsertAiReview): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.insert(aiReviews).values(data);
+  return (result[0] as any).insertId ?? 0;
+}
+
+/** 按 clientId 返回各 reviewType 的最新一条 Review */
+export async function getLatestReviewsByClient(clientId: number): Promise<AiReview[]> {
+  const db = await getDb();
+  if (!db) return [];
+  // 取最近 20 条，前端按 reviewType 分组取最新
+  return db.select().from(aiReviews)
+    .where(eq(aiReviews.clientId, clientId))
+    .orderBy(desc(aiReviews.createdAt))
+    .limit(20);
+}
+
+/** 按 clientId + reviewType 返回最新一条 Review */
+export async function getLatestReviewByType(clientId: number, reviewType: AiReview['reviewType'], opportunityId?: number): Promise<AiReview | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const conditions = [eq(aiReviews.clientId, clientId), eq(aiReviews.reviewType, reviewType)];
+  if (opportunityId) {
+    const { eq: eqFn } = await import('drizzle-orm');
+    conditions.push(eqFn(aiReviews.opportunityId, opportunityId));
+  }
+  const rows = await db.select().from(aiReviews)
+    .where(and(...conditions))
+    .orderBy(desc(aiReviews.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
 }

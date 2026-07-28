@@ -35,6 +35,7 @@ import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient
   getSystemConfig, setSystemConfig, getAllSystemConfigs,
   getDb,
 } from "./db";
+import { saveAiReview, getLatestReviewsByClient, getLatestReviewByType } from "./db";
 
 export const appRouter = router({
   system: systemRouter,
@@ -182,6 +183,34 @@ export const appRouter = router({
       } catch {
         return { hookTopic: '', securityAngle: '', reasoning: text };
       }
+    }),
+
+    // 分配负责 SAM（客户归属）
+    assignSam: publicProcedure.input(z.object({
+      clientId: z.number(),
+      samId: z.number().nullable(),
+      samName: z.string().nullable(),
+    })).mutation(async ({ input }) => {
+      invalidateClientsCache();
+      await updateClient(input.clientId, {
+        assignedSamId: input.samId ?? undefined,
+        assignedSamName: input.samName ?? undefined,
+      } as any);
+      return { ok: true };
+    }),
+
+    // 获取所有活跃用户列表（用于 SAM 分配下拉）
+    listSamUsers: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const { emailUsers } = await import('../drizzle/schema');
+      const { eq: eqFn } = await import('drizzle-orm');
+      return db.select({
+        id: emailUsers.id,
+        name: emailUsers.name,
+        email: emailUsers.email,
+        podRole: emailUsers.podRole,
+      }).from(emailUsers).where(eqFn(emailUsers.isActive, true));
     }),
   }),
 
@@ -1547,6 +1576,149 @@ ${existingNarrative}
       }
 
       return { content: reviewContent, visitCount: meetings.length };
+    }),
+
+    // L2: 保存 Review 结果（SAM 自 Review 持久化）
+    saveReview: publicProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number().optional(),
+      reviewType: z.enum(["0to1", "1toN", "buyingGroup", "visitTrend"]),
+      content: z.string(),
+      createdBy: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const id = await saveAiReview({
+        clientId: input.clientId,
+        opportunityId: input.opportunityId ?? null,
+        reviewType: input.reviewType,
+        content: input.content,
+        createdBy: input.createdBy ?? null,
+      });
+      return { id };
+    }),
+
+    // L2: 获取某客户各类型最新 Review
+    getLatestReviews: publicProcedure.input(z.object({
+      clientId: z.number(),
+    })).query(async ({ input }) => {
+      const reviews = await getLatestReviewsByClient(input.clientId);
+      // 按 reviewType 分组，每种类型只保留最新一条
+      const latestByType: Record<string, typeof reviews[0]> = {};
+      for (const r of reviews) {
+        const key = r.reviewType + (r.opportunityId ? `_${r.opportunityId}` : '');
+        if (!latestByType[key]) latestByType[key] = r;
+      }
+      return Object.values(latestByType);
+    }),
+
+    // 第五入口：AD 全局战场 Review（跨客户/跨商机/跨 SAM 的指挥官视角）
+    globalReview: publicProcedure.mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const { clients: clientsTable, meddpicc: meddpiccTable, meetingMinutes: meetingMinutesTable, opportunities: opportunitiesTable, keyContacts: keyContactsTable } = await import('../drizzle/schema');
+      const { desc: descFn } = await import('drizzle-orm');
+
+      // 拉取全量数据
+      const [allClients, allMeddpicc, allOpps, allContacts, allMeetings] = await Promise.all([
+        db.select().from(clientsTable),
+        db.select().from(meddpiccTable),
+        db.select().from(opportunitiesTable),
+        db.select({ clientId: keyContactsTable.clientId, buyingRole: keyContactsTable.buyingRole, relationship: keyContactsTable.relationship }).from(keyContactsTable),
+        db.select({ clientId: meetingMinutesTable.clientId, meetingDate: meetingMinutesTable.meetingDate }).from(meetingMinutesTable).orderBy(descFn(meetingMinutesTable.meetingDate)),
+      ]);
+
+      // 构建每个客户的摘要数据
+      const now = Date.now();
+      const meddpiccMap = new Map(allMeddpicc.map(m => [m.clientId, m]));
+      const lastVisitMap = new Map<number, Date | null>();
+      const visitCountMap = new Map<number, number>();
+      allMeetings.forEach(m => {
+        visitCountMap.set(m.clientId, (visitCountMap.get(m.clientId) ?? 0) + 1);
+        if (!lastVisitMap.has(m.clientId)) lastVisitMap.set(m.clientId, m.meetingDate);
+      });
+      const oppsByClient = new Map<number, typeof allOpps>();
+      allOpps.forEach(o => { const list = oppsByClient.get(o.clientId) ?? []; list.push(o); oppsByClient.set(o.clientId, list); });
+      const contactsByClient = new Map<number, typeof allContacts>();
+      allContacts.forEach(c => { const list = contactsByClient.get(c.clientId) ?? []; list.push(c); contactsByClient.set(c.clientId, list); });
+
+      const clientSummaries = allClients.map(c => {
+        const m = meddpiccMap.get(c.id);
+        const mAvg = m ? Math.round([m.metricsScore, m.economicBuyerScore, m.decisionCriteriaScore, m.decisionProcessScore, m.paperProcessScore, m.implicatePainScore, m.championScore, m.competitionScore].reduce((a, b) => a + b, 0) / 8) : 0;
+        const lastVisit = lastVisitMap.get(c.id);
+        const daysSinceVisit = lastVisit ? Math.floor((now - new Date(lastVisit).getTime()) / 86400000) : null;
+        const opps = oppsByClient.get(c.id) ?? [];
+        const contacts = contactsByClient.get(c.id) ?? [];
+        const hasChampion = contacts.some(ct => ct.buyingRole === 'Champion');
+        const hasEB = contacts.some(ct => ct.buyingRole === '经济决策人');
+        const stageChangedAt = (c as any).stageChangedAt;
+        const stageDays = stageChangedAt ? Math.floor((now - new Date(stageChangedAt).getTime()) / 86400000) : null;
+        return {
+          id: c.id, name: c.name, stage: c.stage, priority: c.priority,
+          meddpiccAvg: mAvg, daysSinceVisit, visitCount: visitCountMap.get(c.id) ?? 0,
+          oppCount: opps.length, activeOppCount: opps.filter(o => o.status === '活跃').length,
+          hasChampion, hasEB, stageDays,
+          assignedSamName: (c as any).assignedSamName ?? null,
+        };
+      });
+
+      // 构建全局统计
+      const stageDistribution = allClients.reduce((acc, c) => { acc[c.stage] = (acc[c.stage] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const activeOpps = allOpps.filter(o => o.status === '活跃');
+      const stagnantClients = clientSummaries.filter(c => c.daysSinceVisit !== null && c.daysSinceVisit > 30 && c.priority !== 'P2');
+      const noChampionIn1N = clientSummaries.filter(c => !c.hasChampion && c.stage === '进入商机');
+      const noEBIn1N = clientSummaries.filter(c => !c.hasEB && c.stage === '进入商机');
+
+      const stageLines = Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个客户`).join('\n');
+      const clientLines = clientSummaries.map(c =>
+        `**${c.name}**（${c.priority}/${c.stage}）\n  - MEDDPICC均分: ${c.meddpiccAvg}%，拜访次数: ${c.visitCount}，距上次拜访: ${c.daysSinceVisit !== null ? c.daysSinceVisit + '天' : '从未拜访'}\n  - 活跃商机: ${c.activeOppCount}个，Champion: ${c.hasChampion ? '✓已找到' : '✗未找到'}，经济决策人: ${c.hasEB ? '✓已覆盖' : '✗未覆盖'}\n  - 阶段停留: ${c.stageDays !== null ? c.stageDays + '天' : '未知'}${c.assignedSamName ? `，负责SAM: ${c.assignedSamName}` : ''}`
+      ).join('\n\n');
+      const stagnantNames = stagnantClients.map(c => c.name).join('、') || '无';
+      const noChampionNames = noChampionIn1N.map(c => c.name).join('、') || '无';
+      const noEBNames = noEBIn1N.map(c => c.name).join('、') || '无';
+
+      const prompt = `你是一位经验丰富的销售总监（AD），正在对整个销售团队的战场态势进行全局 Review。
+
+以下是当前所有客户的战场数据摘要：
+
+【阶段漏斗分布】
+${stageLines}
+
+【活跃商机概览】
+- 活跃商机总数: ${activeOpps.length}
+- 进入商机阶段客户: ${clientSummaries.filter(c => c.stage === '进入商机').length}个
+
+【各客户战场摘要】
+${clientLines}
+
+【风险预警】
+- 超30天未拜访的P0/P1客户: ${stagnantNames}
+- 进入商机但无Champion的客户: ${noChampionNames}
+- 进入商机但无经济决策人的客户: ${noEBNames}
+
+请从以下五个维度进行全局战场 Review，每个维度给出具体的数据支撑和行动建议：
+
+## 1. 整体漏斗健康度评估
+（各阶段分布是否合理？是否有阶段严重积压？转化率预判）
+
+## 2. 资源投入优先级建议
+（哪些客户值得加大投入？哪些应该降低优先级？理由是什么？）
+
+## 3. 本季度赢单风险分析
+（哪些商机最有可能赢单？哪些商机存在高风险？关键阻碍是什么？）
+
+## 4. 团队能力短板识别
+（从数据模式看，整个团队在哪个销售环节系统性偏弱？Champion 找人/MEDDPICC 某维度/拜访频率？）
+
+## 5. AD 本周三件优先行动
+（作为指挥官，你本周最应该亲自介入的三件事是什么？）
+
+请用中文回答，数据驱动，直接给出结论，不要泛泛而谈。`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const content = String(res.choices[0].message.content || "");
+      return { content, clientCount: allClients.length, activeOppCount: activeOpps.length, stagnantCount: stagnantClients.length };
     }),
   }),
 

@@ -393,3 +393,35 @@
 - [x] 生成3个模拟客户测试数据（含关键人/拜访记录/MEDDPICC/商机）
 - [x] 优化AI Review前端Markdown渲染排版（更具可读性）
 - [x] P1e：情报自动关联推送（规则初筛+AI精判双层架构）
+
+## Round 55 — 五入口 Review 体系完整实现
+
+### L2：SAM 自 Review 结果持久化
+- [ ] 数据库：新增 ai_reviews 表（clientId/opportunityId/reviewType/content/createdBy/createdAt）
+- [ ] 后端：insights.saveReview 接口（保存 Review 结果）
+- [ ] 后端：insights.getLatestReviews 接口（按 clientId 返回各类型最新 Review）
+- [ ] 前端：Review 生成后自动保存到数据库
+- [ ] 前端：Dialog 打开时加载上次 Review 结果（显示生成时间 + "重新生成"按钮）
+- [x] 数据库：新增 ai_reviews 表（clientId/opportunityId/reviewType/content/createdBy/createdAt）
+- [x] 后端：insights.saveReview 接口（保存 Review 结果）
+- [x] 后端：insights.getLatestReviews 接口（按 clientId 返回各类型最新 Review）
+- [x] 前端：Review 生成后自动保存到数据库
+- [x] 前端：Dialog 显示生成时间戳 + "加载上次结果"按钮 + "复制全文"按钮
+
+### 客户归属 SAM 字段
+- [ ] 数据库：clients 表新增 assignedSamId 字段（关联 email_users.id）
+- [ ] 后端：clients.assignSam 接口（分配/取消分配 SAM）
+- [ ] 后端：clients.list 返回 assignedSamName 字段
+- [ ] 前端：战场地图客户卡片显示负责 SAM 姓名
+- [ ] 前端：AD 指挥台支持按 SAM 筛选客户/商机
+- [x] 数据库：clients 表新增 assignedSamId/assignedSamName 字段
+- [x] 后端：clients.assignSam 接口（分配/取消分配 SAM）
+- [x] 后端：clients.listSamUsers 接口（获取用户列表）
+- [x] 前端：战场地图客户卡片显示负责 SAM 姓名，支持下拉分配
+
+### AD 指挥台全局 Review（第五入口）
+- [ ] 后端：insights.globalReview 接口（全量数据聚合 + AI 全局战场分析）
+- [ ] 前端：AD 指挥台新增"🌐 全局战场 Review"按钮和 Dialog
+- [ ] 前端：全局 Review 结果用 ReactMarkdown 渲染，包含漏斗健康度/资源配置/赢单风险
+- [x] 后端：insights.globalReview 接口（全量数据聚合 + AI 五维分析）
+- [x] 前端：AD 指挥台新增"🌐 全局 Review"按钮和 Dialog（ReactMarkdown 渲染 + 复制全文）
