@@ -7,6 +7,7 @@ import {
   Map, Radio, Zap, FileText, Shield, Users, MessageSquare, TrendingUp,
   ChevronRight, Database, Bell, Crosshair, LogOut, LayoutDashboard, Settings
 } from "lucide-react";
+import { UserCog } from "lucide-react";
 import { useEmailAuth } from "@/App";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -24,6 +25,7 @@ const navItems = [
 
 const settingsNavItems = [
   { path: "/settings", label: "系统设置", icon: Settings, desc: "RSS · 飞书 · CRM" },
+  { path: "/team", label: "团队成员管理", icon: UserCog, desc: "增删改 SAM/RSM/SA/AD" },
 ];
 
 const adminNavItems = [

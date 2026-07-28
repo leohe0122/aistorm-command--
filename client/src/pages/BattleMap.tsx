@@ -2548,6 +2548,12 @@ export default function BattleMap() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState<(typeof clients)[0] | null>(null);
 
+  // SAM 筛选
+  const [samFilter, setSamFilter] = useState<string>("all"); // "all" | samName
+  const { data: samUsers = [] } = trpc.clients.listSamUsers.useQuery();
+  const filteredClients = samFilter === "all" ? clients : clients.filter(c => (c as any).assignedSamName === samFilter);
+  const samNames = Array.from(new Set(clients.map(c => (c as any).assignedSamName).filter(Boolean)));
+
   // CSV Import state
   const [showImport, setShowImport] = useState(false);
   const [importStep, setImportStep] = useState<"upload" | "preview" | "done">("upload");
@@ -2658,6 +2664,42 @@ export default function BattleMap() {
             新增客户
           </Button>
         </div>
+      </div>
+
+      {/* SAM 筛选器 */}
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-muted-foreground font-medium">按 SAM 筛选：</span>
+        <button
+          onClick={() => setSamFilter("all")}
+          className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${samFilter === "all" ? "bg-[#00A8D6]/20 text-[#00A8D6] border-[#00A8D6]/40" : "bg-muted/30 text-muted-foreground border-border hover:border-[#00A8D6]/30 hover:text-[#00A8D6]"}`}
+        >
+          全部 ({clients.length})
+        </button>
+        {samNames.map(name => {
+          const count = clients.filter(c => (c as any).assignedSamName === name).length;
+          return (
+            <button
+              key={name}
+              onClick={() => setSamFilter(name)}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${samFilter === name ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/40" : "bg-muted/30 text-muted-foreground border-border hover:border-cyan-500/30 hover:text-cyan-400"}`}
+            >
+              {name} ({count})
+            </button>
+          );
+        })}
+        {clients.filter(c => !(c as any).assignedSamName).length > 0 && (
+          <button
+            onClick={() => setSamFilter("__unassigned__")}
+            className={`text-xs px-3 py-1 rounded-full border transition-colors font-medium ${samFilter === "__unassigned__" ? "bg-orange-500/20 text-orange-400 border-orange-500/40" : "bg-muted/30 text-muted-foreground border-border hover:border-orange-500/30 hover:text-orange-400"}`}
+          >
+            未分配 ({clients.filter(c => !(c as any).assignedSamName).length})
+          </button>
+        )}
+        {samFilter !== "all" && (
+          <span className="text-xs text-muted-foreground ml-1">
+            显示 {samFilter === "__unassigned__" ? clients.filter(c => !(c as any).assignedSamName).length : filteredClients.length} 个客户
+          </span>
+        )}
       </div>
 
       {/* Sales pipeline steps */}
@@ -2790,7 +2832,7 @@ export default function BattleMap() {
           })()
         ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-          {clients.map(client => (
+          {(samFilter === "__unassigned__" ? clients.filter(c => !(c as any).assignedSamName) : filteredClients).map(client => (
             <div key={client.id} id={`client-card-${client.id}`} className="relative group">
               <ClientCard
                 client={client}

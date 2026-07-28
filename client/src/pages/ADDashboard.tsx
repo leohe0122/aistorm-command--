@@ -453,6 +453,36 @@ export default function ADDashboard() {
       setGlobalReviewLoading(false);
     }
   };
+
+  // SAM 教练 Review（第三/四入口）
+  const [coachReviewOpen, setCoachReviewOpen] = useState(false);
+  const [coachReviewContent, setCoachReviewContent] = useState("");
+  const [coachReviewLoading, setCoachReviewLoading] = useState(false);
+  const [coachReviewSamId, setCoachReviewSamId] = useState<number | null>(null);
+  const [coachReviewSamName, setCoachReviewSamName] = useState("");
+  const [coachReviewData, setCoachReviewData] = useState<any>(null);
+  const samCoachMut = trpc.insights.samCoachReview.useMutation();
+  const { data: samUsers = [] } = trpc.clients.listSamUsers.useQuery();
+  const [samSelectorOpen, setSamSelectorOpen] = useState(false);
+
+  const handleCoachReview = async (samId: number, samName: string) => {
+    setCoachReviewSamId(samId);
+    setCoachReviewSamName(samName);
+    setCoachReviewOpen(true);
+    setCoachReviewLoading(true);
+    setCoachReviewContent("");
+    setCoachReviewData(null);
+    setSamSelectorOpen(false);
+    try {
+      const res = await samCoachMut.mutateAsync({ samId, samName });
+      setCoachReviewContent(res.content);
+      setCoachReviewData(res);
+    } catch (e: any) {
+      setCoachReviewContent("SAM 教练 Review 生成失败：" + (e?.message || "未知错误"));
+    } finally {
+      setCoachReviewLoading(false);
+    }
+  };
   const { data: saTasks } = trpc.pod.listByRole.useQuery({ role: "SA" });
   const { data: rsmTasks } = trpc.pod.listByRole.useQuery({ role: "RSM" });
 
@@ -620,10 +650,40 @@ export default function ADDashboard() {
           {globalReviewLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
           🌐 全局 Review
         </Button>
+        {/* SAM 教练 Review 按钮 */}
+        <div className="relative">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSamSelectorOpen(v => !v)}
+            className="gap-1.5 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+          >
+            <Users className="w-4 h-4" />
+            👨‍🏫 SAM 教练 Review
+          </Button>
+          {samSelectorOpen && (
+            <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[180px]">
+              <div className="px-3 py-1 text-[10px] text-muted-foreground font-medium border-b border-border mb-1">选择 SAM 进行教练 Review</div>
+              {samUsers.filter((u: any) => u.podRole === 'SAM').map((u: any) => (
+                <button key={u.id} type="button"
+                  onClick={() => handleCoachReview(u.id, u.name)}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 text-foreground flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                    {u.name.charAt(0)}
+                  </span>
+                  {u.name}
+                </button>
+              ))}
+              {samUsers.filter((u: any) => u.podRole === 'SAM').length === 0 && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">暂无 SAM 成员</div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-      {/* 全局战场 Review Dialog */}
+      {/* 全局战场 Review Dialog（含图表可视化）*/}
       <Dialog open={globalReviewOpen} onOpenChange={(o) => { if (!o) { setTimeout(() => { setGlobalReviewContent(""); setGlobalReviewLoading(false); }, 300); } setGlobalReviewOpen(o); }}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-[#00A8D6]">
               <Sparkles className="w-4 h-4" />
@@ -636,24 +696,119 @@ export default function ADDashboard() {
               <p className="text-sm text-muted-foreground">AI 正在分析全局战场态势，请稍候...</p>
             </div>
           ) : (
-            <div className="text-sm leading-relaxed">
-              <ReactMarkdown
-                components={{
-                  h1: ({children}) => <h1 className="text-lg font-bold text-[#00A8D6] mt-4 mb-2 pb-1 border-b border-[#00A8D6]/30">{children}</h1>,
-                  h2: ({children}) => <h2 className="text-base font-semibold text-cyan-300 mt-4 mb-2">{children}</h2>,
-                  h3: ({children}) => <h3 className="text-sm font-semibold text-blue-300 mt-3 mb-1">{children}</h3>,
-                  p: ({children}) => <p className="text-foreground/90 mb-2 leading-relaxed">{children}</p>,
-                  ul: ({children}) => <ul className="list-none space-y-1 mb-3">{children}</ul>,
-                  ol: ({children}) => <ol className="list-decimal list-inside space-y-1 mb-3 text-foreground/90">{children}</ol>,
-                  li: ({children}) => <li className="flex items-start gap-2 text-foreground/85"><span className="text-[#00A8D6] mt-0.5 flex-shrink-0">▸</span><span>{children}</span></li>,
-                  strong: ({children}) => <strong className="text-yellow-300 font-semibold">{children}</strong>,
-                  em: ({children}) => <em className="text-cyan-300 not-italic font-medium">{children}</em>,
-                  blockquote: ({children}) => <blockquote className="border-l-2 border-[#00A8D6] pl-3 my-2 text-muted-foreground italic">{children}</blockquote>,
-                  hr: () => <hr className="border-border/50 my-3" />,
-                }}
-              >
-                {globalReviewContent || "暂无内容"}
-              </ReactMarkdown>
+            <div className="space-y-5">
+              {/* 图表可视化区域 */}
+              {data && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* 漏斗健康度：阶段分布横向条形图 */}
+                  <div className="rounded-xl border border-border bg-muted/10 p-4">
+                    <div className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                      <BarChart3 className="w-3.5 h-3.5 text-[#00A8D6]" />
+                      漏斗阶段分布
+                    </div>
+                    {(() => {
+                      const STAGE_ORDER = ["建图","进门","定痛","找人","进入商机"];
+                      const STAGE_COLORS = ["#64748b","#3b82f6","#f59e0b","#8b5cf6","#10b981"];
+                      const stageData = STAGE_ORDER.map((s, i) => ({
+                        stage: s,
+                        count: data.clients.filter((c: any) => c.stage === s).length,
+                        fill: STAGE_COLORS[i],
+                      }));
+                      return (
+                        <ResponsiveContainer width="100%" height={160}>
+                          <BarChart data={stageData} layout="vertical" margin={{ left: 8, right: 20, top: 4, bottom: 4 }}>
+                            <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                            <YAxis type="category" dataKey="stage" tick={{ fontSize: 11, fill: '#e2e8f0' }} width={52} />
+                            <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', fontSize: 12 }} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                            <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                              {stageData.map((entry, index) => <Cell key={index} fill={entry.fill} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      );
+                    })()}
+                  </div>
+                  {/* 资源优先级：P0/P1/P2 MEDDPICC 均分对比 */}
+                  <div className="rounded-xl border border-border bg-muted/10 p-4">
+                    <div className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                      <Target className="w-3.5 h-3.5 text-amber-400" />
+                      优先级 × MEDDPICC 健康度
+                    </div>
+                    {(() => {
+                      const priorities = ["P0","P1","P2"];
+                      const PCOLORS = { P0: "#ef4444", P1: "#f59e0b", P2: "#64748b" };
+                      const prioData = priorities.map(p => {
+                        const pClients = data.clients.filter((c: any) => c.priority === p);
+                        const avg = pClients.length > 0 ? Math.round(pClients.reduce((s: number, c: any) => s + c.meddpiccAvg, 0) / pClients.length) : 0;
+                        return { priority: p, avg, count: pClients.length, fill: (PCOLORS as any)[p] };
+                      });
+                      return (
+                        <ResponsiveContainer width="100%" height={160}>
+                          <BarChart data={prioData} margin={{ left: 8, right: 20, top: 4, bottom: 4 }}>
+                            <XAxis dataKey="priority" tick={{ fontSize: 11, fill: '#e2e8f0' }} />
+                            <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                            <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', fontSize: 12 }}
+                              formatter={(v: any, n: any, p: any) => [`${v}% (${p.payload.count}个客户)`, 'MEDDPICC均分']} />
+                            <Bar dataKey="avg" radius={[4, 4, 0, 0]}>
+                              {prioData.map((entry, index) => <Cell key={index} fill={entry.fill} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      );
+                    })()}
+                  </div>
+                  {/* MEDDPICC 团队均分雷达图 */}
+                  <div className="rounded-xl border border-border bg-muted/10 p-4 md:col-span-2">
+                    <div className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                      <Activity className="w-3.5 h-3.5 text-violet-400" />
+                      团队 MEDDPICC 各维度均分（识别系统性短板）
+                    </div>
+                    {(() => {
+                      const dimKeys = ['metricsScore','economicBuyerScore','decisionCriteriaScore','decisionProcessScore','paperProcessScore','implicatePainScore','championScore','competitionScore'];
+                      const dimLabels = ['M-价值','E-决策人','D1-标准','D2-流程','P-采购','I-痛点','C1-Champion','C2-竞争'];
+                      const radarData = dimLabels.map((label, i) => {
+                        const scores = data.clients.map((c: any) => (c as any).meddpiccScores?.[dimKeys[i]] ?? 0);
+                        const avg = scores.length > 0 ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length) : 0;
+                        return { dim: label, score: avg, fullMark: 100 };
+                      });
+                      return (
+                        <ResponsiveContainer width="100%" height={200}>
+                          <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
+                            <PolarGrid stroke="#334155" />
+                            <PolarAngleAxis dataKey="dim" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                            <Radar name="团队均分" dataKey="score" stroke="#00A8D6" fill="#00A8D6" fillOpacity={0.2} />
+                            <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', fontSize: 12 }} />
+                          </RadarChart>
+                        </ResponsiveContainer>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+              {/* AI 文字分析 */}
+              <div className="text-sm leading-relaxed border-t border-border pt-4">
+                <div className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  AI 全局战场分析
+                </div>
+                <ReactMarkdown
+                  components={{
+                    h1: ({children}) => <h1 className="text-lg font-bold text-[#00A8D6] mt-4 mb-2 pb-1 border-b border-[#00A8D6]/30">{children}</h1>,
+                    h2: ({children}) => <h2 className="text-base font-semibold text-cyan-300 mt-4 mb-2">{children}</h2>,
+                    h3: ({children}) => <h3 className="text-sm font-semibold text-blue-300 mt-3 mb-1">{children}</h3>,
+                    p: ({children}) => <p className="text-foreground/90 mb-2 leading-relaxed">{children}</p>,
+                    ul: ({children}) => <ul className="list-none space-y-1 mb-3">{children}</ul>,
+                    ol: ({children}) => <ol className="list-decimal list-inside space-y-1 mb-3 text-foreground/90">{children}</ol>,
+                    li: ({children}) => <li className="flex items-start gap-2 text-foreground/85"><span className="text-[#00A8D6] mt-0.5 flex-shrink-0">▸</span><span>{children}</span></li>,
+                    strong: ({children}) => <strong className="text-yellow-300 font-semibold">{children}</strong>,
+                    em: ({children}) => <em className="text-cyan-300 not-italic font-medium">{children}</em>,
+                    blockquote: ({children}) => <blockquote className="border-l-2 border-[#00A8D6] pl-3 my-2 text-muted-foreground italic">{children}</blockquote>,
+                    hr: () => <hr className="border-border/50 my-3" />,
+                  }}
+                >
+                  {globalReviewContent || "暂无内容"}
+                </ReactMarkdown>
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -661,6 +816,114 @@ export default function ADDashboard() {
               复制全文
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => setGlobalReviewOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* SAM 教练 Review Dialog */}
+      <Dialog open={coachReviewOpen} onOpenChange={(o) => { if (!o) { setTimeout(() => { setCoachReviewContent(""); setCoachReviewData(null); }, 300); } setCoachReviewOpen(o); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-400">
+              <Users className="w-4 h-4" />
+              👨‍🏫 SAM 教练 Review · {coachReviewSamName}
+            </DialogTitle>
+          </DialogHeader>
+          {coachReviewLoading ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-muted-foreground">AI 正在分析 {coachReviewSamName} 的能力模式，请稍候...</p>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {/* 能力数据摘要卡片 */}
+              {coachReviewData && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-lg border border-border bg-muted/20 p-3 text-center">
+                    <div className="text-2xl font-bold text-[#00A8D6]">{coachReviewData.clientCount}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">负责客户数</div>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/20 p-3 text-center">
+                    <div className={`text-2xl font-bold ${coachReviewData.winRate !== null ? (coachReviewData.winRate >= 50 ? 'text-green-400' : 'text-orange-400') : 'text-muted-foreground'}`}>
+                      {coachReviewData.winRate !== null ? `${coachReviewData.winRate}%` : 'N/A'}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">赢单率</div>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/20 p-3 text-center">
+                    <div className={`text-2xl font-bold ${coachReviewData.noChampionCount > 0 ? 'text-orange-400' : 'text-green-400'}`}>{coachReviewData.noChampionCount}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">无 Champion 客户</div>
+                  </div>
+                  <div className="rounded-lg border border-border bg-muted/20 p-3 text-center">
+                    <div className={`text-2xl font-bold ${coachReviewData.stagnantCount > 0 ? 'text-red-400' : 'text-green-400'}`}>{coachReviewData.stagnantCount}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">停滞客户数</div>
+                  </div>
+                </div>
+              )}
+              {/* MEDDPICC 能力雷达图 */}
+              {coachReviewData?.dimAvgs && (
+                <div className="rounded-xl border border-border bg-muted/10 p-4">
+                  <div className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                    {coachReviewSamName} · MEDDPICC 各维度均分
+                  </div>
+                  <div className="flex gap-4">
+                    <ResponsiveContainer width="60%" height={200}>
+                      <RadarChart data={coachReviewData.dimLabels.map((label: string, i: number) => ({ dim: label.split('-')[0], score: coachReviewData.dimAvgs[i], fullMark: 100 }))}>
+                        <PolarGrid stroke="#334155" />
+                        <PolarAngleAxis dataKey="dim" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                        <Radar name="均分" dataKey="score" stroke="#10b981" fill="#10b981" fillOpacity={0.25} />
+                        <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid #334155', fontSize: 12 }} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                    <div className="flex-1 space-y-1.5">
+                      <div className="text-xs text-muted-foreground font-medium mb-2">各维度得分</div>
+                      {coachReviewData.dimLabels.map((label: string, i: number) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground w-20 flex-shrink-0">{label.split('-')[0]}</span>
+                          <div className="flex-1 h-1.5 bg-muted/40 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${coachReviewData.dimAvgs[i] >= 60 ? 'bg-green-500' : coachReviewData.dimAvgs[i] >= 30 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                              style={{ width: `${coachReviewData.dimAvgs[i]}%` }} />
+                          </div>
+                          <span className={`text-[10px] font-medium w-8 text-right ${coachReviewData.dimAvgs[i] >= 60 ? 'text-green-400' : coachReviewData.dimAvgs[i] >= 30 ? 'text-yellow-400' : 'text-red-400'}`}>
+                            {coachReviewData.dimAvgs[i]}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* AI 教练分析 */}
+              <div className="text-sm leading-relaxed border-t border-border pt-4">
+                <div className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  AI 教练诊断报告
+                </div>
+                <ReactMarkdown
+                  components={{
+                    h1: ({children}) => <h1 className="text-lg font-bold text-emerald-400 mt-4 mb-2 pb-1 border-b border-emerald-500/30">{children}</h1>,
+                    h2: ({children}) => <h2 className="text-base font-semibold text-emerald-300 mt-4 mb-2">{children}</h2>,
+                    h3: ({children}) => <h3 className="text-sm font-semibold text-cyan-300 mt-3 mb-1">{children}</h3>,
+                    p: ({children}) => <p className="text-foreground/90 mb-2 leading-relaxed">{children}</p>,
+                    ul: ({children}) => <ul className="list-none space-y-1 mb-3">{children}</ul>,
+                    ol: ({children}) => <ol className="list-decimal list-inside space-y-1 mb-3 text-foreground/90">{children}</ol>,
+                    li: ({children}) => <li className="flex items-start gap-2 text-foreground/85"><span className="text-emerald-400 mt-0.5 flex-shrink-0">▸</span><span>{children}</span></li>,
+                    strong: ({children}) => <strong className="text-yellow-300 font-semibold">{children}</strong>,
+                    em: ({children}) => <em className="text-emerald-300 not-italic font-medium">{children}</em>,
+                    blockquote: ({children}) => <blockquote className="border-l-2 border-emerald-500 pl-3 my-2 text-muted-foreground italic">{children}</blockquote>,
+                    hr: () => <hr className="border-border/50 my-3" />,
+                  }}
+                >
+                  {coachReviewContent || "暂无内容"}
+                </ReactMarkdown>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" size="sm" onClick={() => { if (coachReviewContent) { navigator.clipboard.writeText(coachReviewContent); toast.success("已复制到剪贴板"); } }}>
+              复制全文
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setCoachReviewOpen(false)}>关闭</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1132,3 +1395,4 @@ export default function ADDashboard() {
     </div>
   );
 }
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer } from "recharts";

@@ -21,6 +21,7 @@ import NotFound from "./pages/NotFound";
 import EmailLogin from "./pages/EmailLogin";
 import UserManagement from "./pages/UserManagement";
 import SystemSettings from "./pages/SystemSettings";
+import TeamManagement from "./pages/TeamManagement";
 import { trpc } from "@/lib/trpc";
 import { useState, createContext, useContext, useEffect } from "react";
 import { Spinner } from "@/components/ui/spinner";
@@ -129,3 +130,4 @@ function App() {
 }
 
 export default App;
+        <Route path="/team" component={TeamManagement} />

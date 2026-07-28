@@ -397,11 +397,6 @@
 ## Round 55 — 五入口 Review 体系完整实现
 
 ### L2：SAM 自 Review 结果持久化
-- [ ] 数据库：新增 ai_reviews 表（clientId/opportunityId/reviewType/content/createdBy/createdAt）
-- [ ] 后端：insights.saveReview 接口（保存 Review 结果）
-- [ ] 后端：insights.getLatestReviews 接口（按 clientId 返回各类型最新 Review）
-- [ ] 前端：Review 生成后自动保存到数据库
-- [ ] 前端：Dialog 打开时加载上次 Review 结果（显示生成时间 + "重新生成"按钮）
 - [x] 数据库：新增 ai_reviews 表（clientId/opportunityId/reviewType/content/createdBy/createdAt）
 - [x] 后端：insights.saveReview 接口（保存 Review 结果）
 - [x] 后端：insights.getLatestReviews 接口（按 clientId 返回各类型最新 Review）
@@ -409,19 +404,57 @@
 - [x] 前端：Dialog 显示生成时间戳 + "加载上次结果"按钮 + "复制全文"按钮
 
 ### 客户归属 SAM 字段
-- [ ] 数据库：clients 表新增 assignedSamId 字段（关联 email_users.id）
-- [ ] 后端：clients.assignSam 接口（分配/取消分配 SAM）
-- [ ] 后端：clients.list 返回 assignedSamName 字段
-- [ ] 前端：战场地图客户卡片显示负责 SAM 姓名
-- [ ] 前端：AD 指挥台支持按 SAM 筛选客户/商机
 - [x] 数据库：clients 表新增 assignedSamId/assignedSamName 字段
 - [x] 后端：clients.assignSam 接口（分配/取消分配 SAM）
 - [x] 后端：clients.listSamUsers 接口（获取用户列表）
 - [x] 前端：战场地图客户卡片显示负责 SAM 姓名，支持下拉分配
 
 ### AD 指挥台全局 Review（第五入口）
-- [ ] 后端：insights.globalReview 接口（全量数据聚合 + AI 全局战场分析）
-- [ ] 前端：AD 指挥台新增"🌐 全局战场 Review"按钮和 Dialog
-- [ ] 前端：全局 Review 结果用 ReactMarkdown 渲染，包含漏斗健康度/资源配置/赢单风险
 - [x] 后端：insights.globalReview 接口（全量数据聚合 + AI 五维分析）
 - [x] 前端：AD 指挥台新增"🌐 全局 Review"按钮和 Dialog（ReactMarkdown 渲染 + 复制全文）
+
+## Round 56 — AD Review SAM 教练视角 + SAM 筛选 + 全局 Review 图表
+
+### Mock 数据生成
+- [ ] 为现有客户分配 SAM（使用系统中已有的用户账号）
+- [ ] 确保每个 SAM 至少负责 2-3 个客户，数据分布合理
+- [x] 创建 TDH/Vivian Lu/Henry 三个 SAM 用户
+- [x] 分配客户归属（TDH→5个国内客户，Vivian→香港电讯，Henry→星展银行/马来西亚石油/泰国中央百货）
+
+### 战场地图 SAM 筛选
+- [ ] 战场地图顶部新增 SAM 筛选下拉（"全部 SAM" + 各 SAM 姓名）
+- [ ] 筛选后只显示该 SAM 负责的客户卡片
+- [ ] 筛选状态持久化（切换 Tab 不丢失）
+- [x] 战场地图顶部新增 SAM 筛选 pill 按钮（全部/TDH/Vivian Lu/Henry/未分配）
+- [x] 筛选后只显示对应 SAM 的客户卡片
+
+### AD Review SAM 教练视角（第三/四入口）
+- [ ] 后端：insights.samCoachReview 接口（跨商机聚合分析单个 SAM 的能力模式）
+- [ ] 后端分析维度：MEDDPICC 各维度均分、阶段推进速度、Champion 找人质量、赢单率 vs 团队基准
+- [ ] 前端：AD 指挥台新增"SAM 教练 Review"入口（按 SAM 选择 + 生成报告）
+- [ ] 前端：教练 Review 结果包含 SAM 能力雷达图 + AI 文字诊断 + 辅导建议
+- [x] 后端：insights.samCoachReview 接口（MEDDPICC均分/赢单率/Champion质量/拜访频率聚合分析）
+- [x] 前端：AD 指挥台新增"👨‍🏫 SAM 教练 Review"按钮 + SAM 选择器下拉
+- [x] 前端：教练 Review Dialog 含能力摘要卡片 + MEDDPICC 雷达图 + 维度进度条 + AI 诊断报告
+
+### AD 全局 Review 图表可视化
+- [ ] 漏斗健康度：各阶段客户数量横向条形图
+- [ ] 资源优先级：P0/P1/P2 客户 MEDDPICC 均分气泡图或散点图
+- [ ] MEDDPICC 团队均分：8维度雷达图（显示团队系统性短板）
+- [ ] 全局 Review Dialog 中图表与 AI 文字分析并排展示
+- [x] 漏斗健康度：各阶段横向条形图（彩色分阶段）
+- [x] 资源优先级：P0/P1/P2 MEDDPICC 均分对比柱状图
+- [x] MEDDPICC 团队均分：8维度雷达图
+- [x] 全局 Review Dialog 图表 + AI 分析并排展示（宽屏 max-w-5xl）
+
+### SAM 用户管理（增删改停用）
+- [ ] 后端：clients.createSamUser 接口（创建新 SAM/RSM 用户）
+- [ ] 后端：clients.updateSamUser 接口（改名/改角色/停用）
+- [ ] 后端：clients.deleteSamUser 接口（删除用户，自动清空其名下客户归属）
+- [ ] 前端：系统设置中新增"团队成员管理"页面（列表 + 增删改停用）
+- [ ] 前端：删除/停用 SAM 时，弹出"客户重新分配"对话框，批量将其名下客户转移给其他 SAM
+- [ ] 前端：SAM 姓名支持在管理页面直接修改（支持 TDH → 真实姓名的更名场景）
+- [x] 后端：admin.createMember / updateMember / deleteMember / getMemberClients 接口
+- [x] 前端：侧边栏新增"团队成员管理"页面（/team 路由）
+- [x] 前端：支持增删改停用，删除时弹出客户归属重分配对话框
+- [x] 前端：改名时自动同步更新 clients.assignedSamName（后端同步）

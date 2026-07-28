@@ -1720,6 +1720,150 @@ ${clientLines}
       const content = String(res.choices[0].message.content || "");
       return { content, clientCount: allClients.length, activeOppCount: activeOpps.length, stagnantCount: stagnantClients.length };
     }),
+
+    // AD Review SAM 教练视角（跨商机聚合分析单个 SAM 的能力模式）
+    samCoachReview: publicProcedure.input(z.object({
+      samId: z.number(),
+      samName: z.string(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const { clients: clientsTable, meddpicc: meddpiccTable, meetingMinutes: meetingMinutesTable, opportunities: opportunitiesTable, keyContacts: keyContactsTable } = await import('../drizzle/schema');
+      const { eq: eqFn, desc: descFn } = await import('drizzle-orm');
+
+      // 获取该 SAM 名下所有客户
+      const samClients = await db.select().from(clientsTable).where(eqFn(clientsTable.assignedSamId, input.samId));
+      if (samClients.length === 0) {
+        return { content: `${input.samName} 目前名下没有分配客户，无法生成教练 Review。`, samName: input.samName, clientCount: 0 };
+      }
+      const clientIds = samClients.map(c => c.id);
+
+      // 并行拉取所有相关数据
+      const [allMeddpicc, allOpps, allContacts, allMeetings] = await Promise.all([
+        db.select().from(meddpiccTable),
+        db.select().from(opportunitiesTable),
+        db.select({ clientId: keyContactsTable.clientId, buyingRole: keyContactsTable.buyingRole, championAccess: (keyContactsTable as any).championAccess, championWill: (keyContactsTable as any).championWill, championCredibility: (keyContactsTable as any).championCredibility }).from(keyContactsTable),
+        db.select({ clientId: meetingMinutesTable.clientId, meetingDate: meetingMinutesTable.meetingDate }).from(meetingMinutesTable).orderBy(descFn(meetingMinutesTable.meetingDate)),
+      ]);
+
+      const now = Date.now();
+      // 过滤出该 SAM 名下的数据
+      const meddpiccMap = new Map(allMeddpicc.filter(m => clientIds.includes(m.clientId)).map(m => [m.clientId, m]));
+      const oppsByClient = new Map<number, typeof allOpps>();
+      allOpps.filter(o => clientIds.includes(o.clientId)).forEach(o => { const list = oppsByClient.get(o.clientId) ?? []; list.push(o); oppsByClient.set(o.clientId, list); });
+      const contactsByClient = new Map<number, typeof allContacts>();
+      allContacts.filter(c => clientIds.includes(c.clientId)).forEach(c => { const list = contactsByClient.get(c.clientId) ?? []; list.push(c); contactsByClient.set(c.clientId, list); });
+      const visitCountMap = new Map<number, number>();
+      const lastVisitMap = new Map<number, Date | null>();
+      allMeetings.filter(m => clientIds.includes(m.clientId)).forEach(m => {
+        visitCountMap.set(m.clientId, (visitCountMap.get(m.clientId) ?? 0) + 1);
+        if (!lastVisitMap.has(m.clientId)) lastVisitMap.set(m.clientId, m.meetingDate);
+      });
+
+      // 计算 MEDDPICC 各维度均分
+      const dimKeys = ['metricsScore','economicBuyerScore','decisionCriteriaScore','decisionProcessScore','paperProcessScore','implicatePainScore','championScore','competitionScore'] as const;
+      const dimLabels = ['M-可量化价值','E-预算决策人','D1-决策标准','D2-决策流程','P-采购流程','I-痛点影响','C1-Champion','C2-竞争'];
+      const dimSums = new Array(8).fill(0);
+      const dimCounts = new Array(8).fill(0);
+      for (const [, m] of Array.from(meddpiccMap)) {
+        dimKeys.forEach((k, i) => {
+          const v = (m as any)[k];
+          if (v !== null && v !== undefined) { dimSums[i] += v; dimCounts[i]++; }
+        });
+      }
+      const dimAvgs = dimSums.map((s, i) => dimCounts[i] > 0 ? Math.round(s / dimCounts[i]) : 0);
+      const weakestDims = dimAvgs.map((v, i) => ({ label: dimLabels[i], score: v })).sort((a, b) => a.score - b.score).slice(0, 3);
+
+      // 计算阶段分布
+      const stageDistribution = samClients.reduce((acc, c) => { acc[c.stage] = (acc[c.stage] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const activeOpps = allOpps.filter(o => clientIds.includes(o.clientId) && o.status === '活跃');
+      const wonOpps = allOpps.filter(o => clientIds.includes(o.clientId) && o.status === '赢单');
+      const lostOpps = allOpps.filter(o => clientIds.includes(o.clientId) && o.status === '丢单');
+      const winRate = (wonOpps.length + lostOpps.length) > 0 ? Math.round(wonOpps.length / (wonOpps.length + lostOpps.length) * 100) : null;
+
+      // Champion 质量分析
+      const allChampions = Array.from(contactsByClient.values()).flat().filter(c => c.buyingRole === 'Champion');
+      const noChampionClients = samClients.filter(c => {
+        const contacts = contactsByClient.get(c.id) ?? [];
+        return !contacts.some(ct => ct.buyingRole === 'Champion') && c.stage !== '建图';
+      });
+
+      // 拜访频率分析
+      const avgVisitCount = clientIds.length > 0 ? (Array.from(visitCountMap.values()).reduce((a, b) => a + b, 0) / clientIds.length).toFixed(1) : '0';
+      const stagnantClients = samClients.filter(c => {
+        const lastVisit = lastVisitMap.get(c.id);
+        return (!lastVisit || Math.floor((now - new Date(lastVisit).getTime()) / 86400000) > 30) && c.priority !== 'P2';
+      });
+
+      const clientSummaryLines = samClients.map(c => {
+        const m = meddpiccMap.get(c.id);
+        const mAvg = m ? Math.round(dimKeys.reduce((s, k) => s + ((m as any)[k] ?? 0), 0) / 8) : 0;
+        const opps = oppsByClient.get(c.id) ?? [];
+        const contacts = contactsByClient.get(c.id) ?? [];
+        const hasChampion = contacts.some(ct => ct.buyingRole === 'Champion');
+        const hasEB = contacts.some(ct => ct.buyingRole === '经济决策人');
+        const lastVisit = lastVisitMap.get(c.id);
+        const daysSince = lastVisit ? Math.floor((now - new Date(lastVisit).getTime()) / 86400000) : null;
+        return `- **${c.name}**（${c.priority}/${c.stage}）MEDDPICC均分:${mAvg}% Champion:${hasChampion?'✓':'✗'} EB:${hasEB?'✓':'✗'} 拜访:${visitCountMap.get(c.id)??0}次 距上次:${daysSince!==null?daysSince+'天':'从未'} 活跃商机:${opps.filter(o=>o.status==='活跃').length}个`;
+      }).join('\n');
+
+      const prompt = `你是一位经验丰富的销售总监（AD），正在对 SAM **${input.samName}** 进行教练 Review。
+
+【${input.samName} 负责的客户概览】
+${clientSummaryLines}
+
+【MEDDPICC 各维度均分】
+${dimAvgs.map((v, i) => `- ${dimLabels[i]}: ${v}%`).join('\n')}
+最薄弱的3个维度：${weakestDims.map(d => `${d.label}(${d.score}%)`).join('、')}
+
+【阶段漏斗分布】
+${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n')}
+
+【商机数据】
+- 活跃商机: ${activeOpps.length}个
+- 赢单: ${wonOpps.length}个 | 输单: ${lostOpps.length}个 | 赢单率: ${winRate !== null ? winRate + '%' : '暂无已结案商机'}
+
+【Champion 质量】
+- 已找到 Champion 的客户: ${samClients.length - noChampionClients.length}/${samClients.length}
+- 进入商机/找人阶段但无 Champion 的客户: ${noChampionClients.map(c => c.name).join('、') || '无'}
+
+【拜访频率】
+- 平均每客户拜访次数: ${avgVisitCount}次
+- 超30天未拜访的P0/P1客户: ${stagnantClients.map(c => c.name).join('、') || '无'}
+
+请从以下四个维度对 ${input.samName} 进行教练 Review，每个维度给出具体数据支撑和辅导建议：
+
+## 1. 整体能力评估
+（基于数据，这个 SAM 的整体打单能力处于什么水平？优势和短板各是什么？）
+
+## 2. MEDDPICC 系统性短板
+（哪个维度系统性偏低？根本原因是什么？建议如何针对性提升？）
+
+## 3. Champion 找人能力诊断
+（Champion 识别和培养的质量如何？有哪些改进空间？）
+
+## 4. AD 辅导建议（本季度重点）
+（作为 AD，你建议本季度重点辅导 ${input.samName} 的哪 3 件事？每件事给出具体的行动建议。）
+
+请用中文回答，数据驱动，直接给出结论，避免泛泛而谈。`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const content2 = String(res.choices[0].message.content || "");
+      return {
+        content: content2,
+        samName: input.samName,
+        clientCount: samClients.length,
+        dimAvgs,
+        dimLabels,
+        weakestDims,
+        winRate,
+        stagnantCount: stagnantClients.length,
+        noChampionCount: noChampionClients.length,
+      };
+    }),
   }),
 
   // ── Champion Ammo ─────────────────────────────────────────────────────────
@@ -4556,6 +4700,106 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
         await db.update(emailUsers).set({ podRole: input.podRole as "AD" | "SAM" | "SA" | "RSM", role: input.role as "user" | "admin" }).where(eq(emailUsers.id, input.userId));
         return { success: true };
       }),
+
+    // 创建新团队成员（SAM/RSM/SA/AD）
+    createMember: publicProcedure.input(z.object({
+      email: z.string().email(),
+      name: z.string().min(1),
+      podRole: z.enum(["AD", "SAM", "SA", "RSM"]),
+      password: z.string().min(6).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const token = ctx.req.cookies?.email_session;
+      if (!token) throw new Error('未登录');
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { emailUsers, emailSessions } = await import('../drizzle/schema');
+      const { eq, and, gt } = await import('drizzle-orm');
+      const sessions = await db.select().from(emailSessions).where(
+        and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+      ).limit(1);
+      if (sessions.length === 0) throw new Error('会话已过期');
+      const caller = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+      if (caller.length === 0 || caller[0].role !== 'admin') throw new Error('无权限：仅管理员可操作');
+      // Check email uniqueness
+      const existing = await db.select({ id: emailUsers.id }).from(emailUsers).where(eq(emailUsers.email, input.email.toLowerCase())).limit(1);
+      if (existing.length > 0) throw new Error('该邮箱已存在');
+      const passwordHash = await bcrypt.hash(input.password || 'Aistorm2024!', 10);
+      const [result] = await db.insert(emailUsers).values({
+        email: input.email.toLowerCase(),
+        passwordHash,
+        name: input.name,
+        podRole: input.podRole,
+      });
+      return { id: (result as any).insertId, name: input.name };
+    }),
+
+    // 更新团队成员信息（改名/改角色）
+    updateMember: publicProcedure.input(z.object({
+      userId: z.number(),
+      name: z.string().min(1).optional(),
+      podRole: z.enum(["AD", "SAM", "SA", "RSM"]).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const token = ctx.req.cookies?.email_session;
+      if (!token) throw new Error('未登录');
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { emailUsers, emailSessions, clients } = await import('../drizzle/schema');
+      const { eq, and, gt } = await import('drizzle-orm');
+      const sessions = await db.select().from(emailSessions).where(
+        and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+      ).limit(1);
+      if (sessions.length === 0) throw new Error('会话已过期');
+      const caller = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+      if (caller.length === 0 || caller[0].role !== 'admin') throw new Error('无权限');
+      const updateData: any = {};
+      if (input.name) updateData.name = input.name;
+      if (input.podRole) updateData.podRole = input.podRole;
+      await db.update(emailUsers).set(updateData).where(eq(emailUsers.id, input.userId));
+      // 如果改名，同步更新 clients.assignedSamName
+      if (input.name) {
+        await db.update(clients).set({ assignedSamName: input.name }).where(eq(clients.assignedSamId, input.userId));
+      }
+      return { success: true };
+    }),
+
+    // 删除团队成员（同时清空其名下客户归属）
+    deleteMember: publicProcedure.input(z.object({
+      userId: z.number(),
+      reassignToUserId: z.number().nullable(),  // null = 清空归属
+      reassignToUserName: z.string().nullable(),
+    })).mutation(async ({ input, ctx }) => {
+      const token = ctx.req.cookies?.email_session;
+      if (!token) throw new Error('未登录');
+      const db = await getDb();
+      if (!db) throw new Error('Database unavailable');
+      const { emailUsers, emailSessions, clients } = await import('../drizzle/schema');
+      const { eq, and, gt } = await import('drizzle-orm');
+      const sessions = await db.select().from(emailSessions).where(
+        and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+      ).limit(1);
+      if (sessions.length === 0) throw new Error('会话已过期');
+      const caller = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+      if (caller.length === 0 || caller[0].role !== 'admin') throw new Error('无权限');
+      if (input.userId === caller[0].id) throw new Error('不能删除自己');
+      // 重新分配或清空客户归属
+      if (input.reassignToUserId) {
+        await db.update(clients).set({ assignedSamId: input.reassignToUserId, assignedSamName: input.reassignToUserName }).where(eq(clients.assignedSamId, input.userId));
+      } else {
+        await db.update(clients).set({ assignedSamId: null, assignedSamName: null }).where(eq(clients.assignedSamId, input.userId));
+      }
+      // 删除用户
+      await db.delete(emailUsers).where(eq(emailUsers.id, input.userId));
+      return { success: true };
+    }),
+
+    // 获取某成员名下的客户列表（删除前预览）
+    getMemberClients: publicProcedure.input(z.object({ userId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { clients } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      return db.select({ id: clients.id, name: clients.name, priority: clients.priority, stage: clients.stage }).from(clients).where(eq(clients.assignedSamId, input.userId));
+    }),
   }),
 });
 
