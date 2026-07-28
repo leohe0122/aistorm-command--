@@ -1,7 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import AIStormLogo from "@/components/AIStormLogo";
-import { useRole } from "@/contexts/RoleContext";
 import { cn } from "@/lib/utils";
 import {
   Map, Radio, Zap, FileText, Shield, Users, MessageSquare, TrendingUp,
@@ -79,7 +78,6 @@ function EmailUserFooter() {
 
 export default function CommandLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { role, setRole } = useRole();
   const { emailUser } = useEmailAuth();
 
   // Role-based visibility: AD sees everything, others see restricted items
@@ -118,26 +116,16 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Role Switcher */}
-        <div className="px-3 py-2.5 border-b border-border">
-          <div className="text-[10px] text-muted-foreground mb-2 font-semibold uppercase tracking-widest">当前角色</div>
-          <div className="flex gap-1">
-            {(["AD", "SAM", "SA", "RSM"] as const).map((r) => (
-              <button
-                key={r}
-                onClick={() => setRole(r)}
-                className={cn(
-                  "flex-1 py-1.5 text-xs font-semibold rounded border transition-all",
-                  role === r
-                    ? roleColors[r]
-                    : "bg-transparent text-muted-foreground border-border hover:border-muted-foreground"
-                )}
-              >
-                {r}
-              </button>
-            ))}
+        {emailUser && (
+          <div className="px-3 py-2 border-b border-border">
+            <div className="flex items-center gap-2">
+              <span className={cn("text-xs px-2 py-0.5 rounded border font-semibold", roleColors[emailUser.podRole ?? 'SAM'] || "bg-muted text-muted-foreground border-border")}>
+                {emailUser.podRole ?? 'SAM'}
+              </span>
+              <span className="text-[10px] text-muted-foreground leading-tight">{roleDescriptions[emailUser.podRole ?? 'SAM']}</span>
+            </div>
           </div>
-          <div className="text-[10px] text-muted-foreground mt-1.5 text-center leading-tight">{roleDescriptions[role]}</div>
-        </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 p-2">
