@@ -4849,6 +4849,10 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
       if (input.name) {
         await db.update(clients).set({ assignedSamName: input.name }).where(eq(clients.assignedSamId, input.userId));
       }
+      // 同步更新 clients.assignedRsmName
+      if (input.name) {
+        await db.update(clients).set({ assignedRsmName: input.name }).where(eq(clients.assignedRsmId, input.userId));
+      }
       return { success: true };
     }),
 
