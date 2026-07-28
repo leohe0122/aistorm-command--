@@ -2872,65 +2872,6 @@ export default function BattleMap() {
       </div>
 
       {/* P0 unvisited alert banner */}
-      {(() => {
-        const p0Unvisited = clients.filter(c => c.priority === "P0" && (c as any).visitCount === 0 && !c.isTest);
-        if (p0Unvisited.length === 0) return null;
-        const now = Date.now();
-        // Build per-client countdown info
-        const clientInfos = p0Unvisited.map(c => {
-          const planned = (c as any).plannedFirstVisitDate as number | null | undefined;
-          if (planned) {
-            const diffDays = Math.ceil((planned - now) / 86400000);
-            return { c, diffDays };
-          }
-          return { c, diffDays: null };
-        });
-        // Determine banner color: red if any overdue, amber otherwise
-        const hasOverdue = clientInfos.some(x => x.diffDays !== null && x.diffDays < 0);
-        const bannerClass = hasOverdue
-          ? "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400"
-          : "mb-4 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400";
-        return (
-          <div className={bannerClass}>
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium mb-1">{p0Unvisited.length} 个 P0 客户尚未建立拜访记录</div>
-                <div className="flex flex-wrap gap-2">
-                  {clientInfos.map(({ c, diffDays }) => {
-                    let label: string;
-                    let labelClass: string;
-                    if (diffDays === null) {
-                      label = "未拜访";
-                      labelClass = "text-xs text-amber-400/70";
-                    } else if (diffDays > 0) {
-                      label = `距计划拜访还有 ${diffDays} 天`;
-                      labelClass = "text-xs text-cyan-400";
-                    } else if (diffDays === 0) {
-                      label = "计划拜访日就是今天";
-                      labelClass = "text-xs text-orange-400 font-semibold";
-                    } else {
-                      label = `已超计划拜访日 ${Math.abs(diffDays)} 天`;
-                      labelClass = "text-xs text-red-400 font-semibold";
-                    }
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={() => document.getElementById(`client-card-${c.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/20 hover:bg-black/30 transition-colors"
-                      >
-                        <span className="text-sm font-semibold underline underline-offset-2">{c.name}</span>
-                        <span className={labelClass}>{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <span className="ml-auto text-xs opacity-60 flex-shrink-0 mt-0.5">建议尽快安排首次拜访</span>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Client cards */}
       {isLoading ? (
