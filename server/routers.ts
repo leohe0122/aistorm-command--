@@ -2,6 +2,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { COOKIE_NAME } from "@shared/const";
+import { getProductLinePrompt, PRODUCT_LINE_VALUES } from "@shared/productLines";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
@@ -2295,7 +2296,6 @@ ${contactList}
         const { productDocs } = await import('../drizzle/schema');
         const { isNull, or, eq } = await import('drizzle-orm');
         const { invokeLLM } = await import('./_core/llm');
-        const { getProductLinePrompt, PRODUCT_LINE_VALUES } = await import('../shared/productLines');
         const docs = await db.select({
           id: productDocs.id,
           title: productDocs.title,
