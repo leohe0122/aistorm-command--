@@ -83,15 +83,22 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
   // Role-based visibility: AD sees everything, others see restricted items
   const isAD = !emailUser || emailUser.podRole === 'AD';
 
-  const visibleNavItems = navItems.filter(item => {
-    if (item.path === '/dashboard') return isAD;
-    return true;
-  });
+  // All items are shown; AD-only items are locked for non-AD users
+  const visibleNavItems = navItems;
+  const visibleSettingsNavItems = settingsNavItems;
 
-  const visibleSettingsNavItems = settingsNavItems.filter(item => {
-    if (item.path === '/settings' || item.path === '/team') return isAD;
-    return true;
-  });
+  const AD_ONLY_PATHS = ['/dashboard'];
+  const ADMIN_ONLY_PATHS = ['/settings', '/team', '/admin/users'];
+
+  const getItemLock = (path: string): { locked: boolean; message: string } | null => {
+    if (!isAD && AD_ONLY_PATHS.includes(path)) {
+      return { locked: true, message: '你的真实输入，是 AD 读懂你的战场、给你精准支持的唯一依据。' };
+    }
+    if (!isAD && ADMIN_ONLY_PATHS.includes(path)) {
+      return { locked: true, message: '此功能仅限管理员使用' };
+    }
+    return null;
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -132,6 +139,22 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.path || (location === "/" && item.path === "/dashboard");
+            const lock = getItemLock(item.path);
+            if (lock) {
+              return (
+                <div key={item.path}
+                  onClick={() => toast(lock.message, { icon: '🔒', duration: 4000 })}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg mb-0.5 cursor-pointer transition-all opacity-40 hover:opacity-60 border border-transparent"
+                >
+                  <Icon className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium leading-tight text-muted-foreground">{item.label}</div>
+                    <div className="text-[10px] text-muted-foreground/60 leading-tight mt-0.5">{item.desc}</div>
+                  </div>
+                  <span className="text-[9px] text-muted-foreground/50 flex-shrink-0">🔒</span>
+                </div>
+              );
+            }
             return (
               <Link key={item.path} href={item.path}>
                 <div className={cn(
@@ -161,6 +184,22 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           {visibleSettingsNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.path;
+            const lock = getItemLock(item.path);
+            if (lock) {
+              return (
+                <div key={item.path}
+                  onClick={() => toast(lock.message, { icon: '🔒', duration: 4000 })}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg mb-0.5 cursor-pointer transition-all opacity-40 hover:opacity-60 border border-transparent"
+                >
+                  <Icon className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium leading-tight text-muted-foreground">{item.label}</div>
+                    <div className="text-[10px] text-muted-foreground/60 leading-tight mt-0.5">{item.desc}</div>
+                  </div>
+                  <span className="text-[9px] text-muted-foreground/50 flex-shrink-0">🔒</span>
+                </div>
+              );
+            }
             return (
               <Link key={item.path} href={item.path}>
                 <div className={cn(
