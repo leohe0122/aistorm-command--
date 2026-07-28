@@ -2311,7 +2311,7 @@ ${contactList}
               ? doc.extractedText.slice(0, 1500)
               : `文件名：${doc.filename || doc.title}`;
             const prompt = `你是亚信科技/亚信安全产品专家。请根据文档信息判断该文档属于哪个产品线。\n\n【可选产品线列表】\n${productLinePromptText}\n\n【文档标题】${doc.title}\n【文档内容摘录】\n${textSnippet}\n\n只返回产品线的 value 值（如：AI XDR、TrustOne），不含其他文字。无法判断返回"未知"。`;
-            const result = await invokeLLM({ messages: [{ role: 'user', content: prompt }], maxTokens: 50 });
+            const result = await invokeLLM({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }], maxTokens: 50 });
             const rawText = result.choices?.[0]?.message?.content;
             const productLine = (typeof rawText === 'string' ? rawText : '').trim().replace(/["""'']/g, '').trim();
             if ((PRODUCT_LINE_VALUES as string[]).includes(productLine)) {
