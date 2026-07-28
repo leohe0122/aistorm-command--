@@ -25,6 +25,7 @@ import TeamManagement from "./pages/TeamManagement";
 import { trpc } from "@/lib/trpc";
 import { useState, createContext, useContext, useEffect } from "react";
 import { Spinner } from "@/components/ui/spinner";
+import { RefreshCw } from "lucide-react";
 
 // ── Email Auth Context ─────────────────────────────────────────────────────
 interface EmailUser {
@@ -47,6 +48,39 @@ export const EmailAuthContext = createContext<EmailAuthContextType>({
 
 export function useEmailAuth() {
   return useContext(EmailAuthContext);
+}
+
+// ── PWA Update Banner ──────────────────────────────────────────────────────
+function PWAUpdateBanner() {
+  const [showUpdate, setShowUpdate] = useState(false);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'SW_UPDATED') {
+        setShowUpdate(true);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, []);
+
+  if (!showUpdate) return null;
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[9999] flex items-center justify-center gap-3 px-4 py-2.5 text-sm font-medium"
+      style={{ background: "linear-gradient(90deg, #00A8D6 0%, #1B6FBF 100%)", color: "#fff" }}>
+      <RefreshCw className="w-4 h-4 animate-spin" />
+      <span>发现新版本</span>
+      <button
+        onClick={() => window.location.reload()}
+        className="ml-2 px-3 py-0.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors font-semibold text-xs border border-white/30"
+      >
+        立即更新
+      </button>
+      <button onClick={() => setShowUpdate(false)} className="ml-1 opacity-60 hover:opacity-100 transition-opacity text-xs">✕</button>
+    </div>
+  );
 }
 
 // ── Auth Gate ──────────────────────────────────────────────────────────────
@@ -120,6 +154,7 @@ function App() {
         <RoleProvider>
           <TooltipProvider>
             <Toaster />
+            <PWAUpdateBanner />
             <AuthGate>
               <Router />
             </AuthGate>
