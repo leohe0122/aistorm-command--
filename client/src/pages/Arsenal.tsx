@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
@@ -14,8 +14,9 @@ import {
   FileText, Upload, Trash2, Search, Plus, Bot, Wand2,
   FileDown, ChevronDown, ChevronUp, Copy, Check,
   ShoppingCart, X, Calculator, Package, Swords, Shield,
-  Eye, Sparkles, ExternalLink, Loader2
+  Eye, Sparkles, ExternalLink, Loader2, Tag
 } from "lucide-react";
+import { PRODUCT_LINE_GROUPS } from '../../../shared/productLines';
 import KillSheetsTab from "./KillSheetsTab";
 import ChampionAmmo from "./ChampionAmmo";
 
@@ -60,6 +61,13 @@ function ProductDocsTab() {
   const deleteMut = trpc.productDocs.delete.useMutation({
     onSuccess: () => { toast.success("已删除"); refetch(); },
     onError: (e: any) => toast.error("删除失败: " + e.message),
+  });
+  const autoTagMut = trpc.productDocs.autoTagProductLine.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`产品线识别完成：成功 ${data.tagged}/${data.total} 份，失败 ${data.failed} 份`);
+      refetch();
+    },
+    onError: (e: any) => toast.error("AI识别失败: " + e.message),
   });
   const extractTextBatchMut = trpc.productDocs.extractTextBatch.useMutation({
     onSuccess: (data: any) => {
@@ -177,6 +185,10 @@ function ProductDocsTab() {
         <Button variant="outline" onClick={() => extractTextBatchMut.mutate()} disabled={extractTextBatchMut.isPending} className="gap-2 text-xs">
           {extractTextBatchMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
           {extractTextBatchMut.isPending ? "提取中..." : "批量提取文字"}
+        </Button>
+        <Button variant="outline" onClick={() => autoTagMut.mutate()} disabled={autoTagMut.isPending} className="gap-2 text-xs">
+          {autoTagMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Tag className="h-3 w-3" />}
+          {autoTagMut.isPending ? "识别中..." : "AI识别产品线"}
         </Button>
       </div>
 
@@ -301,7 +313,19 @@ function ProductDocsTab() {
             </div>
             <div>
               <label className="text-sm font-medium">产品线</label>
-              <Input className="mt-1" value={uploadForm.productLine} onChange={e => setUploadForm(f => ({ ...f, productLine: e.target.value }))} placeholder="例：TrustOne Suite" />
+              <Select value={uploadForm.productLine} onValueChange={v => setUploadForm(f => ({ ...f, productLine: v }))}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="选择产品线..." /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PRODUCT_LINE_GROUPS).map(([group, items]) => (
+                    <SelectGroup key={group}>
+                      <SelectLabel>{group}</SelectLabel>
+                      {(items as any[]).map((item: any) => (
+                        <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="text-sm font-medium">描述</label>

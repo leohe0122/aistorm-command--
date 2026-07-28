@@ -2287,6 +2287,47 @@ ${contactList}
         return { total: docs.length, processed, failed };
       }),
     // 删除产品文档
+    // AI 批量识别产品线
+    autoTagProductLine: protectedProcedure
+      .mutation(async () => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const { isNull, or, eq } = await import('drizzle-orm');
+        const { invokeLLM } = await import('./_core/llm');
+        const { getProductLinePrompt, PRODUCT_LINE_VALUES } = await import('../shared/productLines');
+        const docs = await db.select({
+          id: productDocs.id,
+          title: productDocs.title,
+          filename: productDocs.filename,
+          extractedText: productDocs.extractedText,
+        }).from(productDocs).where(or(isNull(productDocs.productLine), eq(productDocs.productLine, '')));
+        const productLinePromptText = getProductLinePrompt();
+        let tagged = 0;
+        let failed = 0;
+        for (const doc of docs) {
+          try {
+            const textSnippet = doc.extractedText
+              ? doc.extractedText.slice(0, 1500)
+              : `文件名：${doc.filename || doc.title}`;
+            const prompt = `你是亚信科技/亚信安全产品专家。请根据文档信息判断该文档属于哪个产品线。\n\n【可选产品线列表】\n${productLinePromptText}\n\n【文档标题】${doc.title}\n【文档内容摘录】\n${textSnippet}\n\n只返回产品线的 value 值（如：AI XDR、TrustOne），不含其他文字。无法判断返回"未知"。`;
+            const result = await invokeLLM({ messages: [{ role: 'user', content: prompt }], maxTokens: 50 });
+            const rawText = result.choices?.[0]?.message?.content;
+            const productLine = (typeof rawText === 'string' ? rawText : '').trim().replace(/["""'']/g, '').trim();
+            if ((PRODUCT_LINE_VALUES as string[]).includes(productLine)) {
+              await db.update(productDocs).set({ productLine }).where(eq(productDocs.id, doc.id));
+              tagged++;
+            } else {
+              failed++;
+            }
+          } catch (e: any) {
+            console.error('[autoTagProductLine] doc', doc.id, e.message);
+            failed++;
+          }
+        }
+        return { total: docs.length, tagged, failed };
+      }),
+
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
