@@ -105,6 +105,7 @@ function Router() {
         <Route path="/settings" component={SystemSettings} />
         <Route path="/arsenal" component={Arsenal} />
         <Route path="/admin/users" component={UserManagement} />
+        <Route path="/team" component={TeamManagement} />
         <Route component={NotFound} />
       </Switch>
     </CommandLayout>
@@ -130,4 +131,3 @@ function App() {
 }
 
 export default App;
-        <Route path="/team" component={TeamManagement} />
