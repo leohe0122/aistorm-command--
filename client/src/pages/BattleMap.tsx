@@ -1582,16 +1582,16 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                       className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-muted-foreground">
                       — 取消分配
                     </button>
-                    {samUsers.filter((u: any) => u.podRole === 'RSM').map((u: any) => (
+                    {samUsers.map((u: any) => (
                       <button key={u.id} type="button"
                         onClick={() => assignRsmMut.mutate({ clientId: client.id, rsmId: u.id, rsmName: u.name })}
                         className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground flex items-center gap-2">
-                        <span className="text-[10px] px-1 py-0.5 rounded font-medium bg-emerald-500/20 text-emerald-400">{u.podRole}</span>
+                        <span className={`text-[10px] px-1 py-0.5 rounded font-medium ${u.podRole === 'SAM' ? 'bg-cyan-500/20 text-cyan-400' : u.podRole === 'RSM' ? 'bg-emerald-500/20 text-emerald-400' : u.podRole === 'AD' ? 'bg-amber-500/20 text-amber-400' : 'bg-muted text-muted-foreground'}`}>{u.podRole}</span>
                         {u.name}
                       </button>
                     ))}
-                    {samUsers.filter((u: any) => u.podRole === 'RSM').length === 0 && (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">暂无 RSM 成员，请先在团队管理中添加</div>
+                    {samUsers.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">暂无团队成员</div>
                     )}
                   </div>
                 )}

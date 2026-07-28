@@ -26,6 +26,7 @@ import {
   Clock,
 } from "lucide-react";
 import { Download } from "lucide-react";
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -1506,7 +1507,137 @@ export default function ADDashboard() {
           </div>
         );
       })()}
+
+      {/* AD 辅导跟进面板 */}
+      <CoachingFollowUpPanel />
     </div>
   );
 }
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer } from "recharts";
+
+function CoachingFollowUpPanel() {
+  const utils = trpc.useUtils();
+  const { data: allActions = [], isLoading } = trpc.insights.listAllCoachingActions.useQuery();
+  const deleteMut = trpc.insights.deleteCoachingAction.useMutation({
+    onSuccess: () => { utils.insights.listAllCoachingActions.invalidate(); toast.success("已删除"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Group by SAM
+  const bySam = allActions.reduce((acc: Record<string, any[]>, a: any) => {
+    const key = a.samName || "未知";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(a);
+    return acc;
+  }, {});
+
+  const samNames = Object.keys(bySam);
+  const totalCount = allActions.length;
+  const completedCount = allActions.filter((a: any) => a.isCompleted).length;
+  const overdueCount = allActions.filter((a: any) => !a.isCompleted && a.dueDate && new Date(a.dueDate) < new Date()).length;
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="p-4 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CheckSquare className="w-4 h-4 text-emerald-400" />
+          <h3 className="font-semibold text-sm text-foreground">辅导跟进面板</h3>
+          <span className="text-[10px] text-muted-foreground font-normal">AD 下发的辅导建议执行进度</span>
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-muted-foreground">总计 <strong className="text-foreground">{totalCount}</strong> 条</span>
+          <span className="text-green-400">完成 {completedCount}</span>
+          {overdueCount > 0 && <span className="text-red-400 font-medium">超期 {overdueCount}</span>}
+          {totalCount > 0 && (
+            <div className="flex items-center gap-1.5">
+              <div className="w-24 h-1.5 bg-muted/40 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.round(completedCount / totalCount * 100)}%` }} />
+              </div>
+              <span className="text-emerald-400 font-medium">{Math.round(completedCount / totalCount * 100)}%</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="p-4">
+        {isLoading ? (
+          <div className="flex items-center gap-2 py-4 text-muted-foreground text-sm">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />加载中...
+          </div>
+        ) : allActions.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground">
+            <CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-xs">暂无下发的辅导建议，在 SAM 教练 Review 中点击"下发辅导建议"开始</p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {samNames.map(samName => {
+              const actions = bySam[samName];
+              const done = actions.filter((a: any) => a.isCompleted).length;
+              const overdue = actions.filter((a: any) => !a.isCompleted && a.dueDate && new Date(a.dueDate) < new Date()).length;
+              const rate = Math.round(done / actions.length * 100);
+              return (
+                <div key={samName} className="space-y-2">
+                  {/* SAM 标题行 */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                        {samName.charAt(0)}
+                      </span>
+                      <span className="text-sm font-semibold text-foreground">{samName}</span>
+                      <span className="text-xs text-muted-foreground">{done}/{actions.length} 完成</span>
+                      {overdue > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-medium">{overdue} 超期</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-20 h-1.5 bg-muted/40 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${rate}%` }} />
+                      </div>
+                      <span className={`text-xs font-medium ${rate === 100 ? 'text-emerald-400' : rate >= 50 ? 'text-yellow-400' : 'text-orange-400'}`}>{rate}%</span>
+                    </div>
+                  </div>
+                  {/* Action Items 列表 */}
+                  <div className="space-y-1.5 pl-8">
+                    {actions.map((action: any) => {
+                      const isOverdue = !action.isCompleted && action.dueDate && new Date(action.dueDate) < new Date();
+                      return (
+                        <div key={action.id} className={`flex items-start gap-2 p-2.5 rounded-lg border transition-colors ${action.isCompleted ? 'border-border/30 bg-muted/5 opacity-60' : isOverdue ? 'border-red-500/30 bg-red-500/5' : 'border-border bg-muted/10'}`}>
+                          <div className="flex-shrink-0 mt-0.5">
+                            {action.isCompleted
+                              ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+                              : <div className={`w-3.5 h-3.5 rounded-full border-2 ${isOverdue ? 'border-red-400' : 'border-muted-foreground/40'}`} />
+                            }
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-xs font-medium leading-tight ${action.isCompleted ? 'line-through text-foreground/50' : 'text-foreground'}`}>
+                              {action.title}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {action.isCompleted && action.completedAt && (
+                                <span className="text-[10px] text-green-400/70">完成于 {new Date(action.completedAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}</span>
+                              )}
+                              {!action.isCompleted && action.dueDate && (
+                                <span className={`text-[10px] ${isOverdue ? 'text-red-400 font-medium' : 'text-muted-foreground/60'}`}>
+                                  {isOverdue ? '⚠ 超期 · ' : '截止 '}
+                                  {new Date(action.dueDate).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-muted-foreground/40">
+                                {new Date(action.createdAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })} 下发
+                              </span>
+                            </div>
+                          </div>
+                          <button type="button" onClick={() => deleteMut.mutate({ id: action.id })}
+                            className="flex-shrink-0 text-muted-foreground/30 hover:text-red-400 transition-colors">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

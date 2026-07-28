@@ -3,7 +3,8 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Users, Plus, CheckCircle2, Circle, MessageSquare, Clock, Zap, TrendingUp, AlertTriangle, ChevronRight, X, Trash2, LayoutGrid, List, Network, Target } from "lucide-react";
+import { Users, Plus, CheckCircle2, Circle, MessageSquare, Clock, Zap, TrendingUp, AlertTriangle, ChevronRight, X, Trash2, LayoutGrid, List, Network, Target, BookOpen, RefreshCw } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDroppable } from "@dnd-kit/core";
 import { useDraggable } from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
@@ -517,6 +518,9 @@ export default function PodCenter() {
   const { role } = useRole();
   const [location] = useLocation();
 
+  // 当前登录用户信息（用于查询自己的辅导建议）
+  const { data: me } = trpc.auth.me.useQuery();
+
   // Parse oppId/oppName from URL query params for red-dot jump filter
   const urlParams = useMemo(() => {
     const search = window.location.search;
@@ -578,6 +582,168 @@ export default function PodCenter() {
       <div className="mt-5">
         <WeeklyReportSection />
       </div>
+
+      {/* SAM 待办辅导建议 */}
+      <div className="mt-5">
+        <CoachingActionsSection currentUserId={me?.id} currentUserName={me?.name ?? undefined} />
+      </div>
+    </div>
+  );
+}
+
+function CoachingActionsSection({ currentUserId, currentUserName }: { currentUserId?: number; currentUserName?: string }) {
+  const utils = trpc.useUtils();
+  const [detailItem, setDetailItem] = useState<any>(null);
+
+  // 如果有当前用户 ID，查询该用户的辅导建议；否则查询全部（AD 视角）
+  const { data: myActions = [], isLoading } = trpc.insights.listCoachingActions.useQuery(
+    { samId: currentUserId ?? 0 },
+    { enabled: !!currentUserId }
+  );
+
+  const completeMut = trpc.insights.completeCoachingAction.useMutation({
+    onSuccess: () => {
+      utils.insights.listCoachingActions.invalidate();
+      toast.success("已标记完成 ✓");
+    },
+    onError: (e) => toast.error("操作失败：" + e.message),
+  });
+
+  const pending = myActions.filter((a: any) => !a.isCompleted);
+  const completed = myActions.filter((a: any) => a.isCompleted);
+
+  if (!currentUserId) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="p-4 border-b border-border">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-emerald-400" />
+            <h3 className="font-semibold text-sm text-foreground">📋 待办辅导建议</h3>
+            <span className="text-[10px] text-muted-foreground font-normal">来自 AD 的辅导 Action Items</span>
+          </div>
+          {pending.length > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 font-medium">
+              {pending.length} 条待完成
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="p-4">
+        {isLoading ? (
+          <div className="flex items-center gap-2 py-4 text-muted-foreground text-sm">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            加载中...
+          </div>
+        ) : myActions.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground">
+            <BookOpen className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-xs">暂无辅导建议，AD 下发后将在此显示</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* 待完成 */}
+            {pending.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">待完成 ({pending.length})</div>
+                {pending.map((action: any) => (
+                  <div key={action.id} className="flex items-start gap-3 p-3 rounded-lg border border-border hover:border-emerald-500/30 transition-colors group bg-muted/10">
+                    <button
+                      type="button"
+                      onClick={() => completeMut.mutate({ id: action.id })}
+                      disabled={completeMut.isPending}
+                      className="mt-0.5 flex-shrink-0 w-4 h-4 rounded-full border-2 border-muted-foreground/40 hover:border-emerald-400 hover:bg-emerald-400/10 transition-colors"
+                      title="标记为已完成"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium text-foreground leading-tight">{action.title}</p>
+                        {action.dueDate && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 font-medium ${new Date(action.dueDate) < new Date() ? 'bg-red-500/20 text-red-400' : 'bg-muted/40 text-muted-foreground'}`}>
+                            {new Date(action.dueDate) < new Date() ? '⚠ 已超期' : ''}
+                            {new Date(action.dueDate).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+                      {action.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{action.description}</p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] text-muted-foreground/60">
+                          {action.createdBy ? `由 ${action.createdBy} 下发` : ''}
+                          · {new Date(action.createdAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}
+                        </span>
+                        {action.description && (
+                          <button type="button" onClick={() => setDetailItem(action)}
+                            className="text-[10px] text-primary/60 hover:text-primary transition-colors">
+                            查看详情
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 已完成 */}
+            {completed.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">已完成 ({completed.length})</div>
+                {completed.map((action: any) => (
+                  <div key={action.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/5 opacity-60">
+                    <CheckCircle2 className="mt-0.5 flex-shrink-0 w-4 h-4 text-green-400" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground/70 line-through leading-tight">{action.title}</p>
+                      <span className="text-[10px] text-muted-foreground/50">
+                        完成于 {action.completedAt ? new Date(action.completedAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) : '—'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 详情 Dialog */}
+      <Dialog open={!!detailItem} onOpenChange={(o) => { if (!o) setDetailItem(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-emerald-400 flex items-center gap-2">
+              <BookOpen className="w-4 h-4" />
+              辅导建议详情
+            </DialogTitle>
+          </DialogHeader>
+          {detailItem && (
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">建议标题</div>
+                <p className="text-sm font-medium text-foreground">{detailItem.title}</p>
+              </div>
+              {detailItem.description && (
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">具体内容</div>
+                  <p className="text-sm text-foreground/80 leading-relaxed">{detailItem.description}</p>
+                </div>
+              )}
+              <div className="flex items-center gap-4 pt-2 border-t border-border/50 text-xs text-muted-foreground">
+                {detailItem.dueDate && <span>截止：{new Date(detailItem.dueDate).toLocaleDateString("zh-CN")}</span>}
+                {detailItem.createdBy && <span>下发人：{detailItem.createdBy}</span>}
+                <span>下发时间：{new Date(detailItem.createdAt).toLocaleDateString("zh-CN")}</span>
+              </div>
+              {!detailItem.isCompleted && (
+                <button type="button"
+                  onClick={() => { completeMut.mutate({ id: detailItem.id }); setDetailItem(null); }}
+                  className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors">
+                  ✓ 标记为已完成
+                </button>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
