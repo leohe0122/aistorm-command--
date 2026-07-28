@@ -2289,6 +2289,31 @@ ${contactList}
       }),
     // 删除产品文档
     // AI 批量识别产品线
+    // 修改文档产品线（文件夹归档）
+    updateProductLine: protectedProcedure
+      .input(z.object({ id: z.number(), productLine: z.string() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.update(productDocs).set({ productLine: input.productLine }).where(eq(productDocs.id, input.id));
+        return { success: true };
+      }),
+
+    // 删除产品文档（实际delete接口）
+    deleteDoc: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.delete(productDocs).where(eq(productDocs.id, input.id));
+        return { success: true };
+      }),
+
+    // AI 批量识别产品线
     autoTagProductLine: protectedProcedure
       .mutation(async () => {
         const db = await getDb();

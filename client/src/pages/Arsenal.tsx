@@ -27,260 +27,314 @@ function ChampionAmmoTab() {
 
 // ─── 产品文档仓库 Tab ────────────────────────────────────────────────────────
 
-function ProductDocsTab() {
-  const [search, setSearch] = useState("");
-  const [filterLine, setFilterLine] = useState<string>("all");
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadDialog, setUploadDialog] = useState(false);
-  const [uploadForm, setUploadForm] = useState({ title: "", description: "", productLine: "", tags: "" });
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [summaryDocId, setSummaryDocId] = useState<number | null>(null);
-  const [summaries, setSummaries] = useState<Record<number, any>>({});
-
-  const { data: docs = [], refetch } = trpc.productDocs.list.useQuery(undefined);
-  const confirmUploadMut = trpc.productDocs.confirmUpload.useMutation({
-    onSuccess: (data: any) => {
-      toast.success("文档上传成功，AI 正在解析...");
-      refetch();
-      setSelectedFile(null);
-      setUploadForm({ title: "", description: "", productLine: "", tags: "" });
-      setTimeout(() => setUploadDialog(false), 50);
-      // 自动触发 AI 摘要
-      if (data?.id) {
-        setSummaryDocId(data.id);
-        extractSummaryMut.mutate({ id: data.id });
-      }
-    },
-    onError: (e: any) => toast.error("上传失败: " + e.message),
-  });
-  const deleteMut = trpc.productDocs.delete.useMutation({
-    onSuccess: () => { toast.success("已删除"); refetch(); },
-    onError: (e: any) => toast.error("删除失败: " + e.message),
-  });
-  const autoTagMut = trpc.productDocs.autoTagProductLine.useMutation({
-    onSuccess: (data: any) => {
-      toast.success(`产品线识别完成：成功 ${data.tagged}/${data.total} 份，失败 ${data.failed} 份`);
-      refetch();
-    },
-    onError: (e: any) => toast.error("AI识别失败: " + e.message),
-  });
-  const extractTextBatchMut = trpc.productDocs.extractTextBatch.useMutation({
-    onSuccess: (data: any) => {
-      toast.success(`文字提取完成：成功 ${data.processed}/${data.total} 份，失败 ${data.failed} 份`);
-      refetch();
-    },
-    onError: (e: any) => toast.error("批量提取失败: " + e.message),
-  });
-  const extractSummaryMut = trpc.productDocs.extractSummary.useMutation({
-    onSuccess: (data: any, variables: any) => {
-      setSummaries(prev => ({ ...prev, [variables.id]: data }));
-      setSummaryDocId(null);
-      toast.success("AI 摘要提取完成");
-    },
-    onError: () => { setSummaryDocId(null); },
-  });
-  const getSignedUrlMut = trpc.productDocs.getSignedUrl.useMutation({
-    onSuccess: (data: any) => {
-      // 用 Google Docs Viewer 渲染，支持 PDF/PPT/Word/Excel
-      const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(data.url)}&embedded=true`;
-      setPreviewUrl(viewerUrl);
-      setPreviewLoading(false);
-    },
-    onError: () => {
-      setPreviewLoading(false);
-      toast.error("无法获取预览链接");
-    },
-  });
-
-  const handlePreview = (doc: any) => {
-    setPreviewDoc(doc);
-    setPreviewUrl(null);
-    setPreviewLoading(true);
-    setPreviewOpen(true);
-    getSignedUrlMut.mutate({ fileKey: doc.fileKey });
-  };
-
-  const handleUpload = () => {
-    if (!selectedFile || !uploadForm.title) return;
-    setUploading(true);
-    setUploadProgress(0);
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-    const xhr = new XMLHttpRequest();
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = async () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const uploadResult = JSON.parse(xhr.responseText);
-          const { fileKey, fileUrl, extractedText } = uploadResult;
-          await confirmUploadMut.mutateAsync({
-            title: uploadForm.title,
-            description: uploadForm.description || undefined,
-            productLine: uploadForm.productLine || undefined,
-            tags: uploadForm.tags ? uploadForm.tags.split(",").map((t: string) => t.trim()).filter(Boolean) : undefined,
-            filename: selectedFile.name,
-            mimeType: selectedFile.type || "application/octet-stream",
-            fileKey,
-            fileUrl,
-            fileSize: selectedFile.size,
-            extractedText: extractedText || undefined,
-          });
-        } catch (err: any) {
-          toast.error("上传失败: " + (err.message || "未知错误"));
-        }
-      } else {
-        try { const e = JSON.parse(xhr.responseText); toast.error("上传失败: " + (e.error || xhr.statusText)); }
-        catch { toast.error("上传失败: " + xhr.statusText); }
-      }
-      setUploading(false);
-      setUploadProgress(0);
-    };
-    xhr.onerror = () => { toast.error("网络错误，上传失败"); setUploading(false); setUploadProgress(0); };
-    xhr.open("POST", "/api/upload-doc");
-    xhr.send(formData);
-  };
-
-  const filtered = (docs as any[]).filter((d) => {
-    const matchLine = filterLine === "all" || d.productLine === filterLine;
-    const matchSearch = !search || d.title.toLowerCase().includes(search.toLowerCase()) || (d.description || "").toLowerCase().includes(search.toLowerCase());
-    return matchLine && matchSearch;
-  });
-  const productLines = Array.from(new Set((docs as any[]).map((d) => d.productLine).filter(Boolean))) as string[];
-
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return "";
-    if (bytes < 1024) return bytes + "B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + "KB";
-    return (bytes / 1024 / 1024).toFixed(1) + "MB";
-  };
+// 文件夹视图的单个文档卡片（紧凑版）
+function DocCard({ doc, onPreview, onDelete, onMoveToFolder, refetch }: {
+  doc: any; onPreview: (doc: any) => void; onDelete: (id: number) => void;
+  onMoveToFolder: (docId: number, targetLine: string) => void; refetch: () => void;
+}) {
+  const [dragging, setDragging] = useState(false);
   const getMimeIcon = (mime?: string) => {
     if (!mime) return "📄";
     if (mime.includes("pdf")) return "📕";
     if (mime.includes("word") || mime.includes("docx")) return "📘";
     if (mime.includes("presentation") || mime.includes("pptx")) return "📊";
+    if (mime.includes("spreadsheet") || mime.includes("excel")) return "📗";
+    if (mime.includes("video")) return "🎬";
     return "📄";
+  };
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return "";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + "KB";
+    return (bytes / 1024 / 1024).toFixed(1) + "MB";
+  };
+  return (
+    <div
+      draggable
+      onDragStart={e => { e.dataTransfer.setData("docId", String(doc.id)); setDragging(true); }}
+      onDragEnd={() => setDragging(false)}
+      className={`group flex items-center gap-2 px-3 py-2 rounded-lg border bg-card hover:bg-accent/30 transition-colors cursor-grab active:cursor-grabbing ${dragging ? "opacity-50 border-primary" : "border-border"}`}
+    >
+      <span className="text-base flex-shrink-0">{getMimeIcon(doc.mimeType)}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{doc.title}</p>
+        <p className="text-xs text-muted-foreground">{formatSize(doc.fileSize)}{doc.extractedText ? " · ✨已学习" : ""}</p>
+      </div>
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+        {(doc.mimeType?.includes("pdf") || doc.mimeType?.includes("presentation") || doc.mimeType?.includes("word") || doc.mimeType?.includes("spreadsheet")) && (
+          <button type="button" onClick={() => onPreview(doc)} className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-primary">
+            <Eye className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {doc.fileUrl && (
+          <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-primary">
+            <FileDown className="h-3.5 w-3.5" />
+          </a>
+        )}
+        <button type="button" onClick={() => onDelete(doc.id)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 产品线文件夹组件
+function ProductLineFolder({ productLine, label, docs, onPreview, onDelete, onMoveToFolder, refetch }: {
+  productLine: string; label: string; docs: any[];
+  onPreview: (doc: any) => void; onDelete: (id: number) => void;
+  onMoveToFolder: (docId: number, targetLine: string) => void; refetch: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadDialog, setUploadDialog] = useState(false);
+  const [uploadForm, setUploadForm] = useState({ title: "", description: "" });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const confirmUploadMut = trpc.productDocs.confirmUpload.useMutation({
+    onSuccess: () => { toast.success("上传成功"); refetch(); setSelectedFile(null); setUploadForm({ title: "", description: "" }); setTimeout(() => setUploadDialog(false), 50); },
+    onError: (e: any) => toast.error("上传失败: " + e.message),
+  });
+
+  const handleUpload = () => {
+    if (!selectedFile || !uploadForm.title) return;
+    setUploading(true); setUploadProgress(0);
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = e => { if (e.lengthComputable) setUploadProgress(Math.round(e.loaded / e.total * 100)); };
+    xhr.onload = async () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const { fileKey, fileUrl, extractedText } = JSON.parse(xhr.responseText);
+          await confirmUploadMut.mutateAsync({
+            title: uploadForm.title, description: uploadForm.description || undefined,
+            productLine, filename: selectedFile.name,
+            mimeType: selectedFile.type || "application/octet-stream",
+            fileKey, fileUrl, fileSize: selectedFile.size, extractedText: extractedText || undefined,
+          });
+        } catch (err: any) { toast.error("上传失败: " + (err.message || "未知错误")); }
+      } else {
+        try { const e = JSON.parse(xhr.responseText); toast.error("上传失败: " + (e.error || xhr.statusText)); }
+        catch { toast.error("上传失败: " + xhr.statusText); }
+      }
+      setUploading(false); setUploadProgress(0);
+    };
+    xhr.onerror = () => { toast.error("网络错误"); setUploading(false); setUploadProgress(0); };
+    xhr.open("POST", "/api/upload-doc");
+    xhr.send(formData);
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="搜索文档标题或描述..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <Select value={filterLine} onValueChange={setFilterLine}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="产品线" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部产品线</SelectItem>
-            {productLines.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Button onClick={() => setUploadDialog(true)} className="gap-2"><Upload className="h-4 w-4" /> 上传文档</Button>
-      </div>
-      {/* 批量操作按钮行（独立行，避免与Select的Radix Popover DOM冲突） */}
-      <div className="flex items-center gap-2">
-        <Button type="button" variant="outline" onClick={() => extractTextBatchMut.mutate()} disabled={extractTextBatchMut.isPending} className="gap-2 text-xs h-8">
-          {extractTextBatchMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-          {extractTextBatchMut.isPending ? "提取中..." : "批量提取文字"}
-        </Button>
-        <Button type="button" variant="outline" onClick={() => autoTagMut.mutate()} disabled={autoTagMut.isPending} className="gap-2 text-xs h-8">
-          {autoTagMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Tag className="h-3 w-3" />}
-          {autoTagMut.isPending ? "识别中..." : "AI识别产品线"}
-        </Button>
+    <div
+      className={`rounded-xl border transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-border bg-card/50"}`}
+      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => {
+        e.preventDefault(); setDragOver(false);
+        const docId = parseInt(e.dataTransfer.getData("docId"));
+        if (docId) onMoveToFolder(docId, productLine);
+      }}
+    >
+      {/* 文件夹头部 */}
+      <div className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none" onClick={() => setOpen(o => !o)}>
+        <span className="text-base">{open ? "📂" : "📁"}</span>
+        <span className="font-medium text-sm flex-1">{label}</span>
+        <Badge variant="secondary" className="text-xs">{docs.length}</Badge>
+        <button type="button" onClick={e => { e.stopPropagation(); setUploadDialog(true); }}
+          className="opacity-0 group-hover:opacity-100 flex items-center gap-1 text-xs text-primary hover:underline px-2 py-0.5 rounded hover:bg-primary/10 transition-all"
+          style={{ opacity: 1 }}>
+          <Upload className="h-3 w-3" /> 上传
+        </button>
+        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
-          <FileText className="h-12 w-12 opacity-30" />
-          <p className="text-sm">暂无产品文档，点击"上传文档"添加</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((doc: any) => (
-            <div key={doc.id} className="border rounded-lg p-4 bg-card hover:border-primary/50 transition-colors group">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-start gap-3 flex-1 min-w-0">
-                  <span className="text-2xl mt-0.5">{getMimeIcon(doc.mimeType)}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{doc.title}</p>
-                    {doc.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{doc.description}</p>}
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {doc.productLine && <Badge variant="secondary" className="text-xs">{doc.productLine}</Badge>}
-                      {(doc.tags || []).map((t: string) => <Badge key={t} variant="outline" className="text-xs">{t}</Badge>)}
-                    </div>
-                  </div>
-                </div>
-                <button onClick={() => deleteMut.mutate({ id: doc.id })} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all p-1 rounded">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
-                <span className="truncate max-w-[60%]">{doc.filename}</span>
-                <div className="flex items-center gap-1.5">
-                  {doc.extractedText ? (
-                    <span className="text-emerald-500 flex items-center gap-0.5"><Sparkles className="h-2.5 w-2.5" />已学习</span>
-                  ) : (
-                    <span className="text-muted-foreground/50">未提取</span>
-                  )}
-                  <span>{formatSize(doc.fileSize)}</span>
-                </div>
-              </div>
-              {/* AI 摘要区域 */}
-            {summaryDocId === doc.id && (
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-primary/70">
-                <Loader2 className="h-3 w-3 animate-spin" /> AI 正在解析文档...
-              </div>
-            )}
-            {summaries[doc.id] && (
-              <div className="mt-2 bg-primary/5 border border-primary/20 rounded p-2 space-y-1">
-                <p className="text-xs text-foreground/80 leading-relaxed">{summaries[doc.id].summary}</p>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {(summaries[doc.id].keyPoints || []).slice(0, 3).map((kp: string, i: number) => (
-                    <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{kp}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* 操作按钮 */}
-            <div className="flex items-center gap-2 mt-2">
-              {doc.fileUrl && (
-                <button type="button" onClick={() => handlePreview(doc)}
-                  className="flex items-center gap-1 text-xs text-primary hover:underline">
-                  <Eye className="h-3 w-3" /> 预览
-                </button>
-              )}
-              {doc.fileUrl && (
-                <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary">
-                  <FileDown className="h-3 w-3" /> 下载
-                </a>
-              )}
-              {!summaries[doc.id] && summaryDocId !== doc.id && (
-                <button type="button" onClick={() => { setSummaryDocId(doc.id); extractSummaryMut.mutate({ id: doc.id }); }}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary ml-auto">
-                  <Sparkles className="h-3 w-3" /> AI 解析
-                </button>
-              )}
+      {/* 文件夹内容 */}
+      {open && (
+        <div className="px-3 pb-3 space-y-1">
+          {docs.length === 0 ? (
+            <div className="flex flex-col items-center py-6 text-muted-foreground/50 gap-1 border-2 border-dashed rounded-lg">
+              <FileText className="h-6 w-6" />
+              <p className="text-xs">拖拽文档到此处，或点击"上传"</p>
             </div>
-            </div>
-          ))}
+          ) : (
+            docs.map(doc => (
+              <DocCard key={doc.id} doc={doc} onPreview={onPreview} onDelete={onDelete} onMoveToFolder={onMoveToFolder} refetch={refetch} />
+            ))
+          )}
         </div>
       )}
 
-      {/* 文档预览 Dialog - Google Docs Viewer */}
-      <Dialog open={previewOpen} onOpenChange={(open) => {
+      {/* 上传 Dialog */}
+      <Dialog open={uploadDialog} onOpenChange={open => { setUploadDialog(open); if (!open) { setSelectedFile(null); setUploadForm({ title: "", description: "" }); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>上传文档到「{label}」</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium">文档标题 *</label>
+              <Input className="mt-1" value={uploadForm.title} onChange={e => setUploadForm(f => ({ ...f, title: e.target.value }))} placeholder="例：TrustOne XDR 产品白皮书" />
+            </div>
+            <div>
+              <label className="text-sm font-medium">描述（可选）</label>
+              <Textarea className="mt-1" rows={2} value={uploadForm.description} onChange={e => setUploadForm(f => ({ ...f, description: e.target.value }))} placeholder="简要描述文档内容..." />
+            </div>
+            <div>
+              <label className="text-sm font-medium">选择文件 *</label>
+              <div className="mt-1 border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors" onClick={() => fileInputRef.current?.click()}>
+                {selectedFile ? (
+                  <div className="flex items-center justify-center gap-2 text-sm">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <span className="truncate max-w-[200px]">{selectedFile.name}</span>
+                    <button type="button" onClick={e => { e.stopPropagation(); setSelectedFile(null); }} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+                  </div>
+                ) : (
+                  <div className="text-muted-foreground text-sm">
+                    <Upload className="h-6 w-6 mx-auto mb-1 opacity-50" />
+                    <p>PDF / PPT / DOC / Excel / MP4，不限大小</p>
+                  </div>
+                )}
+              </div>
+              <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.pptx,.ppt,.docx,.doc,.xls,.xlsx,.mp4,.mov,.avi" onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
+            </div>
+          </div>
+          <DialogFooter className="flex-col gap-2">
+            {uploading && (
+              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                <div className="bg-primary h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+              </div>
+            )}
+            <div className="flex gap-2 w-full justify-end">
+              <Button type="button" variant="outline" onClick={() => setUploadDialog(false)}>取消</Button>
+              <Button type="button" onClick={handleUpload} disabled={uploading || !selectedFile || !uploadForm.title} className="gap-2">
+                {uploading ? <Spinner className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+                {uploading ? `上传中 ${uploadProgress}%` : "上传"}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ProductDocsTab() {
+  const [search, setSearch] = useState("");
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const { data: docs = [], refetch } = trpc.productDocs.list.useQuery(undefined);
+
+  const deleteMut = trpc.productDocs.delete.useMutation({
+    onSuccess: () => { toast.success("已删除"); refetch(); },
+    onError: (e: any) => toast.error("删除失败: " + e.message),
+  });
+  const updateProductLineMut = trpc.productDocs.updateProductLine.useMutation({
+    onSuccess: () => { toast.success("已移动到新文件夹"); refetch(); },
+    onError: (e: any) => toast.error("移动失败: " + e.message),
+  });
+  const getSignedUrlMut = trpc.productDocs.getSignedUrl.useMutation({
+    onSuccess: (data: any) => {
+      const ext = previewDoc?.filename?.split('.').pop()?.toLowerCase() || '';
+      const isPdf = previewDoc?.mimeType?.includes('pdf') || ext === 'pdf';
+      const viewerUrl = isPdf
+        ? `https://docs.google.com/viewer?url=${encodeURIComponent(data.url)}&embedded=true`
+        : `https://docs.google.com/viewer?url=${encodeURIComponent(data.url)}&embedded=true`;
+      setPreviewUrl(viewerUrl);
+      setPreviewLoading(false);
+    },
+    onError: () => { toast.error("无法加载预览"); setPreviewLoading(false); setPreviewOpen(false); },
+  });
+
+  const handlePreview = (doc: any) => {
+    setPreviewDoc(doc); setPreviewUrl(null); setPreviewLoading(true); setPreviewOpen(true);
+    getSignedUrlMut.mutate({ fileKey: doc.fileKey });
+  };
+  const handleDelete = (id: number) => { if (confirm("确认删除此文档？")) deleteMut.mutate({ id }); };
+  const handleMoveToFolder = (docId: number, targetLine: string) => {
+    updateProductLineMut.mutate({ id: docId, productLine: targetLine });
+  };
+
+  // 按产品线分组
+  const docsByLine = (docs as any[]).reduce((acc: Record<string, any[]>, doc) => {
+    const line = doc.productLine || "其他参考资料";
+    if (!acc[line]) acc[line] = [];
+    acc[line].push(doc);
+    return acc;
+  }, {});
+
+  // 搜索过滤
+  const searchFilter = (doc: any) => !search ||
+    doc.title.toLowerCase().includes(search.toLowerCase()) ||
+    (doc.description || "").toLowerCase().includes(search.toLowerCase());
+
+  // 产品线文件夹定义（按顺序）
+  const FOLDERS = [
+    // 亚信科技
+    { productLine: "算力", label: "算力", group: "亚信科技" },
+    { productLine: "Token运营平台", label: "Token 运营平台 / Token ERP", group: "亚信科技" },
+    { productLine: "物理AI", label: "物理 AI", group: "亚信科技" },
+    { productLine: "卫星互联", label: "卫星互联", group: "亚信科技" },
+    // 亚信安全
+    { productLine: "AI XDR", label: "AI XDR 平台", group: "亚信安全" },
+    { productLine: "TrustOne", label: "TrustOne（办公网终端 AV/EDR/虚拟补丁）", group: "亚信安全" },
+    { productLine: "CloudGuard", label: "CloudGuard（CWPP 数据中心/云主机）", group: "亚信安全" },
+    { productLine: "NDR", label: "NDR（ThreatTrace / ThreatShield / PhishShield）", group: "亚信安全" },
+    { productLine: "威胁情报", label: "威胁情报", group: "亚信安全" },
+    { productLine: "AI智能体身份安全", label: "AI 智能体身份安全", group: "亚信安全" },
+    { productLine: "安全服务", label: "安全服务（EASM / 渗透测试 / 红队 / MDR）", group: "亚信安全" },
+    { productLine: "AI大模型防火墙", label: "AI 大模型防火墙", group: "亚信安全" },
+    // 其他
+    { productLine: "其他参考资料", label: "其他参考资料（竞品 / 行业报告 / 客户案例）", group: "其他" },
+  ];
+
+  const groups = ["亚信科技", "亚信安全", "其他"];
+
+  return (
+    <div className="space-y-4">
+      {/* 搜索栏 */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input className="pl-9" placeholder="搜索文档标题或描述..." value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+
+      {/* 说明文字 */}
+      <p className="text-xs text-muted-foreground">💡 点击文件夹内的"上传"按钮上传文档，文档会自动归入该产品线。可拖拽文档到其他文件夹重新归档。</p>
+
+      {/* 文件夹分组 */}
+      {groups.map(group => {
+        const groupFolders = FOLDERS.filter(f => f.group === group);
+        return (
+          <div key={group} className="space-y-2">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">{group}</h3>
+            <div className="space-y-2">
+              {groupFolders.map(folder => {
+                const folderDocs = (docsByLine[folder.productLine] || []).filter(searchFilter);
+                if (search && folderDocs.length === 0) return null;
+                return (
+                  <ProductLineFolder
+                    key={folder.productLine}
+                    productLine={folder.productLine}
+                    label={folder.label}
+                    docs={folderDocs}
+                    onPreview={handlePreview}
+                    onDelete={handleDelete}
+                    onMoveToFolder={handleMoveToFolder}
+                    refetch={refetch}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* 预览 Dialog */}
+      <Dialog open={previewOpen} onOpenChange={open => {
         setPreviewOpen(open);
-        if (!open) {
-          // 延迟清理数据，避免React19+Radix Portal卸载竞态
-          setTimeout(() => { setPreviewDoc(null); setPreviewUrl(null); setPreviewLoading(false); }, 300);
-        }
+        if (!open) setTimeout(() => { setPreviewDoc(null); setPreviewUrl(null); setPreviewLoading(false); }, 300);
       }}>
         <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
           <DialogHeader className="px-4 pt-4 pb-2 flex-shrink-0 border-b">
@@ -303,88 +357,14 @@ function ProductDocsTab() {
               </div>
             )}
             {previewUrl && (
-              <iframe
-                src={previewUrl}
-                className="w-full h-full border-0 rounded-b-lg"
-                title={previewDoc?.title}
-                onLoad={() => setPreviewLoading(false)}
-              />
+              <iframe src={previewUrl} className="w-full h-full border-0 rounded-b-lg" title={previewDoc?.title} onLoad={() => setPreviewLoading(false)} />
             )}
           </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={uploadDialog} onOpenChange={setUploadDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>上传产品文档</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-medium">文档标题 *</label>
-              <Input className="mt-1" value={uploadForm.title} onChange={e => setUploadForm(f => ({ ...f, title: e.target.value }))} placeholder="例：TrustOne XDR 产品白皮书" />
-            </div>
-            <div>
-              <label className="text-sm font-medium">产品线</label>
-              <Select value={uploadForm.productLine} onValueChange={v => setUploadForm(f => ({ ...f, productLine: v }))}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="选择产品线..." /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(PRODUCT_LINE_GROUPS).map(([group, items]) => (
-                    <SelectGroup key={group}>
-                      <SelectLabel>{group}</SelectLabel>
-                      {(items as any[]).map((item: any) => (
-                        <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium">描述</label>
-              <Textarea className="mt-1" rows={2} value={uploadForm.description} onChange={e => setUploadForm(f => ({ ...f, description: e.target.value }))} placeholder="简要描述文档内容..." />
-            </div>
-            <div>
-              <label className="text-sm font-medium">标签（逗号分隔）</label>
-              <Input className="mt-1" value={uploadForm.tags} onChange={e => setUploadForm(f => ({ ...f, tags: e.target.value }))} placeholder="例：XDR, EDR, 威胁检测" />
-            </div>
-            <div>
-              <label className="text-sm font-medium">选择文件 *</label>
-              <div className="mt-1 border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition-colors" onClick={() => fileInputRef.current?.click()}>
-                {selectedFile ? (
-                  <div className="flex items-center justify-center gap-2 text-sm">
-                    <FileText className="h-4 w-4 text-primary" />
-                    <span className="truncate max-w-[200px]">{selectedFile.name}</span>
-                    <button type="button" onClick={e => { e.stopPropagation(); setSelectedFile(null); }} className="text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
-                  </div>
-                ) : (
-                  <div className="text-muted-foreground text-sm">
-                    <Upload className="h-6 w-6 mx-auto mb-1 opacity-50" />
-                    <p>点击选择文件（PDF / PPT / DOC / Excel / MP4，不限大小）</p>
-                  </div>
-                )}
-              </div>
-              <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.pptx,.ppt,.docx,.doc,.xls,.xlsx,.mp4,.mov,.avi" onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
-            </div>
-          </div>
-          <DialogFooter className="flex-col gap-2">
-            {uploading && (
-              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                <div className="bg-primary h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
-              </div>
-            )}
-            <div className="flex gap-2 w-full justify-end">
-            <Button type="button" variant="outline" onClick={() => setUploadDialog(false)}>取消</Button>
-            <Button type="button" onClick={handleUpload} disabled={uploading || !selectedFile || !uploadForm.title} className="gap-2">
-              {uploading ? <Spinner className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
-              {uploading ? `上传中 ${uploadProgress}%` : "上传"}
-            </Button>
-            </div>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
-
 // ─── AI方案定制 Tab ──────────────────────────────────────────────────────────
 
 function AIArsenalTab() {
