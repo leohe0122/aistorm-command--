@@ -384,8 +384,12 @@
 - [x] P2b：关键人新增Champion三维评分字段（Access/Will/Credibility各1-3分）
 - [x] P2c：关键人新增关系边字段（引荐路径 from→to）
 - [x] P2d：客户档案新增relationship_narrative字段（200字滚动叙事）
-- [ ] P1a：0→1 Review功能（AD指挥台/战场地图）
-- [ ] P1b：1→N Review功能（MEDDPICC健康雷达+Blue Sheet战局判断+AI质疑层）
-- [ ] P1c：Buying Group覆盖分析（权力路径+Champion→EB路径完整性）
-- [ ] P1d：跨拜访趋势分析（滚动叙事架构+下次拜访建议）
-- [ ] P1e：情报自动关联推送（规则初筛+AI精判双层架构）
+- [x] P1a：0→1 Review功能（AD指挥台/战场地图）
+- [x] P1b：1→N Review功能（MEDDPICC健康雷达+Blue Sheet战局判断+AI质疑层）
+- [x] P1c：Buying Group覆盖分析（权力路径+Champion→EB路径完整性）
+- [x] P1d：跨拜访趋势分析（滚动叙事架构+下次拜访建议）
+
+## Round 54 - 模拟数据 + AI Review排版优化
+- [x] 生成3个模拟客户测试数据（含关键人/拜访记录/MEDDPICC/商机）
+- [x] 优化AI Review前端Markdown渲染排版（更具可读性）
+- [x] P1e：情报自动关联推送（规则初筛+AI精判双层架构）

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
 import { Edit2, Save, X, ChevronDown, ChevronUp, Users, Plus, Trash2, UserCheck, TrendingUp, Sparkles, Upload, Download, AlertCircle, CheckCircle2, Calendar, MapPin, Swords, Target, Trophy, Loader2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 
 import { TermTooltip, MeddpiccLabel } from "@/components/TermTooltip";
 import SalesPipelineSteps from "@/components/SalesPipelineSteps";
@@ -2400,8 +2401,25 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
             <p className="text-sm text-muted-foreground">AI 正在分析战局，请稍候...</p>
           </div>
         ) : (
-          <div className="prose prose-invert prose-sm max-w-none text-sm leading-relaxed whitespace-pre-wrap">
-            {reviewContent || "暂无内容"}
+          <div className="text-sm leading-relaxed">
+            <ReactMarkdown
+              components={{
+                h1: ({children}) => <h1 className="text-lg font-bold text-purple-300 mt-4 mb-2 pb-1 border-b border-purple-500/30">{children}</h1>,
+                h2: ({children}) => <h2 className="text-base font-semibold text-purple-200 mt-4 mb-2">{children}</h2>,
+                h3: ({children}) => <h3 className="text-sm font-semibold text-blue-300 mt-3 mb-1">{children}</h3>,
+                p: ({children}) => <p className="text-foreground/90 mb-2 leading-relaxed">{children}</p>,
+                ul: ({children}) => <ul className="list-none space-y-1 mb-3">{children}</ul>,
+                ol: ({children}) => <ol className="list-decimal list-inside space-y-1 mb-3 text-foreground/90">{children}</ol>,
+                li: ({children}) => <li className="flex items-start gap-2 text-foreground/85"><span className="text-purple-400 mt-0.5 flex-shrink-0">▸</span><span>{children}</span></li>,
+                strong: ({children}) => <strong className="text-yellow-300 font-semibold">{children}</strong>,
+                em: ({children}) => <em className="text-blue-300 not-italic font-medium">{children}</em>,
+                blockquote: ({children}) => <blockquote className="border-l-2 border-purple-500 pl-3 my-2 text-muted-foreground italic">{children}</blockquote>,
+                code: ({children}) => <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono text-green-300">{children}</code>,
+                hr: () => <hr className="border-border/50 my-3" />,
+              }}
+            >
+              {reviewContent || "暂无内容"}
+            </ReactMarkdown>
           </div>
         )}
       </DialogContent>
