@@ -39,6 +39,7 @@ function ProductDocsTab() {
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [summaryDocId, setSummaryDocId] = useState<number | null>(null);
   const [summaries, setSummaries] = useState<Record<number, any>>({});
 
@@ -101,6 +102,7 @@ function ProductDocsTab() {
     setPreviewDoc(doc);
     setPreviewUrl(null);
     setPreviewLoading(true);
+    setPreviewOpen(true);
     getSignedUrlMut.mutate({ fileKey: doc.fileKey });
   };
 
@@ -273,7 +275,13 @@ function ProductDocsTab() {
       )}
 
       {/* 文档预览 Dialog - Google Docs Viewer */}
-      <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) { setPreviewDoc(null); setPreviewUrl(null); } }}>
+      <Dialog open={previewOpen} onOpenChange={(open) => {
+        setPreviewOpen(open);
+        if (!open) {
+          // 延迟清理数据，避免React19+Radix Portal卸载竞态
+          setTimeout(() => { setPreviewDoc(null); setPreviewUrl(null); setPreviewLoading(false); }, 300);
+        }
+      }}>
         <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
           <DialogHeader className="px-4 pt-4 pb-2 flex-shrink-0 border-b">
             <DialogTitle className="flex items-center gap-2 text-sm">
