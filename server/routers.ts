@@ -840,6 +840,83 @@ MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
       targetExecutive: z.string(),
       targetTitle: z.string().optional(),
     })).mutation(async ({ input }) => {
+      // ── P0：自动拼装客户战况快照 ──────────────────────────────────────────
+      let situationSnapshot = "";
+      try {
+        const [meddpicc, meetings, signals] = await Promise.all([
+          getMeddpiccByClientId(input.clientId),
+          getMeetingsByClientId(input.clientId),
+          getSignalsByClientId(input.clientId),
+        ]);
+
+        // 1. 当前推进阶段 + 阶段停留天数
+        const client = await getClientById(input.clientId);
+        const stageInfo = client ? `当前推进阶段：${client.stage}` : "";
+        const stageChangedAt = (client as any)?.stageChangedAt;
+        const daysInStage = stageChangedAt
+          ? Math.floor((Date.now() - new Date(stageChangedAt).getTime()) / 86400000)
+          : null;
+        const stageDay = daysInStage !== null ? `（已在该阶段停留 ${daysInStage} 天）` : "";
+
+        // 2. 最近2次拜访摘要
+        const recentMeetings = meetings.slice(0, 2);
+        const visitSummary = recentMeetings.length > 0
+          ? recentMeetings.map((m, i) => {
+              const date = new Date(m.meetingDate).toLocaleDateString("zh-CN");
+              const summary = m.aiMinutes
+                ? m.aiMinutes.slice(0, 200).replace(/\n/g, " ")
+                : (m.keyPoints || "").slice(0, 200).replace(/\n/g, " ");
+              return `  第${i + 1}次（${date}）：${summary}`;
+            }).join("\n")
+          : "  暂无拜访记录";
+
+        // 3. MEDDPICC 最薄弱2个维度
+        const weakDimensions: string[] = [];
+        if (meddpicc) {
+          const dims = [
+            { name: "M（可量化价值）", score: meddpicc.metricsScore, notes: meddpicc.metricsNotes },
+            { name: "E（经济买家）", score: meddpicc.economicBuyerScore, notes: meddpicc.economicBuyerNotes },
+            { name: "D（决策标准）", score: meddpicc.decisionCriteriaScore, notes: meddpicc.decisionCriteriaNotes },
+            { name: "D2（决策流程）", score: meddpicc.decisionProcessScore, notes: meddpicc.decisionProcessNotes },
+            { name: "P（采购流程）", score: meddpicc.paperProcessScore, notes: meddpicc.paperProcessNotes },
+            { name: "I（痛点牵连）", score: meddpicc.implicatePainScore, notes: meddpicc.implicatePainNotes },
+            { name: "C（Champion）", score: meddpicc.championScore, notes: meddpicc.championNotes },
+            { name: "C2（竞争态势）", score: meddpicc.competitionScore, notes: meddpicc.competitionNotes },
+          ];
+          dims.sort((a, b) => a.score - b.score);
+          dims.slice(0, 2).forEach(d => {
+            weakDimensions.push(`  ${d.name}：${d.score}分${d.notes ? `（${d.notes.slice(0, 60)}）` : ""}`);
+          });
+        }
+
+        // 4. 最新7天情报信号
+        const sevenDaysAgo = Date.now() - 7 * 86400000;
+        const recentSignals = signals
+          .filter(s => new Date(s.createdAt).getTime() > sevenDaysAgo)
+          .slice(0, 3);
+        const signalSummary = recentSignals.length > 0
+          ? recentSignals.map(s => `  [${s.signalType}/${s.urgency}] ${s.rawSignal.slice(0, 100)}`).join("\n")
+          : "  最近7天暂无新情报";
+
+        situationSnapshot = `
+【当前客户战况快照（系统数据，请优先基于此生成洞察）】
+${stageInfo}${stageDay}
+
+最近拜访记录（最新2次）：
+${visitSummary}
+
+MEDDPICC 最薄弱维度（需重点关注）：
+${weakDimensions.length > 0 ? weakDimensions.join("\n") : "  暂无评分数据"}
+
+最新情报信号（近7天）：
+${signalSummary}
+`;
+      } catch {
+        // 快照拉取失败不影响主流程
+        situationSnapshot = "";
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       const prompt = `你是一位顶级企业销售战略顾问，专注于网络安全行业的C-Level高层拜访准备。
 
 请为以下拜访生成一份《高层会面简报（1-Pager）》，格式为Markdown，内容必须具体、可直接使用，不得使用空泛语言。
@@ -849,23 +926,28 @@ MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
 敲门砖话题：${input.hookTopic || "待定"}
 安全切入点：${input.securityAngle || "待定"}
 客户背景备注：${input.notes || "无"}
-
+${situationSnapshot}
 请生成包含以下四个部分的1-Pager：
 
 ## 一、客户战略背景（3-4句话）
-（该高管近期最关注的战略议题、公开言论、业务压力）
+（该高管近期最关注的战略议题、公开言论、业务压力；如有拜访记录，结合已知信息）
 
 ## 二、敲门砖建议（具体方案）
-（用哪个跨界资源/话题开场，为什么这个话题对该高管有吸引力，预期引发的反应）
+（用哪个跨界资源/话题开场，为什么这个话题对该高管有吸引力，预期引发的反应；如有情报信号，优先结合最新动态）
 
 ## 三、SPIN提问预演
-**S（现状问题）：** [具体问题]
+**S（现状问题）：** [具体问题，结合已知的MEDDPICC薄弱维度]
 **P（困难问题）：** [具体问题]
 **I（影响问题）：** [具体问题，要能让高管感到刺痛]
 **N（价值问题）：** [具体问题，引导高管自述解决方案价值]
 
 ## 四、会面目标与成功标准
-（本次会面要达成的具体目标，以及判断会面成功的标准）`;
+（本次会面要达成的具体目标；如有MEDDPICC薄弱维度，优先将其作为本次会面的突破目标）
+
+## 五、本周优先行动卡
+**1件事：** [最关键的一个行动]
+**1个人：** [最需要接触/突破的一个人]
+**1句话：** [开场或推进的核心话术]`;
 
       const res = await invokeLLM({
         model: "gpt-4o",
