@@ -750,3 +750,26 @@ export async function getLatestReviewByType(clientId: number, reviewType: AiRevi
     .limit(1);
   return rows[0] ?? null;
 }
+
+// ── Client Metrics (效能基线) ─────────────────────────────────────────────────
+export async function getClientMetrics(clientId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const { clientMetrics } = await import('../drizzle/schema');
+  const { eq } = await import('drizzle-orm');
+  const rows = await db.select().from(clientMetrics).where(eq(clientMetrics.clientId, clientId)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function upsertClientMetrics(clientId: number, data: Record<string, unknown>) {
+  const db = await getDb();
+  if (!db) return;
+  const { clientMetrics } = await import('../drizzle/schema');
+  const { eq } = await import('drizzle-orm');
+  const existing = await db.select({ id: clientMetrics.id }).from(clientMetrics).where(eq(clientMetrics.clientId, clientId)).limit(1);
+  if (existing.length > 0) {
+    await db.update(clientMetrics).set({ ...data, updatedAt: new Date() } as any).where(eq(clientMetrics.clientId, clientId));
+  } else {
+    await db.insert(clientMetrics).values({ clientId, ...data } as any);
+  }
+}

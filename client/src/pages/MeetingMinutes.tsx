@@ -109,6 +109,8 @@ export default function MeetingMinutes() {
   const [visitType, setVisitType] = useState("首次拜访");
   const [attendees, setAttendees] = useState("");
   const [keyPoints, setKeyPoints] = useState("");
+  const [contactType, setContactType] = useState<"formal_meeting"|"dinner_meeting"|"phone_call"|"video_call"|"instant_message"|"event"|"customer_initiated">("formal_meeting");
+  const [initiatedBy, setInitiatedBy] = useState<"sam"|"customer"|"mutual">("sam");
   const [transcriptText, setTranscriptText] = useState("");
   const [transcriptMode, setTranscriptMode] = useState<"paste" | "file">("paste");
   const [uploadedFileName, setUploadedFileName] = useState("");
@@ -352,6 +354,8 @@ export default function MeetingMinutes() {
       attendees: attendees || undefined,
       keyPoints: keyPoints || "（见上方妙记全文）",
       transcriptText: transcriptText || undefined,
+      contactType: contactType as any,
+      initiatedBy: initiatedBy as any,
     });
   };
 
@@ -443,6 +447,39 @@ export default function MeetingMinutes() {
                       {VISIT_TYPES.map((t) => (
                         <SelectItem key={t} value={t}>{t}</SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {/* 接触类型（非正式接触数据模型）*/}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">接触方式</label>
+                  <Select value={contactType} onValueChange={(v) => setContactType(v as typeof contactType)}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="formal_meeting">🏢 正式会议</SelectItem>
+                      <SelectItem value="dinner_meeting">🍽️ 饭局/酒桌</SelectItem>
+                      <SelectItem value="phone_call">📞 电话</SelectItem>
+                      <SelectItem value="video_call">💻 视频通话</SelectItem>
+                      <SelectItem value="instant_message">💬 即时消息</SelectItem>
+                      <SelectItem value="event">🎪 活动/展会</SelectItem>
+                      <SelectItem value="customer_initiated">⭐ 客户主动联系</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">发起方</label>
+                  <Select value={initiatedBy} onValueChange={(v) => setInitiatedBy(v as typeof initiatedBy)}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sam">我方主动</SelectItem>
+                      <SelectItem value="customer">客户主动 ⭐</SelectItem>
+                      <SelectItem value="mutual">双方约定</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

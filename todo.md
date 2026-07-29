@@ -541,3 +541,14 @@
 ### 武器库优化（技术方案生成入口）
 - [x] 前端：武器库已有"方案类"（技术方案）选项，覆盖 SA 使用场景，无需额外入口
 - [x] 后端：arsenal.generateContent 接口已支持方案类生成
+
+## AI 能力升级（Round 60）
+- [x] 修正功能8：敲门砖建议读取4类数据源（本次摘要+情报信号+行业阶段+武器库文档）
+- [x] 修正功能4：拜访趋势分析改用滚动叙事架构（前N-2次压缩+最近2次完整日志）
+- [x] 修正功能10：Champion弹药读取武器库相关文档摘要+效能基线数据
+- [x] 数据模型：拜访日志表新增 contactType/initiatedBy/entrySource 字段
+- [x] 数据模型：关键人表新增 informalContactCount/customerInitiatedCount/hasWhatsapp/hasFeishu/lastInformalContact 字段
+- [x] 数据模型：新增 client_metrics 表（效能基线）
+- [x] 前端：拜访录入表单新增接触类型选择（5项快速录入最小集）
+- [x] 前端：客户详情页新增效能基线录入区
+- [ ] 前端：Champion三维评分加入非正式接触校验逻辑

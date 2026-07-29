@@ -1261,7 +1261,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   focusOppId?: number | null;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
-  const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin">(initialTab ?? "meddpicc");
+  const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin" | "metrics">(initialTab ?? "meddpicc");
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<any>({});
   const [meddpiccEdit, setMeddpiccEdit] = useState<any>({});
@@ -1980,6 +1980,14 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
             >
               💬 SPIN
             </button>
+            <button
+              onClick={() => setActiveTab("metrics")}
+              className={cn("flex-1 py-2.5 text-xs font-medium transition-colors flex items-center justify-center gap-1.5",
+                activeTab === "metrics" ? "text-primary border-b-2 border-primary bg-primary/5" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              📊 效能基线
+            </button>
           </div>
 
           {/* MEDDPICC tab - smart switch based on stage */}
@@ -2285,6 +2293,8 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
               </div>
             );
           })()}
+          {/* 效能基线 tab */}
+          {activeTab === "metrics" && <ClientMetricsTab clientId={client.id} />}
           {/* Trend Chart tab */}
           {activeTab === "trend" && (
             <div className="p-4 bg-muted/5">
@@ -3311,6 +3321,118 @@ export default function BattleMap() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ── 效能基线录入组件 ──────────────────────────────────────────────────────────
+function ClientMetricsTab({ clientId }: { clientId: number }) {
+  const { data: metrics, refetch } = trpc.clientMetrics.get.useQuery({ clientId });
+  const upsert = trpc.clientMetrics.upsert.useMutation({ onSuccess: () => { refetch(); toast.success("效能基线已保存"); } });
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [editing, setEditing] = useState(false);
+
+  const fields = [
+    { key: "securityTeamSize", label: "安全团队人数", placeholder: "例如：5", type: "number", unit: "人" },
+    { key: "mttr", label: "平均威胁响应时间 (MTTR)", placeholder: "例如：72", type: "number", unit: "小时" },
+    { key: "annualComplianceCost", label: "年度合规成本", placeholder: "例如：200", type: "number", unit: "万元" },
+    { key: "lastBreachYear", label: "最近安全事件年份", placeholder: "例如：2023", type: "number", unit: "年" },
+    { key: "currentVendors", label: "现有安全厂商", placeholder: "例如：奇安信、深信服", type: "text", unit: "" },
+    { key: "itBudgetRange", label: "IT 年度预算区间", placeholder: "例如：500-1000万", type: "text", unit: "" },
+    { key: "additionalNotes", label: "补充说明", placeholder: "其他关键背景信息...", type: "textarea", unit: "" },
+  ];
+
+  const handleEdit = () => {
+    const initial: Record<string, string> = {};
+    fields.forEach(f => {
+      const val = (metrics as any)?.[f.key];
+      initial[f.key] = val != null ? String(val) : "";
+    });
+    setForm(initial);
+    setEditing(true);
+  };
+
+  const handleSave = () => {
+    const data: Record<string, unknown> = { clientId };
+    fields.forEach(f => {
+      const v = form[f.key];
+      if (f.type === "number") {
+        data[f.key] = v ? parseInt(v) : null;
+      } else {
+        data[f.key] = v || null;
+      }
+    });
+    upsert.mutate(data as any);
+    setEditing(false);
+  };
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <div className="text-xs font-semibold text-foreground">客户效能基线</div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">用于 Champion 弹药 ROI 测算和 AI 分析的量化数据</div>
+        </div>
+        {!editing && (
+          <button onClick={handleEdit} className="text-[10px] px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+            {metrics ? "编辑" : "+ 录入"}
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <div className="space-y-2">
+          {fields.map(f => {
+            const val = (metrics as any)?.[f.key];
+            if (!val) return null;
+            return (
+              <div key={f.key} className="flex items-center justify-between py-1.5 border-b border-border/30">
+                <span className="text-[11px] text-muted-foreground">{f.label}</span>
+                <span className="text-[11px] font-medium text-foreground">{val}{f.unit ? ` ${f.unit}` : ""}</span>
+              </div>
+            );
+          })}
+          {!metrics && (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <span className="text-2xl mb-2">📊</span>
+              <div className="text-xs">暂无效能基线数据</div>
+              <div className="text-[10px] mt-1 text-center">录入后 AI 可生成量化的痛点陈述和 ROI 测算</div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {fields.map(f => (
+            <div key={f.key}>
+              <label className="text-[10px] text-muted-foreground mb-1 block">{f.label}{f.unit ? ` (${f.unit})` : ""}</label>
+              {f.type === "textarea" ? (
+                <textarea
+                  className="w-full text-xs bg-muted/30 border border-border/50 rounded px-2 py-1.5 resize-none h-16 focus:outline-none focus:border-primary/50"
+                  placeholder={f.placeholder}
+                  value={form[f.key] || ""}
+                  onChange={e => setForm({ ...form, [f.key]: e.target.value })}
+                />
+              ) : (
+                <input
+                  type={f.type}
+                  className="w-full h-7 text-xs bg-muted/30 border border-border/50 rounded px-2 focus:outline-none focus:border-primary/50"
+                  placeholder={f.placeholder}
+                  value={form[f.key] || ""}
+                  onChange={e => setForm({ ...form, [f.key]: e.target.value })}
+                />
+              )}
+            </div>
+          ))}
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleSave} disabled={upsert.isPending} className="flex-1 h-7 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50">
+              {upsert.isPending ? "保存中..." : "保存"}
+            </button>
+            <button onClick={() => setEditing(false)} className="px-3 h-7 text-xs bg-muted text-muted-foreground rounded hover:bg-muted/80 transition-colors">
+              取消
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

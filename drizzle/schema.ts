@@ -277,6 +277,10 @@ export const meetingMinutes = mysqlTable("meeting_minutes", {
   responsiblePerson: varchar("responsiblePerson", { length: 100 }),
   dueDate: timestamp("dueDate"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // 接触类型字段（非正式接触数据模型）
+  contactType: mysqlEnum("contactType", ["formal_meeting", "dinner_meeting", "phone_call", "video_call", "instant_message", "event", "customer_initiated"]).default("formal_meeting"),
+  initiatedBy: mysqlEnum("initiatedBy", ["sam", "customer", "mutual"]).default("sam"),
+  entrySource: mysqlEnum("entrySource", ["manual", "feishu_miaoji", "whatsapp_quick", "feishu_bot"]).default("manual"),
 });
 
 export type MeetingMinute = typeof meetingMinutes.$inferSelect;
@@ -381,6 +385,12 @@ export const keyContacts = mysqlTable("key_contacts", {
   relationshipEdges: json("relationshipEdges").$type<Array<{to: string; type: string; strength: string}>>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  // 非正式接触数据（关系深度评估）
+  informalContactCount: int("informalContactCount").default(0),     // 非正式接触次数
+  customerInitiatedCount: int("customerInitiatedCount").default(0), // 客户主动发起次数
+  hasWhatsapp: boolean("hasWhatsapp").default(false),               // 是否有 WhatsApp 渠道
+  hasFeishu: boolean("hasFeishu").default(false),                   // 是否有飞书渠道
+  lastInformalContact: timestamp("lastInformalContact"),            // 最近一次非正式接触日期
 });
 
 export type KeyContact = typeof keyContacts.$inferSelect;
@@ -732,3 +742,23 @@ export const winStrategies = mysqlTable("win_strategies", {
 });
 export type WinStrategy = typeof winStrategies.$inferSelect;
 export type InsertWinStrategy = typeof winStrategies.$inferInsert;
+
+/**
+ * 客户效能基线数据（Metrics 结构化字段，用于 Champion 弹药 ROI 测算）
+ */
+export const clientMetrics = mysqlTable("client_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull().unique(),
+  securityTeamSize: int("securityTeamSize"),                        // 安全团队人数
+  mttr: int("mttr"),                                                // 平均威胁响应时间（小时）
+  annualComplianceCost: int("annualComplianceCost"),                // 年度合规成本（万元）
+  lastBreachYear: int("lastBreachYear"),                            // 最近一次安全事件年份
+  currentVendors: text("currentVendors"),                           // 现有安全厂商（逗号分隔）
+  contractRenewalDate: timestamp("contractRenewalDate"),            // 现有合同到期时间
+  itBudgetRange: varchar("itBudgetRange", { length: 50 }),          // IT 年度预算区间（如 "500-1000万"）
+  additionalNotes: text("additionalNotes"),                         // 补充说明
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ClientMetric = typeof clientMetrics.$inferSelect;
+export type InsertClientMetric = typeof clientMetrics.$inferInsert;

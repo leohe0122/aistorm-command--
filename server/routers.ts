@@ -36,6 +36,7 @@ import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient
   getDb,
 } from "./db";
 import { saveAiReview, getLatestReviewsByClient, getLatestReviewByType } from "./db";
+import { getClientMetrics, upsertClientMetrics } from "./db";
 
 export const appRouter = router({
   system: systemRouter,
@@ -148,7 +149,7 @@ export const appRouter = router({
       clientName: z.string(),
       industry: z.string().optional(),
     })).mutation(async ({ input }) => {
-      const [signals, meddpicc, productDocsList] = await Promise.all([
+      const [signals, meddpicc, productDocsList, clientData, recentMeetings] = await Promise.all([
         getSignalsByClientId(input.clientId),
         getMeddpiccByClientId(input.clientId),
         (async () => {
@@ -158,6 +159,8 @@ export const appRouter = router({
           const { productDocs } = await import('../drizzle/schema');
           return db.select({ title: productDocs.title, productLine: productDocs.productLine, description: productDocs.description }).from(productDocs).limit(10);
         })(),
+        getClientById(input.clientId),
+        getMeetingsByClientId(input.clientId),
       ]);
       const meddpiccContext = meddpicc ? (() => {
         const dims = [
@@ -178,17 +181,30 @@ export const appRouter = router({
       const docsContext = productDocsList.length > 0
         ? productDocsList.map((d: any) => '[' + d.productLine + '] ' + d.title + (d.description ? ': ' + d.description.slice(0, 80) : '')).join('\n')
         : '暂无上传产品文档（可在武器库中上传）';
+      // 最近一次拜访摘要
+      const sortedVisits = recentMeetings ? [...recentMeetings].sort((a: any, b: any) => new Date(b.meetingDate).getTime() - new Date(a.meetingDate).getTime()) : [];
+      const lastVisit = sortedVisits[0];
+      const lastVisitCtx = lastVisit
+        ? `最近拜访（${new Date((lastVisit as any).meetingDate).toLocaleDateString('zh-CN')}）：${((lastVisit as any).aiMinutes || (lastVisit as any).keyPoints || '').slice(0, 200)}`
+        : '暂无拜访记录';
+      const clientStage = (clientData as any)?.stage || '未知阶段';
       const prompt = `你是一位顶级企业销售战略顾问，专注于网络安全行业。
-请根据以下信息，为销售团队建议最佳的「敲门砖话题」和「安全切入点」，用于拜访 \${input.clientName}（\${input.industry || '企业'}）的高层。
+请根据以下信息，为销售团队建议最佳的「敲门砖话题」和「安全切入点」，用于拜访 ${input.clientName}（${input.industry || '企业'}）的高层。
+
+【客户当前阶段】
+${clientStage}
+
+【最近一次拜访摘要】
+${lastVisitCtx}
 
 【最新情报信号（最近3条）】
-\${signalsContext}
+${signalsContext}
 
 【MEDDPICC薄弱维度（分数最低3项）】
-\${meddpiccContext}
+${meddpiccContext}
 
 【武器库产品文档（已有方案）】
-\${docsContext}
+${docsContext}
 
 请输出JSON格式（不要有其他内容）：
 {
@@ -1546,38 +1562,35 @@ ${recentVisits || "暂无拜访记录"}
         new Date(b.meetingDate).getTime() - new Date(a.meetingDate).getTime()
       );
 
-      // 构建拜访时间线（最多8次，控制token）
-      const visitTimeline = sortedMeetings.slice(0, 8).map((m, i) => {
+      // 滚动叙事架构：前N-2次压缩摘要 + 最近2次完整日志（Token恒定）
+      const recentTwo = sortedMeetings.slice(0, 2);
+      const olderCount = Math.max(0, sortedMeetings.length - 2);
+      const recentTwoLog = recentTwo.map((m, i) => {
         const date = new Date(m.meetingDate).toLocaleDateString("zh-CN");
         const attendees = m.attendees || "";
-        const summary = m.aiMinutes ? m.aiMinutes.slice(0, 250) : m.keyPoints?.slice(0, 250) || "";
+        const summary = m.aiMinutes ? m.aiMinutes.slice(0, 300) : m.keyPoints?.slice(0, 300) || "";
         return `[第${sortedMeetings.length - i}次拜访 ${date}] 参会：${attendees}\n内容：${summary}`;
       }).join("\n\n");
-
       // 关键人态度变化
       const contactStances = contacts.map(c => 
         `${c.name}（${c.buyingRole || "未知"}）：${c.stance}`
       ).join("；");
-
-      // 现有滚动叙事（如果有）
+      // 读取已有的滚动叙事（前N-2次的压缩摘要）
       const existingNarrative = (client as any).relationshipNarrative || "";
-
+      const visitTimeline = [
+        existingNarrative
+          ? `【历史关系叙事摘要（前${olderCount}次拜访压缩，约200字）】\n${existingNarrative}`
+          : (olderCount > 0 ? `【历史拜访】共${olderCount}次历史拜访（暂无压缩叙事，本次生成后将自动保存）` : ''),
+        recentTwo.length > 0 ? `【最近${recentTwo.length}次完整拜访记录（时间倒序）】\n${recentTwoLog}` : ''
+      ].filter(Boolean).join("\n\n");
       const prompt = `你是一位大客户销售教练，专注于分析客户关系演变趋势。
-
 客户：${client.name}（${client.industry || "未知行业"}）
 当前阶段：${client.stage}
 总拜访次数：${meetings.length}次
-
-拜访时间线（最近${Math.min(8, meetings.length)}次，时间倒序）：
+拜访记录（滚动叙事架构）：
 ${visitTimeline}
-
 关键人当前立场：
 ${contactStances || "暂无关键人数据"}
-
-${existingNarrative ? `上次AI生成的关系叙事：
-${existingNarrative}
-` : ""}
-
 请按以下格式输出：
 
 ## 1. 客户关系演变叙事（约150字）
@@ -2121,6 +2134,8 @@ ${knowledgeNote}`;
       attendees: z.string().optional(),
       keyPoints: z.string(),
       transcriptText: z.string().optional(),
+      contactType: z.enum(["formal_meeting","dinner_meeting","phone_call","video_call","instant_message","event","customer_initiated"]).optional(),
+      initiatedBy: z.enum(["sam","customer","mutual"]).optional(),
     })).mutation(async ({ input }) => {
       // Combine keyPoints + transcript as the main content source
       const contentSource = input.transcriptText
@@ -2227,6 +2242,9 @@ ${contentSource}
         aiMinutes,
         hookTopicSuggestion,
         securityAngleSuggestion,
+        contactType: input.contactType,
+        initiatedBy: input.initiatedBy,
+        entrySource: "manual",
       });
       return { id, aiMinutes, meddpiccSuggestions, hookTopicSuggestion, securityAngleSuggestion, detectedCompetitors };
     }),
@@ -2236,6 +2254,9 @@ ${contentSource}
       visitType: z.string().optional(),
       attendees: z.string().optional(),
       keyPoints: z.string(),
+      contactType: z.enum(["formal_meeting","dinner_meeting","phone_call","video_call","instant_message","event","customer_initiated"]).optional(),
+      initiatedBy: z.enum(["sam","customer","mutual"]).optional(),
+      entrySource: z.enum(["manual","feishu_miaoji","whatsapp_quick","feishu_bot"]).optional(),
     })).mutation(async ({ input }) => {
       const id = await insertMeeting({
         clientId: input.clientId,
@@ -2247,6 +2268,9 @@ ${contentSource}
         aiMinutes: undefined,
         hookTopicSuggestion: undefined,
         securityAngleSuggestion: undefined,
+        contactType: input.contactType,
+        initiatedBy: input.initiatedBy,
+        entrySource: input.entrySource ?? "manual",
       });
       return { id };
     }),
@@ -4921,6 +4945,32 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
       return db.select({ id: clients.id, name: clients.name, priority: clients.priority, stage: clients.stage }).from(clients).where(eq(clients.assignedSamId, input.userId));
     }),
   }),
+  // ── Client Metrics (效能基线) ──────────────────────────────────────────────
+  clientMetrics: router({
+    get: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      return getClientMetrics(input.clientId);
+    }),
+    upsert: publicProcedure.input(z.object({
+      clientId: z.number(),
+      securityTeamSize: z.number().nullable().optional(),
+      mttr: z.number().nullable().optional(),
+      annualComplianceCost: z.number().nullable().optional(),
+      lastBreachYear: z.number().nullable().optional(),
+      currentVendors: z.string().nullable().optional(),
+      contractRenewalDate: z.number().nullable().optional(),
+      itBudgetRange: z.string().nullable().optional(),
+      additionalNotes: z.string().nullable().optional(),
+    })).mutation(async ({ input }) => {
+      const { clientId, contractRenewalDate, ...rest } = input;
+      const data: Record<string, unknown> = { ...rest };
+      if (contractRenewalDate !== undefined) {
+        data.contractRenewalDate = contractRenewalDate ? new Date(contractRenewalDate) : null;
+      }
+      await upsertClientMetrics(clientId, data);
+      return { ok: true };
+    }),
+  }),
+
 });
 
 export type AppRouter = typeof appRouter;
