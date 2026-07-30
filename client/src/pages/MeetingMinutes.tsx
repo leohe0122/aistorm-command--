@@ -858,10 +858,29 @@ export default function MeetingMinutes() {
                           )}
                         </div>
                       ) : (
-                        <div className="p-4">
-                          <div className="text-xs text-muted-foreground mb-2">原始关键信息点</div>
-                          <div className="text-sm text-foreground whitespace-pre-wrap">{meeting.keyPoints}</div>
-                        </div>
+                       <div className="p-4">
+                         <div className="text-xs text-muted-foreground mb-2">原始关键信息点</div>
+                         <div className="text-sm text-foreground whitespace-pre-wrap">{meeting.keyPoints}</div>
+                       </div>
+                      )}
+                      {!meeting.aiMinutes && (
+                       <div className="px-4 pb-4">
+                         <button
+                           onClick={() => {
+                              // 用该记录的 keyPoints 填充表单并触发生成
+                              setKeyPoints(meeting.keyPoints || "");
+                              setAttendees(meeting.attendees || "");
+                              if (meeting.visitType) setVisitType(meeting.visitType);
+                              // 短暂延迟确保 state 更新后再触发
+                              setTimeout(() => handleGenerate(), 50);
+                            }}
+                           disabled={generating}
+                           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 border border-cyan-500/30 text-sm font-medium transition-colors disabled:opacity-50"
+                         >
+                           <Sparkles className="w-4 h-4" />
+                            {generating ? "AI 生成中..." : "生成拜访作战日志"}
+                         </button>
+                       </div>
                       )}
                     </div>
                   )}
