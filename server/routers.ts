@@ -1993,6 +1993,29 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
       await db.delete(coachingActions).where(eqFn(coachingActions.id, input.id));
       return { ok: true };
     }),
+    // ── 数据缺口报告 ──────────────────────────────────────────────────────────
+    dataGapReport: publicProcedure.query(async () => {
+      const clients = await getAllClients();
+      const db = await getDb();
+      if (!db) return [];
+      const { keyContacts: kc, meetingMinutes: mm, clientMetrics: cm } = await import('../drizzle/schema');
+      const { eq: eqFn, count: countFn } = await import('drizzle-orm');
+      const results = await Promise.all(clients.map(async (client: any) => {
+        const [contactCount] = await db.select({ cnt: countFn() }).from(kc).where(eqFn(kc.clientId, client.id));
+        const [meetingCount] = await db.select({ cnt: countFn() }).from(mm).where(eqFn(mm.clientId, client.id));
+        const [metricsRow] = await db.select({ id: cm.id }).from(cm).where(eqFn(cm.clientId, client.id)).limit(1);
+        const gaps: string[] = [];
+        if ((contactCount?.cnt ?? 0) === 0) gaps.push('无关键人');
+        if ((meetingCount?.cnt ?? 0) === 0) gaps.push('无拜访记录');
+        if (!metricsRow) gaps.push('无效能基线');
+        const meddpicc = client.meddpicc || {};
+        const meddpiccFilled = Object.values(meddpicc).filter((v: any) => v > 0).length;
+        if (meddpiccFilled < 4) gaps.push('MEDDPICC不完整');
+        if (!client.assignedSamId) gaps.push('未分配SAM');
+        return { clientId: client.id, clientName: client.name, priority: client.priority, stage: client.stage, assignedSamName: client.assignedSamName || '未分配', gaps, score: Math.max(0, 100 - gaps.length * 20) };
+      }));
+      return results.sort((a, b) => a.score - b.score);
+    }),
   }),
 
   // ── Champion Ammo ─────────────────────────────────────────────────────────

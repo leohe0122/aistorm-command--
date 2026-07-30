@@ -1510,6 +1510,8 @@ export default function ADDashboard() {
 
       {/* AD 辅导跟进面板 */}
       <CoachingFollowUpPanel />
+      {/* 数据健康度面板 */}
+      <DataHealthPanel />
     </div>
   );
 }
@@ -1638,6 +1640,84 @@ function CoachingFollowUpPanel() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── 数据健康度面板 ──────────────────────────────────────────────────────────────
+function DataHealthPanel() {
+  const { data: report = [], isLoading } = trpc.insights.dataGapReport.useQuery();
+
+  const gapColors: Record<string, string> = {
+    "无关键人": "bg-red-500/20 text-red-400 border-red-500/30",
+    "无拜访记录": "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    "无效能基线": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    "MEDDPICC不完整": "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    "未分配SAM": "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    "无Champion": "bg-pink-500/20 text-pink-400 border-pink-500/30",
+  };
+
+  const priorityColor: Record<string, string> = {
+    P0: "text-red-400 font-bold",
+    P1: "text-yellow-400 font-semibold",
+    P2: "text-muted-foreground",
+  };
+
+  const problemClients = report.filter((r: any) => r.gaps.length > 0);
+  const healthyClients = report.filter((r: any) => r.gaps.length === 0);
+
+  return (
+    <div className="mt-6 bg-card border border-border/50 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-semibold text-sm text-foreground">📊 数据健康度</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">AI 分析质量依赖数据完整度，以下客户存在数据缺口</p>
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-red-400 font-medium">{problemClients.length} 个有缺口</span>
+          <span className="text-green-400">{healthyClients.length} 个健康</span>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="text-xs text-muted-foreground py-4 text-center">加载中...</div>
+      ) : problemClients.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+          <span className="text-2xl mb-2">✅</span>
+          <div className="text-xs">所有客户数据完整，AI 分析质量有保障</div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {problemClients.map((item: any) => (
+            <div key={item.clientId} className="flex items-center gap-3 py-2 border-b border-border/20 last:border-0">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-medium ${priorityColor[item.priority] || "text-muted-foreground"}`}>
+                    {item.priority}
+                  </span>
+                  <span className="text-sm font-medium text-foreground truncate">{item.clientName}</span>
+                  <span className="text-[10px] text-muted-foreground">{item.stage}</span>
+                  {item.assignedSamName && item.assignedSamName !== "未分配" && (
+                    <span className="text-[10px] text-muted-foreground/60">{item.assignedSamName}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-wrap justify-end">
+                {item.gaps.map((gap: string) => (
+                  <span key={gap} className={`text-[10px] px-1.5 py-0.5 rounded border ${gapColors[gap] || "bg-muted text-muted-foreground border-border"}`}>
+                    {gap}
+                  </span>
+                ))}
+              </div>
+              <div className="flex-shrink-0 w-12 text-right">
+                <span className={`text-xs font-bold ${item.score >= 80 ? "text-green-400" : item.score >= 60 ? "text-yellow-400" : "text-red-400"}`}>
+                  {item.score}%
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

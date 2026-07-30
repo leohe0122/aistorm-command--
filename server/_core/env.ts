@@ -10,4 +10,7 @@ export const ENV = {
     ? "https://api.openai.com"
     : (process.env.BUILT_IN_FORGE_API_URL ?? ""),
   forgeApiKey: process.env.OPENAI_API_KEY ?? process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // 飞书机器人
+  feishuAppId: process.env.FEISHU_APP_ID ?? "",
+  feishuAppSecret: process.env.FEISHU_APP_SECRET ?? "",
 };

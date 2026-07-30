@@ -1058,6 +1058,33 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                 <Textarea className="text-xs h-12 resize-none" defaultValue={contact.notes || ""}
                   onChange={(e) => setEditData({ ...editData, notes: e.target.value })} />
               </div>
+              {/* 关系深度数据 */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-muted-foreground mb-0.5 block">非正式接触次数</label>
+                  <Input type="number" className="h-6 text-xs" defaultValue={(contact as any).informalContactCount || 0}
+                    onChange={(e) => setEditData({ ...editData, informalContactCount: parseInt(e.target.value) || 0 })} />
+                </div>
+                <div>
+                  <label className="text-[10px] text-muted-foreground mb-0.5 block">客户主动发起次数</label>
+                  <Input type="number" className="h-6 text-xs" defaultValue={(contact as any).customerInitiatedCount || 0}
+                    onChange={(e) => setEditData({ ...editData, customerInitiatedCount: parseInt(e.target.value) || 0 })} />
+                </div>
+              </div>
+              <div className="flex gap-3 items-center">
+                <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer">
+                  <input type="checkbox" defaultChecked={(contact as any).hasWhatsapp || false}
+                    onChange={(e) => setEditData({ ...editData, hasWhatsapp: e.target.checked })}
+                    className="w-3 h-3" />
+                  💬 WhatsApp 渠道
+                </label>
+                <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer">
+                  <input type="checkbox" defaultChecked={(contact as any).hasFeishu || false}
+                    onChange={(e) => setEditData({ ...editData, hasFeishu: e.target.checked })}
+                    className="w-3 h-3" />
+                  🐦 飞书渠道
+                </label>
+              </div>
               <div className="flex gap-2">
                 <Button size="sm" className="h-6 text-xs px-2 gap-1" onClick={() => updateContact.mutate({ id: contact.id, ...editData })}
                   disabled={updateContact.isPending}>
@@ -1087,6 +1114,27 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                   {contact.notes && <div className="text-xs text-muted-foreground/80 mt-1 line-clamp-2">{contact.notes}</div>}
                   {contact.email && <div className="text-xs text-primary/70 mt-0.5">{contact.email}</div>}
                   {/* Stance quick toggle */}
+                  {/* 关系深度矩阵：非正式接触数据 */}
+                  {((contact as any).informalContactCount > 0 || (contact as any).customerInitiatedCount > 0 || (contact as any).hasWhatsapp || (contact as any).hasFeishu) && (
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      {(contact as any).customerInitiatedCount > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-medium">
+                          ⭐ 客户主动 ×{(contact as any).customerInitiatedCount}
+                        </span>
+                      )}
+                      {(contact as any).informalContactCount > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          🍽️ 非正式 ×{(contact as any).informalContactCount}
+                        </span>
+                      )}
+                      {(contact as any).hasWhatsapp && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20">💬 WA</span>
+                      )}
+                      {(contact as any).hasFeishu && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">🐦 飞书</span>
+                      )}
+                    </div>
+                  )}
                   <div className="flex gap-1 mt-1.5 flex-wrap">
                     {(['支持', '中立', '反对', '未知'] as const).map(s => {
                       const stanceConfig = { '支持': { icon: '🟢', active: 'bg-green-500/20 text-green-400 border-green-500/40' }, '中立': { icon: '🟡', active: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' }, '反对': { icon: '🔴', active: 'bg-red-500/20 text-red-400 border-red-500/40' }, '未知': { icon: '⚪', active: 'bg-muted/50 text-muted-foreground border-border' } };
