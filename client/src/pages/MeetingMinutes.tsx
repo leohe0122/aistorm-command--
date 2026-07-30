@@ -681,11 +681,8 @@ export default function MeetingMinutes() {
                             return info ? <span className={`text-[10px] px-1.5 py-0.5 rounded ${info.color}`}>{info.label}</span> : null;
                           })()}
                           {meeting.initiatedBy === "customer" && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">客户发起</span>
-                          )}
-                          {meeting.entrySource === "feishu_bot" && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">飞书录入</span>
-                          )}
+                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">客户发起</span>
+                         )}
                        </div>
                         {meeting.attendees && (
                           <div className="text-xs text-muted-foreground">参会：{meeting.attendees}</div>
