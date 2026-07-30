@@ -472,16 +472,27 @@ export default function MeetingMinutes() {
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1.5 block">发起方</label>
-                  <Select value={initiatedBy} onValueChange={(v) => setInitiatedBy(v as typeof initiatedBy)}>
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sam">我方主动</SelectItem>
-                      <SelectItem value="customer">客户主动 ⭐</SelectItem>
-                      <SelectItem value="mutual">双方约定</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-1">
+                   {([
+                     { value: "sam", label: "我方主动" },
+                     { value: "customer", label: "⭐ 客户主动" },
+                   ] as const).map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setInitiatedBy(opt.value)}
+                        className={`flex-1 h-8 text-xs rounded border transition-colors ${
+                          initiatedBy === opt.value
+                            ? opt.value === "customer"
+                              ? "bg-cyan-500/20 text-cyan-400 border-cyan-500/50"
+                              : "bg-primary/20 text-primary border-primary/50"
+                            : "bg-transparent text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div>
