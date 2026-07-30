@@ -176,6 +176,13 @@
       "when": 1785401047394,
       "tag": "0024_fresh_grandmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1785402841347,
+      "tag": "0025_woozy_plazm",
+      "breakpoints": true
     }
   ]
 }

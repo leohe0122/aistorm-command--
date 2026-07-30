@@ -390,7 +390,8 @@ export const keyContacts = mysqlTable("key_contacts", {
   informalContactCount: int("informalContactCount").default(0),     // 非正式接触次数
   customerInitiatedCount: int("customerInitiatedCount").default(0), // 客户主动发起次数
   hasWhatsapp: boolean("hasWhatsapp").default(false),               // 是否有 WhatsApp 渠道
-  hasFeishu: boolean("hasFeishu").default(false),                   // 是否有飞书渠道
+  hasFeishu: boolean("hasFeishu").default(false),                   // 是否有飞书渠道（已废弃，保留兼容）
+  hasWeChat: boolean("hasWeChat").default(false),                    // 是否有微信渠道（中国内地客户）
   lastInformalContact: timestamp("lastInformalContact"),            // 最近一次非正式接触日期
 });
 

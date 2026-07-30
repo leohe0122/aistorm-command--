@@ -1504,7 +1504,7 @@ ${daysInStage >= threshold.yellow ? `**风险等级：** ${stagnationRisk}
         const customerInitCount = ca.customerInitiatedCount ?? 0;
         const channels: string[] = [];
         if (ca.hasWhatsapp) channels.push("WhatsApp");
-        if (ca.hasFeishu) channels.push("飞书");
+        if (ca.hasWeChat) channels.push("微信");
         const lastInformal = ca.lastInformalContact
           ? new Date(ca.lastInformalContact).toLocaleDateString("zh-CN")
           : null;

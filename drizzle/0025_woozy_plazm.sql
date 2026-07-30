@@ -1,0 +1,1 @@
+ALTER TABLE `key_contacts` ADD `hasWeChat` boolean DEFAULT false;

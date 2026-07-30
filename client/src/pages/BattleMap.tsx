@@ -1080,9 +1080,9 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                 </label>
                 <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer">
                   <input type="checkbox" defaultChecked={(contact as any).hasFeishu || false}
-                    onChange={(e) => setEditData({ ...editData, hasFeishu: e.target.checked })}
+                    onChange={(e) => setEditData({ ...editData, hasWeChat: e.target.checked })}
                     className="w-3 h-3" />
-                  🐦 飞书渠道
+                  💚 微信渠道
                 </label>
               </div>
               <div className="flex gap-2">
@@ -1115,7 +1115,7 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                   {contact.email && <div className="text-xs text-primary/70 mt-0.5">{contact.email}</div>}
                   {/* Stance quick toggle */}
                   {/* 关系深度矩阵：非正式接触数据 */}
-                  {((contact as any).informalContactCount > 0 || (contact as any).customerInitiatedCount > 0 || (contact as any).hasWhatsapp || (contact as any).hasFeishu) && (
+                  {((contact as any).informalContactCount > 0 || (contact as any).customerInitiatedCount > 0 || (contact as any).hasWhatsapp || (contact as any).hasWeChat) && (
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       {(contact as any).customerInitiatedCount > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-medium">
@@ -1130,8 +1130,8 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                       {(contact as any).hasWhatsapp && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20">💬 WA</span>
                       )}
-                      {(contact as any).hasFeishu && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">🐦 飞书</span>
+                      {(contact as any).hasWeChat && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-600/10 text-green-400 border border-green-600/20">💚 微信</span>
                       )}
                     </div>
                   )}
