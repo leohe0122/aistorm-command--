@@ -161,7 +161,7 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
     const body = req.body;
 
     // 1. 飞书验证挑战（首次配置 Webhook 时）
-    if (body.challenge) {
+    if (body.challenge || body.type === "url_verification") {
       res.json({ challenge: body.challenge });
       return;
     }
