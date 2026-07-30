@@ -87,11 +87,6 @@ function buildConfirmCard(params: {
     event: "🎪 活动/展会",
     customer_initiated: "⭐ 客户主动联系",
   };
-  const initiatedByLabels: Record<string, string> = {
-    sam: "我方主动",
-    customer: "客户主动 ⭐",
-    mutual: "双方约定",
-  };
 
   return {
     config: { wide_screen_mode: true },
@@ -105,13 +100,33 @@ function buildConfirmCard(params: {
         fields: [
           { is_short: true, text: { tag: "lark_md", content: `**客户**\n${params.clientName}` } },
           { is_short: true, text: { tag: "lark_md", content: `**接触方式**\n${contactTypeLabels[params.contactType] ?? params.contactType}` } },
-          { is_short: true, text: { tag: "lark_md", content: `**发起方**\n${initiatedByLabels[params.initiatedBy] ?? params.initiatedBy}` } },
           { is_short: true, text: { tag: "lark_md", content: `**参会人**\n${params.attendees || "未记录"}` } },
         ],
       },
       {
         tag: "div",
         text: { tag: "lark_md", content: `**关键信息**\n${params.keyPoints}` },
+      },
+      {
+        tag: "div",
+        text: { tag: "lark_md", content: `**这次是谁约的？**` },
+      },
+      {
+        tag: "action",
+        actions: [
+          {
+            tag: "button",
+            text: { tag: "plain_text", content: params.initiatedBy === "sam" ? "✓ 我方约的" : "我方约的" },
+            type: params.initiatedBy === "sam" ? "primary" : "default",
+            value: { action: "set_initiated", pendingId: params.pendingId, initiatedBy: "sam" },
+          },
+          {
+            tag: "button",
+            text: { tag: "plain_text", content: params.initiatedBy === "customer" ? "✓ ⭐ 客户约的" : "⭐ 客户约的" },
+            type: params.initiatedBy === "customer" ? "primary" : "default",
+            value: { action: "set_initiated", pendingId: params.pendingId, initiatedBy: "customer" },
+          },
+        ],
       },
       {
         tag: "action",
@@ -209,6 +224,32 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
     if (body.type === "card" || header?.event_type === "card.action.trigger" || body.action) {
       const action = body.action?.value ?? body.event?.action?.value;
       if (!action) { res.json({ toast: { type: "info", content: "无效操作" } }); return; }
+
+      // 处理发起方切换按钮
+      if (action.action === "set_initiated" && action.pendingId) {
+        const record = await getPendingRecord(action.pendingId);
+        if (!record) { res.json({ toast: { type: "error", content: "记录已过期" } }); return; }
+        // 更新数据库中的 initiatedBy
+        const db = await getDb();
+        if (db) {
+          const { feishuPendingRecords } = await import('../drizzle/schema');
+          const { eq } = await import('drizzle-orm');
+          await db.update(feishuPendingRecords)
+            .set({ initiatedBy: action.initiatedBy })
+            .where(eq(feishuPendingRecords.id, action.pendingId));
+        }
+        // 返回更新后的卡片
+        const updatedCard = buildConfirmCard({
+          clientName: record.clientName,
+          contactType: record.contactType,
+          initiatedBy: action.initiatedBy,
+          keyPoints: record.keyPoints,
+          attendees: record.attendees,
+          pendingId: action.pendingId,
+        });
+        res.json(updatedCard);
+        return;
+      }
 
       if (action.action === "confirm" && action.pendingId) {
         const record = await getPendingRecord(action.pendingId);
