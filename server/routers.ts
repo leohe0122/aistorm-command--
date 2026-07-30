@@ -175,9 +175,17 @@ export const appRouter = router({
         ].sort((a, b) => a.score - b.score);
         return dims.slice(0, 3).map(d => d.name + ': ' + d.score + '分').join('、');
       })() : '暂无数据';
-      const signalsContext = signals.slice(0, 3).map((s: any) =>
-        '[' + s.signalType + '] ' + (s.rawSignal || s.aiInterpretation || '')
-      ).join('\n') || '暂无情报信号';
+      // 功能8修正：只取最近7天内的情报信号（保证时效性）
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const recentSignals7d = signals.filter((s: any) => {
+        const ts = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+        return ts > sevenDaysAgo;
+      });
+      const signalsContext = recentSignals7d.length > 0
+        ? recentSignals7d.slice(0, 3).map((s: any) =>
+            '[' + s.signalType + '] ' + (s.rawSignal || s.aiInterpretation || '')
+          ).join('\n')
+        : '最近7天暂无新情报信号（最新信号超过7天，建议关注行业动态）';
       const docsContext = productDocsList.length > 0
         ? productDocsList.map((d: any) => '[' + d.productLine + '] ' + d.title + (d.description ? ': ' + d.description.slice(0, 80) : '')).join('\n')
         : '暂无上传产品文档（可在武器库中上传）';
@@ -197,7 +205,7 @@ ${clientStage}
 【最近一次拜访摘要】
 ${lastVisitCtx}
 
-【最新情报信号（最近3条）】
+【最新情报信号（近7天，共${recentSignals7d.length}条）】
 ${signalsContext}
 
 【MEDDPICC薄弱维度（分数最低3项）】
@@ -1489,6 +1497,22 @@ ${daysInStage >= threshold.yellow ? `**风险等级：** ${stagnationRisk}
         return `第${i+1}次（${date}）：${summary}`;
       }).join("\n");
 
+      // 功能3修正：构建关系深度矩阵（非正式接触 + 客户主动 + 私信渠道）
+      const relationshipDepthMatrix = contacts.map(c => {
+        const ca = c as any;
+        const informalCount = ca.informalContactCount ?? 0;
+        const customerInitCount = ca.customerInitiatedCount ?? 0;
+        const channels: string[] = [];
+        if (ca.hasWhatsapp) channels.push("WhatsApp");
+        if (ca.hasFeishu) channels.push("飞书");
+        const lastInformal = ca.lastInformalContact
+          ? new Date(ca.lastInformalContact).toLocaleDateString("zh-CN")
+          : null;
+        const depthScore = informalCount + customerInitCount * 2 + channels.length;
+        const depthLabel = depthScore >= 5 ? "深度" : depthScore >= 2 ? "中度" : "浅层";
+        return `${c.name}（${c.buyingRole || c.relationship}）：非正式接触${informalCount}次，客户主动发起${customerInitCount}次，私信渠道[${channels.join("/") || "无"}]，关系深度[${depthLabel}]${lastInformal ? `，最近非正式接触${lastInformal}` : ""}`;
+      }).join("\n") || "暂无关系深度数据";
+
       const prompt = `你是一位专注于大客户Buying Group分析的销售战略顾问。
 
 客户：${client.name}（${client.industry || "未知行业"}）
@@ -1503,13 +1527,17 @@ ${champion ? `${champion.name} - Access to Power: ${championAccess}/3，Politica
 关系路径（汇报链/引荐路径）：
 ${relationshipPaths.join("\n") || "暂无关系路径数据"}
 
+关系深度矩阵（非正式接触 + 客户主动发起 + 私信渠道）：
+${relationshipDepthMatrix}
+
 最近拜访摘要：
 ${recentVisits || "暂无拜访记录"}
 
 请按以下格式输出：
 
 ## 1. Buying Group覆盖地图
-（表格形式：角色 | 覆盖人员 | 关系深度 | 立场 | 风险）
+（表格形式：角色 | 覆盖人员 | 关系深度[浅层/中度/深度] | 立场 | 风险）
+注意：关系深度基于非正式接触次数、客户主动发起次数、私信渠道综合评估，而非仅凭正式会议次数
 - 经济决策人（EB）：${eb ? eb.name + "（" + eb.relationship + "，" + eb.stance + "）" : "⚠️ 未覆盖"}
 - 技术决策人：${techDm ? techDm.name + "（" + techDm.relationship + "，" + techDm.stance + "）" : "⚠️ 未覆盖"}
 - Champion：${champion ? champion.name + "（" + champion.relationship + "）" : "⚠️ 未识别"}
