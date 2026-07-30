@@ -77,6 +77,7 @@ function buildConfirmCard(params: {
   keyPoints: string;
   attendees: string;
   pendingId: string;
+  isInfoSparse?: boolean;
 }): object {
   const contactTypeLabels: Record<string, string> = {
     formal_meeting: "🏢 正式会议",
@@ -350,6 +351,7 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
       });
 
       // 推送确认卡片
+      const isInfoSparse = !parsed.keyPoints || parsed.keyPoints.length < 15;
       const card = buildConfirmCard({
         clientName: matchedClient.name,
         contactType: parsed.contactType || "formal_meeting",
@@ -357,6 +359,7 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
         keyPoints: parsed.keyPoints || text.slice(0, 200),
         attendees: parsed.attendees || "",
         pendingId,
+        isInfoSparse,
       });
       await sendFeishuCard(openId, card);
       res.json({});
