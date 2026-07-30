@@ -289,15 +289,183 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
       const message = event?.message;
       if (!message) { res.json({}); return; }
 
-      // 只处理文本消息
+      const openId = event?.sender?.sender_id?.open_id;
+      if (!openId) { res.json({}); return; }
+
+      // ── 处理图片消息（微信截图等）──────────────────────────────────────────────
+      if (message.message_type === "image") {
+        let imgContent: any;
+        try { imgContent = JSON.parse(message.content); } catch { res.json({}); return; }
+        const imageKey = imgContent.image_key;
+        if (!imageKey) { res.json({}); return; }
+
+        // 下载图片并转为 base64
+        const imgToken = await getFeishuToken();
+        const imgRes = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/resources/${imageKey}?type=image`, {
+          headers: { "Authorization": `Bearer ${imgToken}` },
+        });
+        if (!imgRes.ok) {
+          await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${imgToken}` },
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "⚠️ 无法读取图片，请确认图片权限后重试" }) }),
+          });
+          res.json({}); return;
+        }
+        const imgBuffer = await imgRes.arrayBuffer();
+        const base64Img = Buffer.from(imgBuffer).toString("base64");
+        const mimeType = imgRes.headers.get("content-type") || "image/jpeg";
+
+        // 用 Vision LLM 识别图片内容
+        const clients = await getAllClients();
+        const clientNames = clients.map((c: any) => c.name);
+        const clientListStr = clientNames.slice(0, 30).join("、");
+
+        let parsedImg: any = null;
+        try {
+          const visionResult = await invokeLLM({
+            model: "gpt-4o",
+            messages: [{
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `你是一个销售数据录入助手。请分析这张截图（可能是微信聊天记录、会议截图或客户沟通记录），提取拜访/接触信息。
+
+当前系统中的客户列表：${clientListStr}
+
+请以JSON格式返回：
+- clientName: 从客户列表中匹配最相关的客户名称（如果无法匹配则返回null）
+- contactType: 接触方式，必须是以下之一：formal_meeting、dinner_meeting、phone_call、video_call、instant_message（微信/即时消息）、event、customer_initiated
+- initiatedBy: 发起方，sam（我方）或 customer（客户）
+- keyPoints: 从截图中提取的关键信息点（100字以内）
+- attendees: 参会/对话人（如果能识别）
+
+只返回JSON，不要其他内容。`
+                },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:${mimeType};base64,${base64Img}` }
+                }
+              ] as any,
+            }],
+            response_format: { type: "json_object" },
+          });
+          const visionContent = visionResult.choices[0]?.message?.content ?? "{}";
+          parsedImg = JSON.parse(typeof visionContent === "string" ? visionContent : "{}");
+        } catch (e: any) {
+          console.error("[feishu-webhook] vision error:", e.message);
+        }
+
+        if (!parsedImg || !parsedImg.clientName) {
+          const t2 = await getFeishuToken();
+          await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t2}` },
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "❓ 无法从截图中识别客户名称，请附上一句话说明，例如：「这是和美的集团张总的微信聊天」" }) }),
+          });
+          res.json({}); return;
+        }
+
+        const matchedClientImg = clients.find((c: any) =>
+          c.name === parsedImg.clientName ||
+          c.name.includes(parsedImg.clientName) ||
+          parsedImg.clientName.includes(c.name)
+        );
+        if (!matchedClientImg) {
+          const t3 = await getFeishuToken();
+          await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t3}` },
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: `❓ 识别到客户"${parsedImg.clientName}"，但系统中未找到匹配，请检查客户名称` }) }),
+          });
+          res.json({}); return;
+        }
+
+        const pendingIdImg = require("crypto").randomBytes(8).toString("hex");
+        await savePendingRecord(pendingIdImg, {
+          clientId: matchedClientImg.id, clientName: matchedClientImg.name,
+          contactType: parsedImg.contactType || "instant_message",
+          initiatedBy: parsedImg.initiatedBy || "sam",
+          keyPoints: parsedImg.keyPoints || "（从截图提取）",
+          attendees: parsedImg.attendees || "", openId,
+        });
+        await sendFeishuCard(openId, buildConfirmCard({
+          clientName: matchedClientImg.name,
+          contactType: parsedImg.contactType || "instant_message",
+          initiatedBy: parsedImg.initiatedBy || "sam",
+          keyPoints: parsedImg.keyPoints || "（从截图提取）",
+          attendees: parsedImg.attendees || "",
+          pendingId: pendingIdImg,
+        }));
+        res.json({}); return;
+      }
+
+      // ── 处理文件消息（飞书妙记/文档）──────────────────────────────────────────
+      if (message.message_type === "file" || message.message_type === "audio") {
+        let fileContent: any;
+        try { fileContent = JSON.parse(message.content); } catch { res.json({}); return; }
+        const fileKey = fileContent.file_key;
+        const fileName = fileContent.file_name ?? "会议记录";
+        if (!fileKey) { res.json({}); return; }
+
+        const fileToken = await getFeishuToken();
+        const fileRes = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/resources/${fileKey}?type=file`, {
+          headers: { "Authorization": `Bearer ${fileToken}` },
+        });
+        if (!fileRes.ok) {
+          await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${fileToken}` },
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "⚠️ 无法读取文件内容，请确认文件权限后重试，或直接发送文字描述" }) }),
+          });
+          res.json({}); return;
+        }
+        const fileBuffer = await fileRes.arrayBuffer();
+        const fileText = Buffer.from(fileBuffer).toString("utf-8").slice(0, 8000);
+
+        const clientsF = await getAllClients();
+        const clientNamesF = clientsF.map((c: any) => c.name);
+        const parsedF = await parseVisitFromMessage(`【飞书妙记/文件：${fileName}】
+${fileText}`, clientNamesF);
+        if (!parsedF || !parsedF.clientName) {
+          const t4 = await getFeishuToken();
+          await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t4}` },
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "❓ 无法从文件中识别客户名称，请在发送文件时附上一句话说明，例如：「这是和美的集团的会议记录」" }) }),
+          });
+          res.json({}); return;
+        }
+        const matchedClientF = clientsF.find((c: any) => c.name === parsedF.clientName || c.name.includes(parsedF.clientName!) || parsedF.clientName!.includes(c.name));
+        if (!matchedClientF) { res.json({}); return; }
+        const pendingIdF = require("crypto").randomBytes(8).toString("hex");
+        await savePendingRecord(pendingIdF, {
+          clientId: matchedClientF.id, clientName: matchedClientF.name,
+          contactType: parsedF.contactType || "formal_meeting", initiatedBy: parsedF.initiatedBy || "sam",
+          keyPoints: parsedF.keyPoints || "", attendees: parsedF.attendees || "", openId,
+        });
+        await sendFeishuCard(openId, buildConfirmCard({
+          clientName: matchedClientF.name, contactType: parsedF.contactType || "formal_meeting",
+          initiatedBy: parsedF.initiatedBy || "sam", keyPoints: parsedF.keyPoints || "",
+          attendees: parsedF.attendees || "", pendingId: pendingIdF,
+        }));
+        res.json({}); return;
+      }
+
+      // 只处理文本消息（其他类型忽略）
       if (message.message_type !== "text") {
+        const t5 = await getFeishuToken();
+        await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t5}` },
+          body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "💡 支持以下录入方式：\n1️⃣ 发文字：「刚和美的集团张总吃了饭，聊了安全预算」\n2️⃣ 发截图：直接发微信聊天截图\n3️⃣ 发文件：发送飞书妙记文件" }) }),
+        });
         res.json({});
         return;
       }
 
-      const openId = event?.sender?.sender_id?.open_id;
-      if (!openId) { res.json({}); return; }
-
+      const openId2 = openId;
       let text = "";
       try {
         const content = JSON.parse(message.content);
