@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import crypto from "crypto";
 import { ENV } from "./_core/env";
+
 import { invokeLLM } from "./_core/llm";
 import { getAllClients, insertMeeting, getDb } from "./db";
 
@@ -144,6 +145,12 @@ function buildConfirmCard(params: {
             type: "danger",
             value: { action: "cancel", pendingId: params.pendingId },
           },
+          {
+            tag: "button",
+            text: { tag: "plain_text", content: "✏️ 修改" },
+            type: "default",
+            value: { action: "edit_request", pendingId: params.pendingId },
+          },
         ],
       },
     ],
@@ -154,6 +161,7 @@ function buildConfirmCard(params: {
 async function savePendingRecord(pendingId: string, data: {
   clientId: number; clientName: string; contactType: string;
   initiatedBy: string; keyPoints: string; attendees: string; openId: string;
+  rawText?: string; awaitingClient?: number;
 }): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -252,6 +260,46 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
         return;
       }
 
+      // 处理客户名称补充（截图无法识别客户时）
+      if (action.action === "set_client" && action.pendingId) {
+        const record = await getPendingRecord(action.pendingId);
+        if (!record) { res.json({ toast: { type: "error", content: "记录已过期" } }); return; }
+        const db = await getDb();
+        if (db) {
+          const { feishuPendingRecords } = await import('../drizzle/schema');
+          const { eq } = await import('drizzle-orm');
+          await db.update(feishuPendingRecords)
+            .set({ clientId: action.clientId, clientName: action.clientName, awaitingClient: 0 })
+            .where(eq(feishuPendingRecords.id, action.pendingId));
+        }
+        const updatedRecord = await getPendingRecord(action.pendingId);
+        if (!updatedRecord) { res.json({ toast: { type: "error", content: "记录已过期" } }); return; }
+        res.json(buildConfirmCard({
+          clientName: action.clientName, contactType: updatedRecord.contactType,
+          initiatedBy: updatedRecord.initiatedBy, keyPoints: updatedRecord.keyPoints,
+          attendees: updatedRecord.attendees, pendingId: action.pendingId,
+        }));
+        return;
+      }
+
+      // 处理修改请求
+      if (action.action === "edit_request" && action.pendingId) {
+        const record = await getPendingRecord(action.pendingId);
+        if (!record) { res.json({ toast: { type: "error", content: "记录已过期" } }); return; }
+        const token = await getFeishuToken();
+        await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({
+            receive_id: record.openId,
+            msg_type: "text",
+            content: JSON.stringify({ text: `✏️ 请发送修改后的信息（用|分隔）：\n客户名|关键信息|参会人\n\n例如：美的集团|讨论了安全预算，明年有采购计划|张总（CTO）\n\n当前记录ID：${action.pendingId}` }),
+          }),
+        });
+        res.json({ toast: { type: "info", content: "请在聊天框中发送修改内容" } });
+        return;
+      }
+
       if (action.action === "confirm" && action.pendingId) {
         const record = await getPendingRecord(action.pendingId);
         if (!record) {
@@ -291,6 +339,97 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
 
       const openId = event?.sender?.sender_id?.open_id;
       if (!openId) { res.json({}); return; }
+
+      // ── 处理语音消息（飞书语音）──────────────────────────────────────────────────
+      if (message.message_type === "audio") {
+        let audioContent: any;
+        try { audioContent = JSON.parse(message.content); } catch { res.json({}); return; }
+        const audioKey = audioContent.file_key;
+        if (!audioKey) { res.json({}); return; }
+
+        // 下载语音文件
+        const audioToken = await getFeishuToken();
+        const audioRes = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/resources/${audioKey}?type=file`, {
+          headers: { "Authorization": `Bearer ${audioToken}` },
+        });
+        if (!audioRes.ok) {
+          await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${audioToken}` },
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "⚠️ 无法读取语音文件，请重试或直接发文字" }) }),
+          });
+          res.json({}); return;
+        }
+
+        // 上传到临时存储获取 URL，再调用 Whisper 转录
+        const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+        const audioBase64 = audioBuffer.toString("base64");
+        const mimeType = audioRes.headers.get("content-type") || "audio/ogg";
+
+        // 直接调用 Whisper API（复用 voiceTranscription 逻辑）
+        let transcribedText = "";
+        try {
+          const formData = new FormData();
+          const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
+          formData.append("file", audioBlob, `audio.ogg`);
+          formData.append("model", "whisper-1");
+          formData.append("response_format", "verbose_json");
+          formData.append("prompt", "这是一段销售拜访记录，请转录为中文");
+          const baseUrl = ENV.forgeApiUrl?.endsWith("/") ? ENV.forgeApiUrl : `${ENV.forgeApiUrl}/`;
+          const whisperRes = await fetch(`${baseUrl}v1/audio/transcriptions`, {
+            method: "POST",
+            headers: { authorization: `Bearer ${ENV.forgeApiKey}`, "Accept-Encoding": "identity" },
+            body: formData,
+          });
+          if (whisperRes.ok) {
+            const whisperData = await whisperRes.json() as any;
+            transcribedText = whisperData.text ?? "";
+          }
+        } catch (e: any) {
+          console.error("[feishu-webhook] whisper error:", e.message);
+        }
+
+        if (!transcribedText) {
+          const t = await getFeishuToken();
+          await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t}` },
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "⚠️ 语音转文字失败，请直接发文字描述" }) }),
+          });
+          res.json({}); return;
+        }
+
+        // 转录成功，按文字消息流程处理
+        const voiceClients = await getAllClients();
+        const voiceClientNames = voiceClients.map((c: any) => c.name);
+        const voiceParsed = await parseVisitFromMessage(transcribedText, voiceClientNames);
+        if (!voiceParsed || !voiceParsed.clientName) {
+          const t = await getFeishuToken();
+          await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t}` },
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: `🎤 已转录：「${transcribedText}」\n\n❓ 无法识别客户名称，请明确提及客户名称后重新发送` }) }),
+          });
+          res.json({}); return;
+        }
+        const voiceMatchedClient = voiceClients.find((c: any) => c.name === voiceParsed.clientName || c.name.includes(voiceParsed.clientName!) || voiceParsed.clientName!.includes(c.name));
+        if (!voiceMatchedClient) { res.json({}); return; }
+        const voicePendingId = crypto.randomBytes(8).toString("hex");
+        await savePendingRecord(voicePendingId, {
+          clientId: voiceMatchedClient.id, clientName: voiceMatchedClient.name,
+          contactType: voiceParsed.contactType || "formal_meeting", initiatedBy: voiceParsed.initiatedBy || "sam",
+          keyPoints: voiceParsed.keyPoints || transcribedText.slice(0, 200),
+          attendees: voiceParsed.attendees || "", openId, rawText: transcribedText,
+        });
+        const isVoiceSparse = !voiceParsed.keyPoints || voiceParsed.keyPoints.length < 15;
+        await sendFeishuCard(openId, buildConfirmCard({
+          clientName: voiceMatchedClient.name, contactType: voiceParsed.contactType || "formal_meeting",
+          initiatedBy: voiceParsed.initiatedBy || "sam",
+          keyPoints: voiceParsed.keyPoints || transcribedText.slice(0, 200),
+          attendees: voiceParsed.attendees || "", pendingId: voicePendingId, isInfoSparse: isVoiceSparse,
+        }));
+        res.json({}); return;
+      }
 
       // ── 处理图片消息（微信截图等）──────────────────────────────────────────────
       if (message.message_type === "image") {
@@ -358,11 +497,28 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
         }
 
         if (!parsedImg || !parsedImg.clientName) {
-          const t2 = await getFeishuToken();
-          await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t2}` },
-            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "❓ 无法从截图中识别客户名称，请附上一句话说明，例如：「这是和美的集团张总的微信聊天」" }) }),
+          // 无法识别客户名，推送客户选择卡片
+          const allClients2 = await getAllClients();
+          const noPendingId = crypto.randomBytes(8).toString("hex");
+          await savePendingRecord(noPendingId, {
+            clientId: 0, clientName: "", contactType: parsedImg?.contactType || "instant_message",
+            initiatedBy: parsedImg?.initiatedBy || "sam",
+            keyPoints: parsedImg?.keyPoints || "（从截图提取）",
+            attendees: parsedImg?.attendees || "", openId, awaitingClient: 1,
+          });
+          const clientButtons = allClients2.slice(0, 10).map((c: any) => ({
+            tag: "button",
+            text: { tag: "plain_text", content: c.name },
+            type: "default",
+            value: { action: "set_client", pendingId: noPendingId, clientId: c.id, clientName: c.name },
+          }));
+          await sendFeishuCard(openId, {
+            config: { wide_screen_mode: true },
+            header: { title: { tag: "plain_text", content: "❓ 请选择客户" }, template: "orange" },
+            elements: [
+              { tag: "div", text: { tag: "lark_md", content: "截图已识别，但无法确定是哪个客户，请点击选择：" } },
+              { tag: "action", actions: clientButtons },
+            ],
           });
           res.json({}); return;
         }
@@ -402,7 +558,7 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
       }
 
       // ── 处理文件消息（飞书妙记/文档）──────────────────────────────────────────
-      if (message.message_type === "file" || message.message_type === "audio") {
+      if (message.message_type === "file") {
         let fileContent: any;
         try { fileContent = JSON.parse(message.content); } catch { res.json({}); return; }
         const fileKey = fileContent.file_key;
@@ -459,7 +615,7 @@ ${fileText}`, clientNamesF);
         await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t5}` },
-          body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "💡 支持以下录入方式：\n1️⃣ 发文字：「刚和美的集团张总吃了饭，聊了安全预算」\n2️⃣ 发截图：直接发微信聊天截图\n3️⃣ 发文件：发送飞书妙记文件" }) }),
+          body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "💡 支持以下录入方式：\n1️⃣ 文字：「刚和美的集团张总吃了饭，聊了安全预算」\n2️⃣ 截图：直接发微信聊天截图\n3️⃣ 文件：发送飞书妙记文件\n4️⃣ 语音：直接发语音消息，自动转文字" }) }),
         });
         res.json({});
         return;
@@ -473,6 +629,42 @@ ${fileText}`, clientNamesF);
       } catch { res.json({}); return; }
 
       if (!text.trim()) { res.json({}); return; }
+
+      // 检测是否是修改回复（格式：客户名|关键信息|参会人，且消息中包含 pendingId 提示）
+      // 用户回复格式：美的集团|聊了安全预算|张总
+      const editMatch = text.match(/^([^|]+)\|([^|]+)(?:\|(.+))?$/);
+      if (editMatch) {
+        // 查找最近1小时内该用户的 pending 记录
+        const db2 = await getDb();
+        if (db2) {
+          const { feishuPendingRecords } = await import('../drizzle/schema');
+          const { eq, and, gt } = await import('drizzle-orm');
+          const recentRecords = await db2.select().from(feishuPendingRecords)
+            .where(and(eq(feishuPendingRecords.openId, openId), gt(feishuPendingRecords.expiresAt, new Date())))
+            .orderBy(feishuPendingRecords.createdAt)
+            .limit(1);
+          if (recentRecords.length > 0) {
+            const pendingRec = recentRecords[0];
+            const newClientName = editMatch[1].trim();
+            const newKeyPoints = editMatch[2].trim();
+            const newAttendees = editMatch[3]?.trim() || pendingRec.attendees || "";
+            // 匹配客户
+            const allClients3 = await getAllClients();
+            const matchedEdit = allClients3.find((c: any) => c.name === newClientName || c.name.includes(newClientName) || newClientName.includes(c.name));
+            if (matchedEdit) {
+              await db2.update(feishuPendingRecords)
+                .set({ clientId: matchedEdit.id, clientName: matchedEdit.name, keyPoints: newKeyPoints, attendees: newAttendees })
+                .where(eq(feishuPendingRecords.id, pendingRec.id));
+              await sendFeishuCard(openId, buildConfirmCard({
+                clientName: matchedEdit.name, contactType: pendingRec.contactType,
+                initiatedBy: pendingRec.initiatedBy, keyPoints: newKeyPoints,
+                attendees: newAttendees, pendingId: pendingRec.id,
+              }));
+              res.json({}); return;
+            }
+          }
+        }
+      }
 
       // 获取所有客户名称用于匹配
       const clients = await getAllClients();

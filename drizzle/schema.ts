@@ -8,6 +8,7 @@ import {
   json,
   float,
   boolean,
+  tinyint,
 } from "drizzle-orm/mysql-core";
 
 /**
@@ -777,6 +778,8 @@ export const feishuPendingRecords = mysqlTable("feishu_pending_records", {
   openId: varchar("openId", { length: 100 }).notNull(),
   expiresAt: timestamp("expiresAt").notNull(), // 1小时后过期
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  rawText: text("rawText"), // 原始消息文本，用于修改时重新解析
+  awaitingClient: tinyint("awaitingClient").default(0), // 1=等待SAM补充客户名
 });
 export type FeishuPendingRecord = typeof feishuPendingRecords.$inferSelect;
 export type InsertFeishuPendingRecord = typeof feishuPendingRecords.$inferInsert;

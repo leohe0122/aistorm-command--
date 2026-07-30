@@ -169,6 +169,13 @@
       "when": 1785396486042,
       "tag": "0023_awesome_shaman",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1785401047394,
+      "tag": "0024_fresh_grandmaster",
+      "breakpoints": true
     }
   ]
 }
