@@ -57,7 +57,7 @@ ${text}
 
   try {
     const result = await invokeLLM({
-      model: "fast",
+      model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
     });
