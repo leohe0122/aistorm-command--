@@ -762,3 +762,21 @@ export const clientMetrics = mysqlTable("client_metrics", {
 });
 export type ClientMetric = typeof clientMetrics.$inferSelect;
 export type InsertClientMetric = typeof clientMetrics.$inferInsert;
+
+/**
+ * 飞书机器人待确认记录（持久化，避免 serverless 冷启动后内存丢失）
+ */
+export const feishuPendingRecords = mysqlTable("feishu_pending_records", {
+  id: varchar("id", { length: 32 }).primaryKey(), // pendingId
+  clientId: int("clientId").notNull(),
+  clientName: varchar("clientName", { length: 100 }).notNull(),
+  contactType: varchar("contactType", { length: 50 }).notNull(),
+  initiatedBy: varchar("initiatedBy", { length: 20 }).notNull(),
+  keyPoints: text("keyPoints").notNull(),
+  attendees: varchar("attendees", { length: 200 }),
+  openId: varchar("openId", { length: 100 }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(), // 1小时后过期
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type FeishuPendingRecord = typeof feishuPendingRecords.$inferSelect;
+export type InsertFeishuPendingRecord = typeof feishuPendingRecords.$inferInsert;

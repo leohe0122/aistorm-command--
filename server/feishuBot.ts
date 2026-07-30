@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import crypto from "crypto";
 import { ENV } from "./_core/env";
 import { invokeLLM } from "./_core/llm";
-import { getAllClients, insertMeeting } from "./db";
+import { getAllClients, insertMeeting, getDb } from "./db";
 
 // ── 飞书 API 工具函数 ──────────────────────────────────────────────────────────
 
@@ -134,25 +134,44 @@ function buildConfirmCard(params: {
   };
 }
 
-// ── 内存中的待确认记录（生产环境应使用 Redis，当前用 Map 简化实现）──────────────
-const pendingRecords = new Map<string, {
-  clientId: number;
-  clientName: string;
-  contactType: string;
-  initiatedBy: string;
-  keyPoints: string;
-  attendees: string;
-  openId: string;
-  createdAt: number;
-}>();
+// ── 数据库持久化待确认记录（避免 serverless 冷启动后内存丢失）────────────────────
+async function savePendingRecord(pendingId: string, data: {
+  clientId: number; clientName: string; contactType: string;
+  initiatedBy: string; keyPoints: string; attendees: string; openId: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const { feishuPendingRecords } = await import('../drizzle/schema');
+  const expiresAt = new Date(Date.now() + 3600000); // 1 hour
+  await db.insert(feishuPendingRecords).values({ id: pendingId, ...data, expiresAt });
+}
 
-// 清理超过 1 小时的待确认记录
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, record] of Array.from(pendingRecords.entries())) {
-    if (now - record.createdAt > 3600000) pendingRecords.delete(id);
+async function getPendingRecord(pendingId: string): Promise<{
+  clientId: number; clientName: string; contactType: string;
+  initiatedBy: string; keyPoints: string; attendees: string; openId: string;
+} | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const { feishuPendingRecords } = await import('../drizzle/schema');
+  const { eq } = await import('drizzle-orm');
+  const rows = await db.select().from(feishuPendingRecords).where(eq(feishuPendingRecords.id, pendingId)).limit(1);
+  if (!rows.length) return null;
+  const row = rows[0];
+  if (new Date() > row.expiresAt) {
+    await db.delete(feishuPendingRecords).where(eq(feishuPendingRecords.id, pendingId));
+    return null;
   }
-}, 300000);
+  return { clientId: row.clientId, clientName: row.clientName, contactType: row.contactType,
+    initiatedBy: row.initiatedBy, keyPoints: row.keyPoints, attendees: row.attendees || '', openId: row.openId };
+}
+
+async function deletePendingRecord(pendingId: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const { feishuPendingRecords } = await import('../drizzle/schema');
+  const { eq } = await import('drizzle-orm');
+  await db.delete(feishuPendingRecords).where(eq(feishuPendingRecords.id, pendingId));
+}
 
 // ── 主 Webhook Handler ────────────────────────────────────────────────────────
 
@@ -192,7 +211,7 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
       if (!action) { res.json({ toast: { type: "info", content: "无效操作" } }); return; }
 
       if (action.action === "confirm" && action.pendingId) {
-        const record = pendingRecords.get(action.pendingId);
+        const record = await getPendingRecord(action.pendingId);
         if (!record) {
           res.json({ toast: { type: "error", content: "记录已过期，请重新发送" } });
           return;
@@ -208,13 +227,13 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
           initiatedBy: record.initiatedBy as any,
           entrySource: "feishu_bot",
         });
-        pendingRecords.delete(action.pendingId);
+        await deletePendingRecord(action.pendingId);
         res.json({ toast: { type: "success", content: `✅ 已录入 ${record.clientName} 的拜访记录` } });
         return;
       }
 
       if (action.action === "cancel" && action.pendingId) {
-        pendingRecords.delete(action.pendingId);
+        await deletePendingRecord(action.pendingId);
         res.json({ toast: { type: "info", content: "已取消录入" } });
         return;
       }
@@ -277,9 +296,9 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
         return;
       }
 
-      // 生成待确认记录
+      // 生成待确认记录（存入数据库）
       const pendingId = crypto.randomBytes(8).toString("hex");
-      pendingRecords.set(pendingId, {
+      await savePendingRecord(pendingId, {
         clientId: matchedClient.id,
         clientName: matchedClient.name,
         contactType: parsed.contactType || "formal_meeting",
@@ -287,7 +306,6 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
         keyPoints: parsed.keyPoints || text.slice(0, 200),
         attendees: parsed.attendees || "",
         openId,
-        createdAt: Date.now(),
       });
 
       // 推送确认卡片
