@@ -2162,8 +2162,27 @@ ${knowledgeNote}`;
     })).mutation(async ({ input }) => {
       // Combine keyPoints + transcript as the main content source
       const contentSource = input.transcriptText
-        ? `【飞书妙记/会议记录全文】\n${input.transcriptText}\n\n【SAM补充要点】\n${input.keyPoints}`
-        : `【关键信息点】\n${input.keyPoints}`;
+       ? `【飞书妙记/会议记录全文】\n${input.transcriptText}\n\n【SAM补充要点】\n${input.keyPoints}`
+       : `【关键信息点】\n${input.keyPoints}`;
+
+      // 接触类型和发起方的语义化描述（用于 AI 理解信号可信度）
+      const contactTypeLabel: Record<string, string> = {
+        formal_meeting: "正式会议（预约拜访）",
+        dinner_meeting: "非正式接触 - 饭局/酒桌",
+        phone_call: "电话沟通",
+        video_call: "视频会议",
+        instant_message: "即时消息/私信",
+        event: "活动/展会",
+        customer_initiated: "客户主动发起",
+      };
+      const initiatedByLabel: Record<string, string> = {
+        sam: "SAM 主动发起",
+        customer: "客户主动发起（高价值信号）",
+        mutual: "双方约定",
+      };
+      const contactContext = input.contactType
+        ? `\n接触方式：${contactTypeLabel[input.contactType] || input.contactType}\n发起方：${initiatedByLabel[input.initiatedBy || "sam"] || input.initiatedBy}`
+        : "";
 
       const prompt = `你是一位专业的大客户销售顾问，擅长从拜访记录中提炼战略洞察，帮助销售团队推进大客户商机。
 
@@ -2171,7 +2190,11 @@ ${knowledgeNote}`;
 拜访日期：${input.meetingDate}
 拜访类型：${input.visitType || '拜访'}
 参会人：${input.attendees || '未记录'}
+${contactContext}
 ${contentSource}
+
+${input.contactType === "dinner_meeting" || input.contactType === "event" ? "⚠️ 注意：本次为非正式场合接触，客户在轻松环境下透露的信息往往更真实，可信度高于正式会议。请在分析中体现这一点。" : ""}
+${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户主动发起，这是强烈的关系热度信号，说明客户有主动推进意愿。请在关键人分析和信号评估中重点体现。" : ""}
 
 请生成一份结构化拜访作战日志，格式为Markdown：
 

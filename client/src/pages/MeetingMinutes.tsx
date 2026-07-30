@@ -664,11 +664,29 @@ export default function MeetingMinutes() {
                       </div>
                       <div>
                         <div className="font-medium text-foreground flex items-center gap-2">
-                          {new Date(meeting.meetingDate).toLocaleDateString("zh-CN")}
-                          {meeting.visitType && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">{meeting.visitType}</span>
+                         {new Date(meeting.meetingDate).toLocaleDateString("zh-CN")}
+                         {meeting.visitType && (
+                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">{meeting.visitType}</span>
+                         )}
+                          {meeting.contactType && meeting.contactType !== "formal_meeting" && (() => {
+                            const contactLabels: Record<string, { label: string; color: string }> = {
+                              dinner_meeting: { label: "🍽️ 饭局", color: "bg-orange-500/15 text-orange-400 border border-orange-500/30" },
+                              phone_call: { label: "📞 电话", color: "bg-blue-500/15 text-blue-400 border border-blue-500/30" },
+                              video_call: { label: "📹 视频", color: "bg-purple-500/15 text-purple-400 border border-purple-500/30" },
+                              instant_message: { label: "💬 私信", color: "bg-green-500/15 text-green-400 border border-green-500/30" },
+                              event: { label: "🎪 活动", color: "bg-yellow-500/15 text-yellow-400 border border-yellow-500/30" },
+                              customer_initiated: { label: "⭐ 客户主动", color: "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30" },
+                            };
+                            const info = contactLabels[meeting.contactType];
+                            return info ? <span className={`text-[10px] px-1.5 py-0.5 rounded ${info.color}`}>{info.label}</span> : null;
+                          })()}
+                          {meeting.initiatedBy === "customer" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">客户发起</span>
                           )}
-                        </div>
+                          {meeting.entrySource === "feishu_bot" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">飞书录入</span>
+                          )}
+                       </div>
                         {meeting.attendees && (
                           <div className="text-xs text-muted-foreground">参会：{meeting.attendees}</div>
                         )}
