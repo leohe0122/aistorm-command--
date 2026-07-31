@@ -98,6 +98,7 @@ export const coachingActions = mysqlTable("coaching_actions", {
   isCompleted: boolean("isCompleted").default(false).notNull(),
   completedAt: timestamp("completedAt"),
   createdBy: varchar("createdBy", { length: 100 }), // AD 姓名
+  executionFeedback: text("executionFeedback"),      // SAM 执行反馈
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

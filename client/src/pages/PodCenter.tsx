@@ -609,6 +609,17 @@ function CoachingActionsSection({ currentUserId, currentUserName }: { currentUse
     onError: (e) => toast.error("操作失败：" + e.message),
   });
 
+  const feedbackMut = trpc.insights.submitCoachingFeedback.useMutation({
+    onSuccess: () => {
+      utils.insights.listCoachingActions.invalidate();
+      toast.success("反馈已提交 ✓");
+    },
+    onError: (e) => toast.error("提交失败：" + e.message),
+  });
+
+  const [feedbackInputs, setFeedbackInputs] = useState<Record<number, string>>({});
+  const [expandedFeedback, setExpandedFeedback] = useState<Record<number, boolean>>({});
+
   const pending = myActions.filter((a: any) => !a.isCompleted);
   const completed = myActions.filter((a: any) => a.isCompleted);
 
@@ -680,7 +691,37 @@ function CoachingActionsSection({ currentUserId, currentUserName }: { currentUse
                             查看详情
                           </button>
                         )}
+                        <button type="button"
+                          onClick={() => setExpandedFeedback(prev => ({ ...prev, [action.id]: !prev[action.id] }))}
+                          className="text-[10px] text-emerald-400/70 hover:text-emerald-400 transition-colors ml-auto">
+                          {expandedFeedback[action.id] ? "收起反馈" : "✏️ 填写反馈"}
+                        </button>
                       </div>
+                      {expandedFeedback[action.id] && (
+                        <div className="mt-2 space-y-1.5">
+                          <textarea
+                            className="w-full text-xs bg-muted/30 border border-border rounded p-2 resize-none focus:outline-none focus:ring-1 focus:ring-emerald-500/50 text-foreground placeholder:text-muted-foreground"
+                            rows={3}
+                            placeholder="简短描述执行情况（如：已与张总约好下周见面，确认了预算意向...）"
+                            value={feedbackInputs[action.id] || ""}
+                            onChange={e => setFeedbackInputs(prev => ({ ...prev, [action.id]: e.target.value }))}
+                          />
+                          <div className="flex gap-2">
+                            <button type="button"
+                              onClick={() => { if (feedbackInputs[action.id]?.trim()) feedbackMut.mutate({ id: action.id, feedback: feedbackInputs[action.id], markCompleted: false }); }}
+                              disabled={feedbackMut.isPending || !feedbackInputs[action.id]?.trim()}
+                              className="text-[10px] px-2 py-1 rounded border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 disabled:opacity-50">
+                              保存反馈
+                            </button>
+                            <button type="button"
+                              onClick={() => { feedbackMut.mutate({ id: action.id, feedback: feedbackInputs[action.id] || "", markCompleted: true }); }}
+                              disabled={feedbackMut.isPending}
+                              className="text-[10px] px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50">
+                              ✓ 标记完成
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -698,6 +739,9 @@ function CoachingActionsSection({ currentUserId, currentUserName }: { currentUse
                       <span className="text-[10px] text-muted-foreground/50">
                         完成于 {action.completedAt ? new Date(action.completedAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }) : '—'}
                       </span>
+                      {action.executionFeedback && (
+                        <p className="text-[10px] text-muted-foreground/60 mt-0.5 italic">反馈：{action.executionFeedback}</p>
+                      )}
                     </div>
                   </div>
                 ))}

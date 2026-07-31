@@ -1369,6 +1369,8 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const [coachingSummaryLoading, setCoachingSummaryLoading] = useState(false);
   const [coachingSummaryStageLabel, setCoachingSummaryStageLabel] = useState("");
   const [dispatchingToSam, setDispatchingToSam] = useState(false);
+  const [dispatchEditOpen, setDispatchEditOpen] = useState(false);
+  const [dispatchEditContent, setDispatchEditContent] = useState("");
   const coachingSummaryMut = trpc.insights.generateCoachingSummary.useMutation();
   const createCoachingActionsMut = trpc.insights.createCoachingActions.useMutation();
 
@@ -1388,23 +1390,31 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
     finally { setCoachingSummaryLoading(false); }
   };
 
-  const handleDispatchToSam = async () => {
+  const handleDispatchToSam = () => {
     const samId = (client as any).assignedSamId;
     const samName = (client as any).assignedSamName;
     if (!samId || !samName) { toast.error("该客户尚未分配 SAM，请先分配 SAM"); return; }
     if (!coachingSummary) { toast.error("请先生成辅导建议"); return; }
+    // Open edit dialog with current coaching summary
+    setDispatchEditContent(coachingSummary);
+    setDispatchEditOpen(true);
+  };
+
+  const handleConfirmDispatch = async () => {
+    const samId = (client as any).assignedSamId;
+    const samName = (client as any).assignedSamName;
+    if (!samId || !samName) return;
     setDispatchingToSam(true);
     try {
-      // Extract action items from coaching summary
-      const lines = coachingSummary.split("\n").filter(l => l.trim());
-      const coachingLine = lines.find(l => l.includes("辅导建议"));
+      const lines = dispatchEditContent.split("\n").filter(l => l.trim());
       const focusLine = lines.find(l => l.includes("下次") && l.includes("关注"));
       const actions = [
-        { title: `[${coachingSummaryStageLabel || adInquiryStageType}] ${client.name} 辅导任务`, description: coachingSummary.slice(0, 500), clientId: client.id },
+        { title: `[${coachingSummaryStageLabel || adInquiryStageType}] ${client.name} 辅导任务`, description: dispatchEditContent.slice(0, 800), clientId: client.id },
         ...(focusLine ? [{ title: `下次Review关注：${focusLine.replace(/\*\*/g, "").replace(/^.*：/, "").trim().slice(0, 50)}`, clientId: client.id }] : []),
       ];
       await createCoachingActionsMut.mutateAsync({ samId, samName, actions, createdBy: "AD" });
       toast.success(`辅导建议已下发给 ${samName}`);
+      setDispatchEditOpen(false);
     } catch (e: any) { toast.error("下发失败：" + (e?.message || "未知错误")); }
     finally { setDispatchingToSam(false); }
   };
@@ -2177,6 +2187,14 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
       {/* Expanded Detail Panel with tabs */}
       {expanded && (
         <div className="border-t border-border">
+          {/* AI 提示气泡（跳转后自动显示，3秒后消失） */}
+          {highlightBubble && (
+            <div className="mx-3 mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-300 animate-pulse">
+              <span className="text-yellow-400 flex-shrink-0 mt-0.5">💡</span>
+              <span>{highlightBubble}</span>
+              <button type="button" onClick={() => setHighlightBubble(null)} className="ml-auto text-yellow-400/60 hover:text-yellow-400 flex-shrink-0">✕</button>
+            </div>
+          )}
           {/* Tab switcher */}
           <div className="flex border-b border-border">
             <button
@@ -3042,6 +3060,52 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
             </div>
           </>
         )}
+      </DialogContent>
+    </Dialog>
+    {/* 下发辅导建议编辑弹窗 */}
+    <Dialog open={dispatchEditOpen} onOpenChange={setDispatchEditOpen}>
+      <DialogContent className="max-w-xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-green-400">
+            📤 下发辅导建议给 {(client as any).assignedSamName}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto space-y-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 px-3 py-2 rounded-lg">
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${adInquiryStageType === "0to1" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-blue-500/20 text-blue-300 border border-blue-500/30"}`}>
+              {coachingSummaryStageLabel || adInquiryStageType}
+            </span>
+            <span>客户：{client.name}</span>
+            <span className="ml-auto">发送给：{(client as any).assignedSamName}</span>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-foreground mb-1 block">辅导建议内容（可编辑）</label>
+            <textarea
+              className="w-full text-xs bg-muted/30 border border-border rounded-lg p-3 resize-none focus:outline-none focus:ring-1 focus:ring-green-500/50 text-foreground placeholder:text-muted-foreground leading-relaxed"
+              rows={12}
+              value={dispatchEditContent}
+              onChange={e => setDispatchEditContent(e.target.value)}
+              placeholder="辅导建议内容..."
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">SAM 将在「我的辅导任务」中看到这条待办，包含完整内容。</p>
+          </div>
+        </div>
+        <div className="border-t border-border pt-3 flex justify-between items-center gap-2">
+          <button type="button" onClick={() => setDispatchEditContent(coachingSummary)}
+            className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground">
+            ↺ 恢复原始内容
+          </button>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setDispatchEditOpen(false)}
+              className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground">
+              取消
+            </button>
+            <button type="button" onClick={handleConfirmDispatch} disabled={dispatchingToSam || !dispatchEditContent.trim()}
+              className="text-xs px-4 py-1.5 rounded bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-50 transition-colors">
+              {dispatchingToSam ? "下发中..." : "✓ 确认下发"}
+            </button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
     </>

@@ -2187,6 +2187,22 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
       return { ok: true };
     }),
 
+    // 提交执行反馈（SAM 完成后填写简短反馈）
+    submitCoachingFeedback: publicProcedure.input(z.object({
+      id: z.number(),
+      feedback: z.string(),
+      markCompleted: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const { coachingActions } = await import('../drizzle/schema');
+      const { eq: eqFn } = await import('drizzle-orm');
+      const updateData: any = { executionFeedback: input.feedback };
+      if (input.markCompleted) { updateData.isCompleted = true; updateData.completedAt = new Date(); }
+      await db.update(coachingActions).set(updateData).where(eqFn(coachingActions.id, input.id));
+      return { ok: true };
+    }),
+
     // 删除辅导 Action Item
     deleteCoachingAction: publicProcedure.input(z.object({
       id: z.number(),

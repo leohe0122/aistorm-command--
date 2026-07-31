@@ -190,6 +190,13 @@
       "when": 1785479027307,
       "tag": "0026_gifted_fenris",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1785498727280,
+      "tag": "0027_hesitant_changeling",
+      "breakpoints": true
     }
   ]
 }

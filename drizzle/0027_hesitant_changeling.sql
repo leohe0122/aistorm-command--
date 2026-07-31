@@ -1,0 +1,1 @@
+ALTER TABLE `coaching_actions` ADD `executionFeedback` text;
