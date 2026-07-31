@@ -1361,6 +1361,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const [adInquiryOpen, setAdInquiryOpen] = useState(false);
   const [adInquiryContent, setAdInquiryContent] = useState("");
   const [adInquiryLoading, setAdInquiryLoading] = useState(false);
+  const [adInquiryNotes, setAdInquiryNotes] = useState("");
   const handleAdInquiry = async (stageType: "0to1" | "1toN", oppId?: number) => {
     setAdInquiryOpen(true); setAdInquiryLoading(true); setAdInquiryContent(""); setReviewDropdownOpen(false);
     try {
@@ -1373,6 +1374,25 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const saveReviewMut = trpc.insights.saveReview.useMutation();
   const { data: latestReviews = [] } = trpc.insights.getLatestReviews.useQuery({ clientId: client.id });
   const [reviewSavedAt, setReviewSavedAt] = useState<Date | null>(null);
+  const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
+
+  // Map contradiction keywords to section anchors
+  const contradictionKeyMap: Record<string, string> = {
+    "EB评分": "economic-buyer", "经济买家": "economic-buyer",
+    "Champion评分": "champion", "Champion": "champion", "Political Will": "champion",
+    "技术验证": "technical-verification", "SA参与": "technical-verification",
+    "Blue Sheet": "blue-sheet", "方案提案": "blue-sheet",
+    "关键人数量": "contacts", "建图": "contacts",
+    "痛点": "pain", "客户原话": "pain",
+    "EB未接触": "economic-buyer",
+  };
+
+  const getHighlightKey = (warningText: string) => {
+    for (const [keyword, key] of Object.entries(contradictionKeyMap)) {
+      if (warningText.includes(keyword)) return key;
+    }
+    return null;
+  };
   // 负责 SAM 分配
   const [samDropdownOpen, setSamDropdownOpen] = useState(false);
   const { data: samUsers = [] } = trpc.clients.listSamUsers.useQuery();
@@ -1803,6 +1823,67 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
           )}
         </div>
       )}
+      {/* 0→1 → 1→N 阶段转换进度条 */}
+      {(() => {
+        const zeroToOneStages = ['建图', '进门', '定痛', '找人'];
+        const oneToNStages = ['进入商机', '初步需求', '需求挖掘', '技术验证', '方案提案', '商务谈判', '赢单'];
+        const allStages = [...zeroToOneStages, ...oneToNStages];
+        const currentIdx = allStages.indexOf(client.stage);
+        if (currentIdx < 0) return null;
+        const totalStages = allStages.length;
+        const progressPct = Math.round(((currentIdx + 1) / totalStages) * 100);
+        const isTransitionStage = client.stage === '找人';
+        const isOneToN = oneToNStages.includes(client.stage);
+        const transitionWarnings: string[] = [];
+        if (isTransitionStage) {
+          if (!hasChampion) transitionWarnings.push("Champion 尚未在关键人图谱中标注");
+          const informalCount = contacts.reduce((sum: number, c: any) => sum + (c.informalContactCount ?? 0), 0);
+          if (informalCount === 0) transitionWarnings.push("所有接触均为正式会议，关系深度存疑");
+          if (eScore < 2) transitionWarnings.push("EB 接触不足（E维度 < 2/4）");
+        }
+        const readyToTransition = isTransitionStage && canAdvance && transitionWarnings.length === 0;
+        return (
+          <div className="mt-2 mb-1 px-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] text-muted-foreground w-8 text-right">0→1</span>
+              <div className="flex-1 relative h-2 bg-muted/40 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${isOneToN ? 'bg-gradient-to-r from-blue-500 to-green-500' : 'bg-gradient-to-r from-purple-500 to-blue-500'}`}
+                  style={{ width: `${progressPct}%` }}
+                />
+                <div className="absolute top-0 bottom-0 w-0.5 bg-yellow-400/60" style={{ left: `${(4 / totalStages) * 100}%` }} />
+              </div>
+              <span className="text-[10px] text-muted-foreground w-8">1→N</span>
+            </div>
+            <div className="flex items-center gap-0.5 mb-1">
+              {allStages.map((s, i) => (
+                <div key={s} className={`flex-1 text-center text-[8px] truncate px-0.5 rounded transition-colors ${i === currentIdx ? (isOneToN ? 'text-green-400 font-semibold' : 'text-purple-400 font-semibold') : i < currentIdx ? 'text-muted-foreground/60' : 'text-muted-foreground/30'}`}>
+                  {s === '进入商机' ? '↗' : s.slice(0, 2)}
+                </div>
+              ))}
+            </div>
+            {isTransitionStage && (
+              <div className={`mt-1 rounded-lg px-2 py-1.5 text-[10px] border ${readyToTransition ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'}`}>
+                {readyToTransition ? (
+                  <span>✅ 具备进入商机条件：Champion 已激活，关键条件全部满足</span>
+                ) : (
+                  <div>
+                    <div className="font-medium mb-0.5">⚠️ 尚不具备进入商机条件：</div>
+                    {transitionWarnings.map((w, i) => <div key={i}>• {w}</div>)}
+                    {criticalFails.filter(f => !transitionWarnings.some(w => w.includes(f.text.slice(0,10)))).map((f, i) => <div key={`cf-${i}`}>• {f.text}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
+            {isOneToN && (
+              <div className="mt-1 rounded-lg px-2 py-1 text-[10px] bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                🎯 1→N 赢单阶段 · {client.stage} · 停留 {(() => { const sc = (client as any).stageChangedAt; return sc ? Math.floor((Date.now() - new Date(sc).getTime()) / 86400000) : '?'; })()} 天
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* MEDDPICC mini bars */}
         {(() => {
           const isOneToN = client.stage === '进入商机';
@@ -2612,15 +2693,71 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
           </div>
         ) : (
           <div className="text-sm leading-relaxed">
+            {highlightedSection && (
+              <div className="mb-3 flex items-center gap-2 text-xs bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
+                <span className="text-yellow-400">🔍 已高亮对应数据字段</span>
+                <button type="button" onClick={() => setHighlightedSection(null)} className="ml-auto text-muted-foreground hover:text-foreground">✕ 取消高亮</button>
+              </div>
+            )}
             <ReactMarkdown
               components={{
                 h1: ({children}) => <h1 className="text-lg font-bold text-purple-300 mt-4 mb-2 pb-1 border-b border-purple-500/30">{children}</h1>,
-                h2: ({children}) => <h2 className="text-base font-semibold text-purple-200 mt-4 mb-2">{children}</h2>,
+                h2: ({node, children, ...props}) => {
+                  const text = String(children);
+                  const sectionKey = text.includes("MEDDPICC") ? "meddpicc" :
+                    text.includes("Champion") ? "champion" :
+                    text.includes("Blue Sheet") || text.includes("战局") ? "blue-sheet" :
+                    text.includes("关键人") || text.includes("Buying") ? "contacts" : null;
+                  const isHighlighted = sectionKey && highlightedSection === sectionKey;
+                  return <h2 id={sectionKey || undefined} className={`text-base font-semibold text-purple-200 mt-4 mb-2 px-2 py-1 rounded transition-all ${isHighlighted ? "bg-yellow-500/20 border border-yellow-500/40 text-yellow-300" : ""}`}>{children}</h2>;
+                },
                 h3: ({children}) => <h3 className="text-sm font-semibold text-blue-300 mt-3 mb-1">{children}</h3>,
-                p: ({children}) => <p className="text-foreground/90 mb-2 leading-relaxed">{children}</p>,
+                p: ({children}) => {
+                  const text = String(children);
+                  const isWarning = text.includes("⚠️") || text.includes("📭");
+                  if (isWarning) {
+                    const highlightKey = getHighlightKey(text);
+                    return (
+                      <p
+                        className={`text-foreground/90 mb-2 leading-relaxed cursor-pointer rounded px-2 py-1 transition-all ${highlightKey ? "hover:bg-yellow-500/10 hover:border hover:border-yellow-500/30 border border-transparent" : ""}`}
+                        onClick={() => {
+                          if (highlightKey) {
+                            setHighlightedSection(highlightKey);
+                            const el = document.getElementById(highlightKey);
+                            if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }
+                        }}
+                        title={highlightKey ? "点击高亮对应数据字段" : undefined}
+                      >
+                        {children}
+                        {highlightKey && <span className="ml-1 text-[10px] text-yellow-500/70">↑ 点击定位</span>}
+                      </p>
+                    );
+                  }
+                  return <p className="text-foreground/90 mb-2 leading-relaxed">{children}</p>;
+                },
                 ul: ({children}) => <ul className="list-none space-y-1 mb-3">{children}</ul>,
                 ol: ({children}) => <ol className="list-decimal list-inside space-y-1 mb-3 text-foreground/90">{children}</ol>,
-                li: ({children}) => <li className="flex items-start gap-2 text-foreground/85"><span className="text-purple-400 mt-0.5 flex-shrink-0">▸</span><span>{children}</span></li>,
+                li: ({children}) => {
+                  const text = String(children);
+                  const isWarning = text.includes("⚠️") || text.includes("📭");
+                  const highlightKey = isWarning ? getHighlightKey(text) : null;
+                  return (
+                    <li
+                      className={`flex items-start gap-2 text-foreground/85 ${highlightKey ? "cursor-pointer hover:bg-yellow-500/10 rounded px-1 transition-all" : ""}`}
+                      onClick={() => {
+                        if (highlightKey) {
+                          setHighlightedSection(highlightKey);
+                          const el = document.getElementById(highlightKey);
+                          if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }
+                      }}
+                    >
+                      <span className={`mt-0.5 flex-shrink-0 ${isWarning ? "text-yellow-400" : "text-purple-400"}`}>▸</span>
+                      <span>{children}{highlightKey && <span className="ml-1 text-[10px] text-yellow-500/70">↑ 点击定位</span>}</span>
+                    </li>
+                  );
+                },
                 strong: ({children}) => <strong className="text-yellow-300 font-semibold">{children}</strong>,
                 em: ({children}) => <em className="text-blue-300 not-italic font-medium">{children}</em>,
                 blockquote: ({children}) => <blockquote className="border-l-2 border-purple-500 pl-3 my-2 text-muted-foreground italic">{children}</blockquote>,
@@ -2646,35 +2783,92 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
       </DialogContent>
     </Dialog>
     {/* AD 问询问题 Dialog */}
-    <Dialog open={adInquiryOpen} onOpenChange={setAdInquiryOpen}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+    <Dialog open={adInquiryOpen} onOpenChange={(o) => { setAdInquiryOpen(o); if (!o) setAdInquiryNotes(""); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-orange-400">
             🔍 AD 问询问题 — {client.name}
           </DialogTitle>
         </DialogHeader>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
           {adInquiryLoading ? (
             <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
               <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               AI 正在生成问询问题...
             </div>
           ) : (
-            <div className="prose prose-sm prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap p-1">
-              {adInquiryContent}
+            <div className="space-y-3">
+              {(() => {
+                const lines = adInquiryContent.split("\n").filter(l => l.trim());
+                let qNum = 0;
+                return lines.map((line, idx) => {
+                  const isQ = /^问题\d+[:：]/.test(line.trim());
+                  const isNote = line.includes("如果SAM答不出") || line.startsWith("附：");
+                  if (isQ) {
+                    qNum++;
+                    const qText = line.replace(/^问题\d+[:：]\s*/, "");
+                    const dimMatch = qText.match(/（考察维度：([^）]+)）/);
+                    const cleanQ = qText.replace(/（考察维度：[^）]+）/, "").trim();
+                    return (
+                      <div key={idx} className="border border-orange-500/20 rounded-lg p-3 bg-orange-500/5 group">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <span className="text-[10px] text-orange-400 font-medium">问题 {qNum}</span>
+                            {dimMatch && <span className="text-[10px] text-muted-foreground ml-2">考察：{dimMatch[1]}</span>}
+                            <p className="text-sm text-foreground mt-1">{cleanQ}</p>
+                          </div>
+                          <button type="button"
+                            onClick={() => { navigator.clipboard.writeText(cleanQ); toast.success("已复制"); }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] px-2 py-1 rounded border border-border hover:bg-muted/50 text-muted-foreground flex-shrink-0">
+                            复制
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (isNote) {
+                    return (
+                      <div key={idx} className="border border-yellow-500/20 rounded-lg p-3 bg-yellow-500/5">
+                        <p className="text-xs text-yellow-400/80">{line.replace(/^附：/, "")}</p>
+                      </div>
+                    );
+                  }
+                  return line.trim() ? <p key={idx} className="text-xs text-muted-foreground">{line}</p> : null;
+                });
+              })()}
+              <div className="border border-border rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-foreground">📝 SAM 回答记录 & AD 评估</label>
+                  <span className="text-[10px] text-muted-foreground">仅本地，不上传</span>
+                </div>
+                <textarea
+                  className="w-full text-xs bg-muted/30 border border-border rounded p-2 resize-none focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
+                  rows={5}
+                  placeholder={"记录 SAM 的回答情况...\n\n问题1 回答：\n评估：\n\n问题2 回答：\n评估：\n\n整体判断："}
+                  value={adInquiryNotes}
+                  onChange={e => setAdInquiryNotes(e.target.value)}
+                />
+              </div>
             </div>
           )}
         </div>
         {adInquiryContent && !adInquiryLoading && (
-          <div className="border-t border-border pt-3 flex justify-between items-center">
-            <p className="text-xs text-muted-foreground">在 Review 时向 SAM 提出这些问题，只有真正做过的人才能回答</p>
-            <button
-              type="button"
-              onClick={() => { navigator.clipboard.writeText(adInquiryContent); toast.success("已复制"); }}
-              className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground"
-            >
-              📋 复制
-            </button>
+          <div className="border-t border-border pt-3 flex justify-between items-center gap-2">
+            <p className="text-xs text-muted-foreground flex-1">只有真正做过的人才能回答</p>
+            <div className="flex gap-2">
+              {adInquiryNotes && (
+                <button type="button"
+                  onClick={() => { navigator.clipboard.writeText(`【AD问询 - ${client.name}】\n\n${adInquiryContent}\n\n【SAM回答记录】\n${adInquiryNotes}`); toast.success("完整记录已复制"); }}
+                  className="text-xs px-3 py-1.5 rounded border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary">
+                  📋 复制完整记录
+                </button>
+              )}
+              <button type="button"
+                onClick={() => { navigator.clipboard.writeText(adInquiryContent); toast.success("问题已复制"); }}
+                className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground">
+                📋 仅复制问题
+              </button>
+            </div>
           </div>
         )}
       </DialogContent>
