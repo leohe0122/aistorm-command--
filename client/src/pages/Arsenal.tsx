@@ -25,6 +25,15 @@ import { BookOpen, Star, TrendingUp } from "lucide-react";
 const INDUSTRY_OPTIONS = ["金融", "制造", "电信", "政府", "医疗", "科技", "零售", "能源", "教育", "其他"];
 const CLIENT_SIZE_OPTIONS = ["大型企业", "中型企业", "小型企业", "政府机构"] as const;
 
+type ParsedCase = {
+  title: string; clientAlias: string; isConfidential: boolean;
+  industry: string; clientSize: string; region: string;
+  painPoint: string; solution: string; quantifiedResult: string;
+  roiHighlight: string; fullContent: string;
+  needsVerification: boolean;
+  filename: string; status: 'pending' | 'parsing' | 'done' | 'error'; error?: string;
+};
+
 function CaseStudiesTab() {
   const utils = trpc.useUtils();
   const { data: cases = [], isLoading } = trpc.caseStudies.list.useQuery();
@@ -45,6 +54,11 @@ function CaseStudiesTab() {
   const [filterIndustry, setFilterIndustry] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const batchFileInputRef = useRef<HTMLInputElement>(null);
+  const [batchItems, setBatchItems] = useState<ParsedCase[]>([]);
+  const [showBatchReview, setShowBatchReview] = useState(false);
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [form, setForm] = useState({
     title: "", clientAlias: "", isConfidential: false,
     industry: "", clientSize: "大型企业" as typeof CLIENT_SIZE_OPTIONS[number],
@@ -106,8 +120,155 @@ function CaseStudiesTab() {
     }
   };
 
+  const handleBatchUpload = async (files: FileList) => {
+    const fileArr = Array.from(files);
+    if (fileArr.length === 0) return;
+    // Initialize items with 'pending' status
+    const initial: ParsedCase[] = fileArr.map(f => ({
+      title: f.name.replace(/\.[^.]+$/, ''), clientAlias: '', isConfidential: false,
+      industry: '', clientSize: '大型企业', region: '', painPoint: '', solution: '',
+      quantifiedResult: '', roiHighlight: '', fullContent: '', needsVerification: false,
+      filename: f.name, status: 'pending',
+    }));
+    setBatchItems(initial);
+    setShowBatchReview(true);
+    setExpandedIdx(null);
+    // Process files sequentially to avoid rate limits
+    for (let i = 0; i < fileArr.length; i++) {
+      setBatchItems(prev => prev.map((item, idx) => idx === i ? { ...item, status: 'parsing' } : item));
+      try {
+        const formData = new FormData();
+        formData.append("file", fileArr[i]);
+        const res = await fetch("/api/upload-doc", { method: "POST", body: formData });
+        if (!res.ok) throw new Error("上传失败");
+        const { extractedText } = await res.json();
+        if (!extractedText) throw new Error("无法提取文字");
+        const parsed = await parseFromDocMut.mutateAsync({ extractedText, filename: fileArr[i].name });
+        setBatchItems(prev => prev.map((item, idx) => idx === i ? {
+          ...item,
+          title: parsed.title || item.title,
+          clientAlias: parsed.clientAlias || '',
+          isConfidential: parsed.isConfidential ?? false,
+          industry: parsed.industry || '',
+          clientSize: parsed.clientSize || '大型企业',
+          region: parsed.region || '',
+          painPoint: parsed.painPoint || '',
+          solution: parsed.solution || '',
+          quantifiedResult: parsed.quantifiedResult || '',
+          roiHighlight: parsed.roiHighlight || '',
+          fullContent: extractedText.slice(0, 5000),
+          needsVerification: (parsed as any).needsVerification ?? false,
+          status: 'done',
+        } : item));
+      } catch (e: any) {
+        setBatchItems(prev => prev.map((item, idx) => idx === i ? { ...item, status: 'error', error: e.message } : item));
+      }
+    }
+    toast.success(`${fileArr.length} 个文件解析完成，请逐条核对后批量保存`);
+  };
+
+  const handleBatchSave = async () => {
+    const toSave = batchItems.filter(item => item.status === 'done' && item.title && item.painPoint && item.solution);
+    if (toSave.length === 0) { toast.error("没有可保存的案例（请确保标题、痛点、方案已填写）"); return; }
+    setBatchSaving(true);
+    let saved = 0;
+    for (const item of toSave) {
+      try {
+        await createMut.mutateAsync({ title: item.title, clientAlias: item.clientAlias || undefined, isConfidential: item.isConfidential, industry: item.industry || undefined, clientSize: item.clientSize as any || undefined, region: item.region || undefined, painPoint: item.painPoint, solution: item.solution, quantifiedResult: item.quantifiedResult || undefined, roiHighlight: item.roiHighlight || undefined, fullContent: item.fullContent || undefined });
+        saved++;
+      } catch { /* skip failed */ }
+    }
+    await utils.caseStudies.list.invalidate();
+    setBatchSaving(false);
+    setShowBatchReview(false);
+    setBatchItems([]);
+    toast.success(`已保存 ${saved} / ${toSave.length} 个案例`);
+  };
+
+  const updateBatchItem = (idx: number, field: string, value: any) => {
+    setBatchItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+  };
+
   return (
     <div className="space-y-4">
+      {/* Batch Review Modal */}
+      {showBatchReview && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+              <div>
+                <h2 className="font-semibold text-base">批量案例预览确认</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  共 {batchItems.length} 个文件 · 已解析 {batchItems.filter(i => i.status === 'done').length} 个 · 解析中 {batchItems.filter(i => i.status === 'parsing').length} 个
+                  {batchItems.some(i => i.needsVerification) && <span className="text-yellow-400 ml-2">⚠️ {batchItems.filter(i => i.needsVerification).length} 个含行业基准估算，待核实</span>}
+                </p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => { setShowBatchReview(false); setBatchItems([]); }}><X className="h-4 w-4" /></Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {batchItems.map((item, idx) => (
+                <div key={idx} className={`border rounded-lg overflow-hidden transition-colors ${item.status === 'error' ? 'border-red-500/30 bg-red-500/5' : item.needsVerification ? 'border-yellow-500/30 bg-yellow-500/5' : 'border-border bg-card'}`}>
+                  {/* Summary row */}
+                  <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}>
+                    <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+                      {item.status === 'parsing' && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                      {item.status === 'done' && <span className="text-green-400 text-sm">✓</span>}
+                      {item.status === 'error' && <span className="text-red-400 text-sm">✗</span>}
+                      {item.status === 'pending' && <span className="text-muted-foreground text-sm">○</span>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium truncate">{item.title || item.filename}</span>
+                        {item.industry && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{item.industry}</span>}
+                        {item.needsVerification && <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">⚠️ 待核实</span>}
+                        {item.status === 'error' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">解析失败</span>}
+                      </div>
+                      {item.status === 'done' && <p className="text-xs text-muted-foreground mt-0.5 truncate">{item.painPoint}</p>}
+                      {item.status === 'error' && <p className="text-xs text-red-400 mt-0.5">{item.error}</p>}
+                    </div>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform ${expandedIdx === idx ? 'rotate-180' : ''}`} />
+                  </div>
+                  {/* Expanded edit form */}
+                  {expandedIdx === idx && item.status === 'done' && (
+                    <div className="px-4 pb-4 border-t border-border/50 pt-3 grid grid-cols-2 gap-2">
+                      <div className="col-span-2"><label className="text-xs text-muted-foreground">案例标题</label><Input className="mt-1 h-7 text-xs" value={item.title} onChange={e => updateBatchItem(idx, 'title', e.target.value)} /></div>
+                      <div><label className="text-xs text-muted-foreground">客户别名</label><Input className="mt-1 h-7 text-xs" value={item.clientAlias} onChange={e => updateBatchItem(idx, 'clientAlias', e.target.value)} /></div>
+                      <div><label className="text-xs text-muted-foreground">行业</label>
+                        <Select value={item.industry || "none"} onValueChange={v => updateBatchItem(idx, 'industry', v === "none" ? "" : v)}>
+                          <SelectTrigger className="mt-1 h-7 text-xs"><SelectValue placeholder="选择行业" /></SelectTrigger>
+                          <SelectContent>{INDUSTRY_OPTIONS.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      <div><label className="text-xs text-muted-foreground">客户规模</label>
+                        <Select value={item.clientSize} onValueChange={v => updateBatchItem(idx, 'clientSize', v)}>
+                          <SelectTrigger className="mt-1 h-7 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>{CLIENT_SIZE_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      <div><label className="text-xs text-muted-foreground">地区</label><Input className="mt-1 h-7 text-xs" value={item.region} onChange={e => updateBatchItem(idx, 'region', e.target.value)} /></div>
+                      <div className="col-span-2"><label className="text-xs text-muted-foreground">核心痛点</label><Textarea className="mt-1 text-xs h-12 resize-none" value={item.painPoint} onChange={e => updateBatchItem(idx, 'painPoint', e.target.value)} /></div>
+                      <div className="col-span-2"><label className="text-xs text-muted-foreground">解决方案</label><Textarea className="mt-1 text-xs h-12 resize-none" value={item.solution} onChange={e => updateBatchItem(idx, 'solution', e.target.value)} /></div>
+                      <div className="col-span-2"><label className={`text-xs flex items-center gap-1 ${item.quantifiedResult?.includes('[行业基准估算') ? 'text-yellow-400' : 'text-muted-foreground'}`}><TrendingUp className="h-3 w-3" /> 量化结果{item.quantifiedResult?.includes('[行业基准估算') ? ' ⚠️ 待核实' : ''}</label><Textarea className="mt-1 text-xs h-12 resize-none" value={item.quantifiedResult} onChange={e => updateBatchItem(idx, 'quantifiedResult', e.target.value)} /></div>
+                      <div className="col-span-2"><label className={`text-xs flex items-center gap-1 ${item.roiHighlight?.includes('[行业基准估算') ? 'text-yellow-400' : 'text-muted-foreground'}`}><Star className="h-3 w-3" /> ROI 亮点{item.roiHighlight?.includes('[行业基准估算') ? ' ⚠️ 待核实' : ''}</label><Input className="mt-1 h-7 text-xs" value={item.roiHighlight} onChange={e => updateBatchItem(idx, 'roiHighlight', e.target.value)} /></div>
+                      <div className="col-span-2 flex items-center gap-2"><input type="checkbox" checked={item.isConfidential} onChange={e => updateBatchItem(idx, 'isConfidential', e.target.checked)} className="w-3.5 h-3.5" /><label className="text-xs text-muted-foreground cursor-pointer">保密案例</label></div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between px-5 py-4 border-t border-border flex-shrink-0">
+              <span className="text-xs text-muted-foreground">{batchItems.filter(i => i.status === 'done').length} 个案例可保存</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="ghost" onClick={() => { setShowBatchReview(false); setBatchItems([]); }}>取消</Button>
+                <Button size="sm" onClick={handleBatchSave} disabled={batchSaving || batchItems.some(i => i.status === 'parsing')} className="gap-1.5">
+                  {batchSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {batchSaving ? "保存中..." : `全部保存（${batchItems.filter(i => i.status === 'done').length} 个）`}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2"><BookOpen className="h-5 w-5 text-primary" /> 成功案例库</h2>
@@ -116,9 +277,10 @@ function CaseStudiesTab() {
         <div className="flex gap-2">
           <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) { handleDocUpload(f); e.target.value = ""; } }} />
-          <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="gap-1.5">
-            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            {uploading ? "AI 解析中..." : "上传案例文档"}
+          <input ref={batchFileInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" multiple className="hidden"
+            onChange={e => { if (e.target.files && e.target.files.length > 0) { handleBatchUpload(e.target.files); e.target.value = ""; } }} />
+          <Button size="sm" variant="outline" onClick={() => batchFileInputRef.current?.click()} className="gap-1.5">
+            <Upload className="h-4 w-4" /> 批量上传
           </Button>
           <Button size="sm" onClick={() => { setShowForm(true); setEditingId(null); resetForm(); }} className="gap-1.5"><Plus className="h-4 w-4" /> 手动添加</Button>
         </div>

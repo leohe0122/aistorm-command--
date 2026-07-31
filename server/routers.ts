@@ -218,13 +218,20 @@ export const appRouter = router({
       }
       // 同行业成功案例注入
       let caseContext = '暂无匹配案例（可在武器库→成功案例库中添加）';
+      let hasUnverifiedCases = false;
       if (input.industry) {
         try {
           const cases = await getCaseStudiesByIndustry(input.industry);
           if (cases.length > 0) {
-            caseContext = cases.slice(0, 2).map((c: any) =>
-              `【${c.clientAlias || (c.isConfidential ? '保密客户' : c.title)}·${c.industry}】\n痛点：${c.painPoint}\n方案：${c.solution}\n量化结果：${c.quantifiedResult || '未填写'}${c.roiHighlight ? '\nROI：' + c.roiHighlight : ''}`
-            ).join('\n---\n');
+            const topCases = cases.slice(0, 2);
+            hasUnverifiedCases = topCases.some((c: any) =>
+              (c.quantifiedResult && c.quantifiedResult.includes('[行业基准估算')) ||
+              (c.roiHighlight && c.roiHighlight.includes('[行业基准估算'))
+            );
+            caseContext = topCases.map((c: any) => {
+              const isUnverified = (c.quantifiedResult && c.quantifiedResult.includes('[行业基准估算')) || (c.roiHighlight && c.roiHighlight.includes('[行业基准估算'));
+              return `【${c.clientAlias || (c.isConfidential ? '保密客户' : c.title)}·${c.industry}${isUnverified ? '·⚠️数据待核实' : ''}】\n痛点：${c.painPoint}\n方案：${c.solution}\n量化结果：${c.quantifiedResult || '未填写'}${c.roiHighlight ? '\nROI：' + c.roiHighlight : ''}`;
+            }).join('\n---\n');
           }
         } catch { /* 不影响主流程 */ }
       }
@@ -259,11 +266,13 @@ ${docsContext}
 【同行业成功案例参考（优先引用具体量化数字）】
 ${caseContext}
 
+${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数据待核实」，表示该数字来自行业基准估算，尚未经客户确认。如果在建议中引用了这类数据，必须在 reasoning 字段中明确注明"（数据来源：行业基准估算，建议使用前向产线核实）"。' : ''}
+
 请输出JSON格式（不要有其他内容）：
 {
   "hookTopic": "具体的敲门砖话题（1-2句，要有具体事件/数据/趋势作为切入，不超过50字）",
   "securityAngle": "具体的安全切入点（1-2句，结合客户痛点和我们的产品能力，不超过50字）",
-  "reasoning": "建议理由（2-3句，说明为什么选这个敲门砖和切入点，引用了哪些情报或产品能力）"
+  "reasoning": "建议理由（2-3句，说明为什么选这个敲门砖和切入点，引用了哪些情报或产品能力；如引用了待核实数据，必须注明来源）"
 }`;
       const result = await invokeLLM({
         model: 'gpt-4o-mini',
