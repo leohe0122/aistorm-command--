@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -1038,11 +1038,13 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                 </div>
                 <div>
                   <label className="text-[10px] text-muted-foreground mb-0.5 block">Buying Group角色</label>
+                  <div data-highlight="champion-role">
                   <Select value={editData.buyingRole || (contact as any).buyingRole || "未知"}
                     onValueChange={(v) => setEditData({ ...editData, buyingRole: v })}>
                     <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>{BUYING_ROLE_OPTIONS.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
                   </Select>
+                  </div>
                 </div>
                 <div>
                   <label className="text-[10px] text-muted-foreground mb-0.5 block">关系状态</label>
@@ -1062,7 +1064,7 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] text-muted-foreground mb-0.5 block">非正式接触次数</label>
-                  <Input type="number" className="h-6 text-xs" defaultValue={(contact as any).informalContactCount || 0}
+                  <Input data-highlight="informal-count" type="number" className="h-6 text-xs" defaultValue={(contact as any).informalContactCount || 0}
                     onChange={(e) => setEditData({ ...editData, informalContactCount: parseInt(e.target.value) || 0 })} />
                 </div>
                 <div>
@@ -1365,11 +1367,14 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const [adInquiryStageType, setAdInquiryStageType] = useState<"0to1" | "1toN">("0to1");
   const [coachingSummary, setCoachingSummary] = useState("");
   const [coachingSummaryLoading, setCoachingSummaryLoading] = useState(false);
+  const [coachingSummaryStageLabel, setCoachingSummaryStageLabel] = useState("");
+  const [dispatchingToSam, setDispatchingToSam] = useState(false);
   const coachingSummaryMut = trpc.insights.generateCoachingSummary.useMutation();
+  const createCoachingActionsMut = trpc.insights.createCoachingActions.useMutation();
 
   const handleGenerateCoachingSummary = async () => {
     if (!adInquiryNotes.trim()) { toast.error("请先填写 SAM 回答记录"); return; }
-    setCoachingSummaryLoading(true); setCoachingSummary("");
+    setCoachingSummaryLoading(true); setCoachingSummary(""); setCoachingSummaryStageLabel("");
     try {
       const res = await coachingSummaryMut.mutateAsync({
         clientId: client.id,
@@ -1378,8 +1383,30 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
         samAnswerNotes: adInquiryNotes,
       });
       setCoachingSummary(res.content);
+      setCoachingSummaryStageLabel(res.stageLabel || "");
     } catch (e: any) { toast.error("生成失败：" + (e?.message || "未知错误")); }
     finally { setCoachingSummaryLoading(false); }
+  };
+
+  const handleDispatchToSam = async () => {
+    const samId = (client as any).assignedSamId;
+    const samName = (client as any).assignedSamName;
+    if (!samId || !samName) { toast.error("该客户尚未分配 SAM，请先分配 SAM"); return; }
+    if (!coachingSummary) { toast.error("请先生成辅导建议"); return; }
+    setDispatchingToSam(true);
+    try {
+      // Extract action items from coaching summary
+      const lines = coachingSummary.split("\n").filter(l => l.trim());
+      const coachingLine = lines.find(l => l.includes("辅导建议"));
+      const focusLine = lines.find(l => l.includes("下次") && l.includes("关注"));
+      const actions = [
+        { title: `[${coachingSummaryStageLabel || adInquiryStageType}] ${client.name} 辅导任务`, description: coachingSummary.slice(0, 500), clientId: client.id },
+        ...(focusLine ? [{ title: `下次Review关注：${focusLine.replace(/\*\*/g, "").replace(/^.*：/, "").trim().slice(0, 50)}`, clientId: client.id }] : []),
+      ];
+      await createCoachingActionsMut.mutateAsync({ samId, samName, actions, createdBy: "AD" });
+      toast.success(`辅导建议已下发给 ${samName}`);
+    } catch (e: any) { toast.error("下发失败：" + (e?.message || "未知错误")); }
+    finally { setDispatchingToSam(false); }
   };
 
   const handleAdInquiry = async (stageType: "0to1" | "1toN", oppId?: number) => {
@@ -1396,6 +1423,27 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const { data: latestReviews = [] } = trpc.insights.getLatestReviews.useQuery({ clientId: client.id });
   const [reviewSavedAt, setReviewSavedAt] = useState<Date | null>(null);
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
+  const [highlightTarget, setHighlightTarget] = useState<string | null>(null);
+  const [highlightBubble, setHighlightBubble] = useState<string | null>(null);
+
+  // Auto-highlight target field after tab switch
+  useEffect(() => {
+    if (!highlightTarget) return;
+    const timer = setTimeout(() => {
+      // Find and highlight the target element
+      const el = document.querySelector(`[data-highlight="${highlightTarget}"]`) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-yellow-400", "ring-offset-1");
+        setTimeout(() => {
+          el.classList.remove("ring-2", "ring-yellow-400", "ring-offset-1");
+          setHighlightTarget(null);
+          setHighlightBubble(null);
+        }, 3000);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [highlightTarget, activeTab]);
 
   // Map contradiction keywords to section anchors
   const contradictionKeyMap: Record<string, string> = {
@@ -2773,7 +2821,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                   const isHighlighted = sectionKey && highlightedSection === sectionKey;
                   // Map section to quick fix action
                   const quickFixMap: Record<string, { label: string; action: () => void }> = {
-                    "meddpicc": { label: "→ 去修正评分", action: () => { setHighlightedSection(null); setReviewOpen(false); setTimeout(() => { setActiveTab("meddpicc"); setExpanded(true); toast("请核实并修正对应维度的评分依据", { icon: "📊" }); }, 200); } },
+                    "meddpicc": { label: "→ 去修正评分", action: () => { setHighlightedSection(null); setReviewOpen(false); setTimeout(() => { setActiveTab("meddpicc"); setExpanded(true); setHighlightTarget("meddpicc-notes"); setHighlightBubble("请补充评分依据（备注字段）"); toast("请核实并修正对应维度的评分依据", { icon: "📊" }); }, 200); } },
                     "champion": { label: "→ 去修正Champion", action: () => { setHighlightedSection(null); setReviewOpen(false); setTimeout(() => { setActiveTab("contacts"); setExpanded(true); toast("请在关键人中更新 Champion 三维评分和非正式接触记录", { icon: "👤" }); }, 200); } },
                     "blue-sheet": { label: "→ 去填写Blue Sheet", action: () => { setHighlightedSection(null); setReviewOpen(false); setTimeout(() => { setActiveTab("winstrategy"); setExpanded(true); toast("请补充 Blue Sheet 战略信息", { icon: "📋" }); }, 200); } },
                     "contacts": { label: "→ 去更新关键人", action: () => { setHighlightedSection(null); setReviewOpen(false); setTimeout(() => { setActiveTab("contacts"); setExpanded(true); toast("请补充关键人覆盖和关系深度信息", { icon: "👥" }); }, 200); } },
@@ -2937,10 +2985,25 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
           <>
             {/* Coaching summary result */}
             {(coachingSummary || coachingSummaryLoading) && (
-              <div className="border border-green-500/30 rounded-lg p-3 bg-green-500/5 space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-green-400">🎯 辅导建议</span>
-                  {coachingSummaryLoading && <div className="w-3 h-3 border border-green-400 border-t-transparent rounded-full animate-spin" />}
+              <div className="border border-green-500/30 rounded-lg p-3 bg-green-500/5 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-green-400">🎯 辅导建议</span>
+                    {coachingSummaryStageLabel && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${adInquiryStageType === "0to1" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-blue-500/20 text-blue-300 border border-blue-500/30"}`}>
+                        {coachingSummaryStageLabel}
+                      </span>
+                    )}
+                    {coachingSummaryLoading && <div className="w-3 h-3 border border-green-400 border-t-transparent rounded-full animate-spin" />}
+                  </div>
+                  {coachingSummary && (client as any).assignedSamId && (
+                    <button type="button"
+                      onClick={handleDispatchToSam}
+                      disabled={dispatchingToSam}
+                      className="text-[10px] px-2 py-1 rounded border border-green-500/40 bg-green-500/15 hover:bg-green-500/25 text-green-400 flex-shrink-0 disabled:opacity-50 transition-colors">
+                      {dispatchingToSam ? "下发中..." : "📤 下发给SAM"}
+                    </button>
+                  )}
                 </div>
                 {coachingSummary && (
                   <ReactMarkdown

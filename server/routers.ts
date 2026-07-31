@@ -2279,10 +2279,16 @@ ${input.stageType === "0to1" ? `如果是0→1阶段，问题聚焦于：
     })).mutation(async ({ input }) => {
       const client = await getClientById(input.clientId);
       if (!client) throw new Error("客户不存在");
+      const is0to1 = input.stageType === "0to1";
+      const stageLabel = is0to1 ? "0→1 客户开发" : "1→N 商机赢单";
+      const stageContext = is0to1
+        ? `这是0→1阶段（当前：${client.stage}），核心是"人的问题"——关系建立、信任深度、真实信息获取。辅导重点应聚焦于：关系质量判断、非正式接触能力、Champion识别和培育方法。不要给产品或方案建议。`
+        : `这是1→N阶段（当前：${client.stage}），核心是"赢单的问题"——商机健康度、Champion推动力、决策流程掌握。辅导重点应聚焦于：MEDDPICC薄弱维度补强、Champion行动力提升、竞争态势应对。`;
       const prompt = `你是一位销售总监（AD），刚刚完成了对 SAM 的问询 Review。
 
 客户：${client.name}（阶段：${client.stage}）
-Review类型：${input.stageType === "0to1" ? "0→1 客户开发阶段" : "1→N 商机赢单阶段"}
+Review类型：${stageLabel}
+阶段背景：${stageContext}
 
 【AD 提出的问询问题】
 ${input.inquiryQuestions}
@@ -2294,18 +2300,18 @@ ${input.samAnswerNotes}
 
 **整体判断：** [一句话评估 SAM 对这个客户/商机的掌握程度：扎实/存在盲区/需要重点辅导]
 
-**核心问题：** [SAM 最薄弱的1-2个方面，必须具体，不能泛泛]
+**核心问题：** [SAM 最薄弱的1-2个方面，必须具体，针对${is0to1 ? "关系建立和信任深度" : "赢单机制和商机推进"}]
 
-**辅导建议：** [AD 接下来应该怎么辅导这个 SAM，给出1-2个具体可执行的动作]
+**辅导建议：** [AD 接下来应该怎么辅导，给出1-2个具体可执行的动作，${is0to1 ? "侧重关系教练方法" : "侧重赢单策略和Champion培养"}]
 
-**下次 Review 关注点：** [下次 Review 时重点核查什么]
+**下次 Review 关注点：** [下次 Review 时重点核查什么，${is0to1 ? "聚焦关系深度变化" : "聚焦商机推进动作"}]
 
 注意：如果 SAM 回答记录为空或内容不足，直接说明"回答记录不足，无法生成有效辅导建议，建议补充记录后重试"。`;
       const res = await invokeLLM({
         model: "gpt-4o",
         messages: [{ role: "user", content: prompt }],
       });
-      return { content: String(res.choices[0].message.content || "") };
+      return { content: String(res.choices[0].message.content || ""), stageType: input.stageType, stageLabel, clientStage: client.stage };
     }),
 
     // ── 数据缺口报告 ──────────────────────────────────────────────────────────
