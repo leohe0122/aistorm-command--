@@ -133,6 +133,40 @@ export type EffectivenessBaseline = typeof effectivenessBaselines.$inferSelect;
 export type InsertEffectivenessBaseline = typeof effectivenessBaselines.$inferInsert;
 
 /**
+ * 成功案例库（Case Studies）
+ * 结构化存储国内外成功案例，供 AI 生成敲门砖建议、Champion 弹药、1-Pager 时引用
+ */
+export const caseStudies = mysqlTable("case_studies", {
+  id: int("id").autoincrement().primaryKey(),
+  // 基本信息
+  title: varchar("title", { length: 200 }).notNull(),           // 案例标题（如"某大型银行威胁检测响应优化"）
+  clientAlias: varchar("clientAlias", { length: 100 }),         // 客户别名/匿名名称（如"华南某股份制银行"）
+  isConfidential: boolean("isConfidential").default(false),     // 是否保密（保密时隐藏客户名）
+  // 分类维度（用于精准匹配）
+  industry: varchar("industry", { length: 100 }),               // 行业（金融/制造/电信/政府/医疗/科技/零售/其他）
+  clientSize: mysqlEnum("clientSize", ["大型企业", "中型企业", "小型企业", "政府机构"]).default("大型企业"),
+  region: varchar("region", { length: 100 }),                   // 地区（华南/华北/东南亚/港澳等）
+  productLines: json("productLines").$type<string[]>(),         // 涉及产品线（如["TrustOne","云安全"]）
+  // 痛点与解决方案
+  painPoint: text("painPoint").notNull(),                       // 核心痛点（1-2句，用于 AI 匹配）
+  solution: text("solution").notNull(),                         // 解决方案摘要
+  // 量化结果（Champion 弹药的核心素材）
+  quantifiedResult: text("quantifiedResult"),                   // 量化结果（如"MTTR 从4小时降至15分钟，节省人力成本30%"）
+  roiHighlight: varchar("roiHighlight", { length: 200 }),       // ROI 亮点一句话（如"18个月 ROI 达240%"）
+  // 全文内容
+  fullContent: text("fullContent"),                             // 完整案例内容（Markdown，可选）
+  extractedText: text("extractedText"),                         // 从上传文件提取的文字
+  fileUrl: text("fileUrl"),                                     // 上传的案例文件 URL
+  // 元数据
+  tags: json("tags").$type<string[]>(),                         // 自定义标签
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CaseStudy = typeof caseStudies.$inferSelect;
+export type InsertCaseStudy = typeof caseStudies.$inferInsert;
+
+/**
  * MEDDPICC 各要素完成度
  */
 export const meddpicc = mysqlTable("meddpicc", {

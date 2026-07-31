@@ -1,0 +1,21 @@
+CREATE TABLE `case_studies` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`title` varchar(200) NOT NULL,
+	`clientAlias` varchar(100),
+	`isConfidential` boolean DEFAULT false,
+	`industry` varchar(100),
+	`clientSize` enum('大型企业','中型企业','小型企业','政府机构') DEFAULT '大型企业',
+	`region` varchar(100),
+	`productLines` json,
+	`painPoint` text NOT NULL,
+	`solution` text NOT NULL,
+	`quantifiedResult` text,
+	`roiHighlight` varchar(200),
+	`fullContent` text,
+	`extractedText` text,
+	`fileUrl` text,
+	`tags` json,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `case_studies_id` PRIMARY KEY(`id`)
+);

@@ -19,6 +19,118 @@ import {
 import { PRODUCT_LINE_GROUPS } from '../../../shared/productLines';
 import KillSheetsTab from "./KillSheetsTab";
 import ChampionAmmo from "./ChampionAmmo";
+import { BookOpen, Star, TrendingUp } from "lucide-react";
+
+// ─── 成功案例库 Tab ──────────────────────────────────────────────────────────
+const INDUSTRY_OPTIONS = ["金融", "制造", "电信", "政府", "医疗", "科技", "零售", "能源", "教育", "其他"];
+const CLIENT_SIZE_OPTIONS = ["大型企业", "中型企业", "小型企业", "政府机构"] as const;
+
+function CaseStudiesTab() {
+  const utils = trpc.useUtils();
+  const { data: cases = [], isLoading } = trpc.caseStudies.list.useQuery();
+  const createMut = trpc.caseStudies.create.useMutation({
+    onSuccess: () => { utils.caseStudies.list.invalidate(); toast.success("案例已添加"); setShowForm(false); resetForm(); },
+    onError: () => toast.error("添加失败"),
+  });
+  const updateMut = trpc.caseStudies.update.useMutation({
+    onSuccess: () => { utils.caseStudies.list.invalidate(); toast.success("案例已更新"); setEditingId(null); },
+    onError: () => toast.error("更新失败"),
+  });
+  const deleteMut = trpc.caseStudies.delete.useMutation({
+    onSuccess: () => { utils.caseStudies.list.invalidate(); toast.success("案例已删除"); },
+  });
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [filterIndustry, setFilterIndustry] = useState("");
+  const [form, setForm] = useState({
+    title: "", clientAlias: "", isConfidential: false,
+    industry: "", clientSize: "大型企业" as typeof CLIENT_SIZE_OPTIONS[number],
+    region: "", productLines: [] as string[],
+    painPoint: "", solution: "", quantifiedResult: "", roiHighlight: "", fullContent: "",
+  });
+  const resetForm = () => setForm({ title: "", clientAlias: "", isConfidential: false, industry: "", clientSize: "大型企业", region: "", productLines: [], painPoint: "", solution: "", quantifiedResult: "", roiHighlight: "", fullContent: "" });
+  const startEdit = (c: any) => {
+    setEditingId(c.id);
+    setForm({ title: c.title || "", clientAlias: c.clientAlias || "", isConfidential: c.isConfidential || false, industry: c.industry || "", clientSize: c.clientSize || "大型企业", region: c.region || "", productLines: c.productLines || [], painPoint: c.painPoint || "", solution: c.solution || "", quantifiedResult: c.quantifiedResult || "", roiHighlight: c.roiHighlight || "", fullContent: c.fullContent || "" });
+  };
+  const handleSubmit = () => {
+    if (!form.title || !form.painPoint || !form.solution) { toast.error("请填写标题、核心痛点和解决方案"); return; }
+    const payload = { ...form, productLines: form.productLines.length > 0 ? form.productLines : undefined };
+    if (editingId) { updateMut.mutate({ id: editingId, ...payload }); }
+    else { createMut.mutate(payload); }
+  };
+  const filtered = filterIndustry ? cases.filter((c: any) => c.industry === filterIndustry) : cases;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2"><BookOpen className="h-5 w-5 text-primary" /> 成功案例库</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">结构化存储成功案例，AI 生成敲门砖建议时自动引用同行业案例数据</p>
+        </div>
+        <Button size="sm" onClick={() => { setShowForm(true); setEditingId(null); resetForm(); }} className="gap-1.5"><Plus className="h-4 w-4" /> 添加案例</Button>
+      </div>
+      <div className="flex items-center gap-2">
+        <Select value={filterIndustry || "all"} onValueChange={v => setFilterIndustry(v === "all" ? "" : v)}>
+          <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="全部行业" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">全部行业</SelectItem>{INDUSTRY_OPTIONS.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}</SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">{filtered.length} 个案例</span>
+      </div>
+      {(showForm || editingId !== null) && (
+        <div className="border border-primary/30 rounded-lg p-4 bg-primary/5 space-y-3">
+          <h3 className="text-sm font-semibold text-primary">{editingId ? "编辑案例" : "添加新案例"}</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2"><label className="text-xs text-muted-foreground">案例标题 *</label><Input className="mt-1 h-8 text-sm" placeholder="如：某大型银行威胁检测响应优化项目" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
+            <div><label className="text-xs text-muted-foreground">客户别名（对外展示）</label><Input className="mt-1 h-8 text-sm" placeholder="如：华南某股份制银行" value={form.clientAlias} onChange={e => setForm(f => ({ ...f, clientAlias: e.target.value }))} /></div>
+            <div><label className="text-xs text-muted-foreground">行业</label><Select value={form.industry || "none"} onValueChange={v => setForm(f => ({ ...f, industry: v === "none" ? "" : v }))}><SelectTrigger className="mt-1 h-8 text-sm"><SelectValue placeholder="选择行业" /></SelectTrigger><SelectContent>{INDUSTRY_OPTIONS.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}</SelectContent></Select></div>
+            <div><label className="text-xs text-muted-foreground">客户规模</label><Select value={form.clientSize} onValueChange={v => setForm(f => ({ ...f, clientSize: v as any }))}><SelectTrigger className="mt-1 h-8 text-sm"><SelectValue /></SelectTrigger><SelectContent>{CLIENT_SIZE_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select></div>
+            <div><label className="text-xs text-muted-foreground">地区</label><Input className="mt-1 h-8 text-sm" placeholder="如：华南、东南亚、港澳" value={form.region} onChange={e => setForm(f => ({ ...f, region: e.target.value }))} /></div>
+            <div className="col-span-2"><label className="text-xs text-muted-foreground">核心痛点 * <span className="text-muted-foreground/60">（AI 用于匹配相似客户）</span></label><Textarea className="mt-1 text-sm h-16 resize-none" placeholder="客户面临的核心安全挑战，1-2句话" value={form.painPoint} onChange={e => setForm(f => ({ ...f, painPoint: e.target.value }))} /></div>
+            <div className="col-span-2"><label className="text-xs text-muted-foreground">解决方案摘要 *</label><Textarea className="mt-1 text-sm h-16 resize-none" placeholder="我们提供了什么方案，核心功能是什么" value={form.solution} onChange={e => setForm(f => ({ ...f, solution: e.target.value }))} /></div>
+            <div className="col-span-2"><label className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3 text-green-400" /> 量化结果 <span className="text-muted-foreground/60">（Champion 弹药的核心素材）</span></label><Textarea className="mt-1 text-sm h-14 resize-none" placeholder="如：MTTR 从4小时降至15分钟，节省安全人力成本30%，合规审计时间缩短60%" value={form.quantifiedResult} onChange={e => setForm(f => ({ ...f, quantifiedResult: e.target.value }))} /></div>
+            <div className="col-span-2"><label className="text-xs text-muted-foreground flex items-center gap-1"><Star className="h-3 w-3 text-yellow-400" /> ROI 亮点一句话</label><Input className="mt-1 h-8 text-sm" placeholder="如：18个月 ROI 达240%，年化节省 $120K" value={form.roiHighlight} onChange={e => setForm(f => ({ ...f, roiHighlight: e.target.value }))} /></div>
+            <div className="col-span-2 flex items-center gap-2"><input type="checkbox" id="isConfidential" checked={form.isConfidential} onChange={e => setForm(f => ({ ...f, isConfidential: e.target.checked }))} className="w-3.5 h-3.5" /><label htmlFor="isConfidential" className="text-xs text-muted-foreground cursor-pointer">保密案例（对外展示时隐藏客户名称）</label></div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" onClick={handleSubmit} disabled={createMut.isPending || updateMut.isPending} className="gap-1">{(createMut.isPending || updateMut.isPending) ? <Loader2 className="h-3 w-3 animate-spin" /> : null}{editingId ? "保存修改" : "添加案例"}</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowForm(false); setEditingId(null); resetForm(); }}>取消</Button>
+          </div>
+        </div>
+      )}
+      {isLoading ? <div className="text-center py-8 text-muted-foreground text-sm">加载中...</div> : filtered.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground"><BookOpen className="h-10 w-10 mx-auto mb-3 opacity-30" /><p className="text-sm">暂无成功案例</p><p className="text-xs mt-1">添加国内外成功案例后，AI 生成敲门砖建议时会自动引用同行业案例数据</p></div>
+      ) : (
+        <div className="grid gap-3">
+          {filtered.map((c: any) => (
+            <div key={c.id} className="border border-border rounded-lg p-4 bg-card hover:border-primary/30 transition-colors">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">{c.title}</span>
+                    {c.industry && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{c.industry}</span>}
+                    {c.clientSize && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">{c.clientSize}</span>}
+                    {c.region && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">{c.region}</span>}
+                    {c.isConfidential && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">🔒 保密</span>}
+                  </div>
+                  {c.clientAlias && <p className="text-xs text-muted-foreground mt-0.5">客户：{c.clientAlias}</p>}
+                  <p className="text-xs text-muted-foreground mt-1.5"><span className="text-foreground/70 font-medium">痛点：</span>{c.painPoint}</p>
+                  <p className="text-xs text-muted-foreground mt-1"><span className="text-foreground/70 font-medium">方案：</span>{c.solution}</p>
+                  {c.quantifiedResult && <p className="text-xs mt-1.5 text-green-400 flex items-center gap-1"><TrendingUp className="h-3 w-3" />{c.quantifiedResult}</p>}
+                  {c.roiHighlight && <p className="text-xs mt-0.5 text-yellow-400 flex items-center gap-1"><Star className="h-3 w-3" />{c.roiHighlight}</p>}
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => startEdit(c)}>编辑</Button>
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-red-400 hover:text-red-300" onClick={() => deleteMut.mutate({ id: c.id })}>删除</Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 // Wrapper to embed ChampionAmmo as a tab (no page-level padding)
 function ChampionAmmoTab() {
@@ -775,17 +887,19 @@ export default function Arsenal() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">武器库</h1>
-        <p className="text-muted-foreground text-sm mt-1">产品文档管理 · AI方案定制 · 智能报价工具 · 竞品阻击包</p>
+        <p className="text-muted-foreground text-sm mt-1">产品文档管理 · AI方案定制 · 成功案例库 · 智能报价工具 · 竞品阻击包</p>
       </div>
       <Tabs defaultValue="docs" className="space-y-4">
-        <TabsList className="grid grid-cols-5 w-full max-w-3xl">
-          <TabsTrigger value="docs" className="gap-2"><FileText className="h-4 w-4" /> 产品文档仓库</TabsTrigger>
-          <TabsTrigger value="ai" className="gap-2"><Bot className="h-4 w-4" /> AI方案定制</TabsTrigger>
-          <TabsTrigger value="champion" className="gap-2"><Shield className="h-4 w-4" /> Champion弹药库</TabsTrigger>
-          <TabsTrigger value="killsheets" className="gap-2"><Swords className="h-4 w-4" /> 竞品阻击包</TabsTrigger>
-          <TabsTrigger value="quote" className="gap-2"><Calculator className="h-4 w-4" /> 报价工具</TabsTrigger>
+        <TabsList className="grid grid-cols-6 w-full max-w-4xl">
+          <TabsTrigger value="docs" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" /> 产品文档</TabsTrigger>
+          <TabsTrigger value="cases" className="gap-1.5 text-xs"><BookOpen className="h-3.5 w-3.5" /> 成功案例库</TabsTrigger>
+          <TabsTrigger value="ai" className="gap-1.5 text-xs"><Bot className="h-3.5 w-3.5" /> AI方案定制</TabsTrigger>
+          <TabsTrigger value="champion" className="gap-1.5 text-xs"><Shield className="h-3.5 w-3.5" /> Champion弹药</TabsTrigger>
+          <TabsTrigger value="killsheets" className="gap-1.5 text-xs"><Swords className="h-3.5 w-3.5" /> 竞品阻击包</TabsTrigger>
+          <TabsTrigger value="quote" className="gap-1.5 text-xs"><Calculator className="h-3.5 w-3.5" /> 报价工具</TabsTrigger>
         </TabsList>
         <TabsContent value="docs"><ProductDocsTab /></TabsContent>
+        <TabsContent value="cases"><CaseStudiesTab /></TabsContent>
         <TabsContent value="ai"><AIArsenalTab /></TabsContent>
         <TabsContent value="champion"><ChampionAmmoTab /></TabsContent>
         <TabsContent value="killsheets"><KillSheetsTab /></TabsContent>

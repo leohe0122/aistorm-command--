@@ -773,3 +773,43 @@ export async function upsertClientMetrics(clientId: number, data: Record<string,
     await db.insert(clientMetrics).values({ clientId, ...data } as any);
   }
 }
+
+// ── Case Studies（成功案例库）────────────────────────────────────────────────
+export async function getAllCaseStudies() {
+  const db = await getDb();
+  if (!db) return [];
+  const { caseStudies } = await import('../drizzle/schema');
+  return db.select().from(caseStudies).orderBy(desc(caseStudies.createdAt));
+}
+
+export async function getCaseStudiesByIndustry(industry: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const { caseStudies } = await import('../drizzle/schema');
+  return db.select().from(caseStudies)
+    .where(eq(caseStudies.industry, industry))
+    .orderBy(desc(caseStudies.createdAt))
+    .limit(5);
+}
+
+export async function insertCaseStudy(data: Record<string, unknown>) {
+  const db = await getDb();
+  if (!db) return 0;
+  const { caseStudies } = await import('../drizzle/schema');
+  const result = await db.insert(caseStudies).values(data as any);
+  return (result[0] as any).insertId ?? 0;
+}
+
+export async function updateCaseStudy(id: number, data: Record<string, unknown>) {
+  const db = await getDb();
+  if (!db) return;
+  const { caseStudies } = await import('../drizzle/schema');
+  await db.update(caseStudies).set({ ...data, updatedAt: new Date() } as any).where(eq(caseStudies.id, id));
+}
+
+export async function deleteCaseStudy(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  const { caseStudies } = await import('../drizzle/schema');
+  await db.delete(caseStudies).where(eq(caseStudies.id, id));
+}

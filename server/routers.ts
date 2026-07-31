@@ -37,6 +37,7 @@ import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient
 } from "./db";
 import { saveAiReview, getLatestReviewsByClient, getLatestReviewByType } from "./db";
 import { getClientMetrics, upsertClientMetrics } from "./db";
+import { getAllCaseStudies, getCaseStudiesByIndustry, insertCaseStudy, updateCaseStudy, deleteCaseStudy } from "./db";
 
 export const appRouter = router({
   system: systemRouter,
@@ -181,11 +182,52 @@ export const appRouter = router({
         const ts = s.createdAt ? new Date(s.createdAt).getTime() : 0;
         return ts > sevenDaysAgo;
       });
-      const signalsContext = recentSignals7d.length > 0
-        ? recentSignals7d.slice(0, 3).map((s: any) =>
-            '[' + s.signalType + '] ' + (s.rawSignal || s.aiInterpretation || '')
-          ).join('\n')
-        : '最近7天暂无新情报信号（最新信号超过7天，建议关注行业动态）';
+      // 同行业兜底：如果该客户7天内信号不足3条，用同行业其他客户近期信号补足
+      let signalsContext = '';
+      if (recentSignals7d.length >= 3) {
+        signalsContext = recentSignals7d.slice(0, 3).map((s: any) =>
+          '[' + s.signalType + '] ' + (s.rawSignal || s.aiInterpretation || '')
+        ).join('\n');
+      } else {
+        const ownSignalLines = recentSignals7d.map((s: any) =>
+          '[' + s.signalType + '] ' + (s.rawSignal || s.aiInterpretation || '')
+        );
+        const industrySignals: string[] = [];
+        if (input.industry) {
+          try {
+            const allClients = await getAllClients();
+            const sameIndustryClientIds = allClients
+              .filter((c: any) => c.industry === input.industry && c.id !== input.clientId)
+              .map((c: any) => c.id);
+            if (sameIndustryClientIds.length > 0) {
+              const allRecentSignals = await getAllRecentSignals();
+              const industryRecentSignals = allRecentSignals.filter((s: any) => {
+                const ts = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+                return sameIndustryClientIds.includes(s.clientId) && ts > sevenDaysAgo;
+              });
+              industryRecentSignals.slice(0, 3 - ownSignalLines.length).forEach((s: any) => {
+                industrySignals.push('[同行业参考·' + s.signalType + '] ' + (s.rawSignal || s.aiInterpretation || ''));
+              });
+            }
+          } catch { /* 兜底失败不影响主流程 */ }
+        }
+        const combined = [...ownSignalLines, ...industrySignals];
+        signalsContext = combined.length > 0
+          ? combined.join('\n')
+          : '最近7天暂无情报信号（含同行业），建议手动添加行业动态';
+      }
+      // 同行业成功案例注入
+      let caseContext = '暂无匹配案例（可在武器库→成功案例库中添加）';
+      if (input.industry) {
+        try {
+          const cases = await getCaseStudiesByIndustry(input.industry);
+          if (cases.length > 0) {
+            caseContext = cases.slice(0, 2).map((c: any) =>
+              `【${c.clientAlias || (c.isConfidential ? '保密客户' : c.title)}·${c.industry}】\n痛点：${c.painPoint}\n方案：${c.solution}\n量化结果：${c.quantifiedResult || '未填写'}${c.roiHighlight ? '\nROI：' + c.roiHighlight : ''}`
+            ).join('\n---\n');
+          }
+        } catch { /* 不影响主流程 */ }
+      }
       const docsContext = productDocsList.length > 0
         ? productDocsList.map((d: any) => '[' + d.productLine + '] ' + d.title + (d.description ? ': ' + d.description.slice(0, 80) : '')).join('\n')
         : '暂无上传产品文档（可在武器库中上传）';
@@ -213,6 +255,9 @@ ${meddpiccContext}
 
 【武器库产品文档（已有方案）】
 ${docsContext}
+
+【同行业成功案例参考（优先引用具体量化数字）】
+${caseContext}
 
 请输出JSON格式（不要有其他内容）：
 {
@@ -5044,7 +5089,52 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
       return { ok: true };
     }),
   }),
+  // ── Case Studies（成功案例库）────────────────────────────────────────────
+  caseStudies: router({
+    list: publicProcedure.query(() => getAllCaseStudies()),
+    create: publicProcedure.input(z.object({
+      title: z.string(),
+      clientAlias: z.string().optional(),
+      isConfidential: z.boolean().optional(),
+      industry: z.string().optional(),
+      clientSize: z.enum(["大型企业", "中型企业", "小型企业", "政府机构"]).optional(),
+      region: z.string().optional(),
+      productLines: z.array(z.string()).optional(),
+      painPoint: z.string(),
+      solution: z.string(),
+      quantifiedResult: z.string().optional(),
+      roiHighlight: z.string().optional(),
+      fullContent: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    })).mutation(async ({ input }) => {
+      const id = await insertCaseStudy(input);
+      return { id };
+    }),
+    update: publicProcedure.input(z.object({
+      id: z.number(),
+      title: z.string().optional(),
+      clientAlias: z.string().optional(),
+      isConfidential: z.boolean().optional(),
+      industry: z.string().optional(),
+      clientSize: z.enum(["大型企业", "中型企业", "小型企业", "政府机构"]).optional(),
+      region: z.string().optional(),
+      productLines: z.array(z.string()).optional(),
+      painPoint: z.string().optional(),
+      solution: z.string().optional(),
+      quantifiedResult: z.string().optional(),
+      roiHighlight: z.string().optional(),
+      fullContent: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    })).mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await updateCaseStudy(id, data);
+      return { ok: true };
+    }),
+    delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteCaseStudy(input.id);
+      return { ok: true };
+    }),
+  }),
 
 });
-
 export type AppRouter = typeof appRouter;

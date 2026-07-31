@@ -183,6 +183,13 @@
       "when": 1785402841347,
       "tag": "0025_woozy_plazm",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1785479027307,
+      "tag": "0026_gifted_fenris",
+      "breakpoints": true
     }
   ]
 }
