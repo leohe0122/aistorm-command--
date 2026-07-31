@@ -5155,15 +5155,17 @@ ${input.extractedText.slice(0, 4000)}
   "region": "地区（如华南/华北/东南亚/港澳等，如文档中未提及则留空）",
   "painPoint": "核心痛点（1-2句话，描述客户面临的核心安全挑战）",
   "solution": "解决方案摘要（2-3句话，描述提供了什么方案和核心功能）",
-  "quantifiedResult": "量化结果（如有具体数字请提取，如'MTTR从4小时降至15分钟，节省人力成本30%'；如无则留空）",
-  "roiHighlight": "ROI亮点（一句话，如'18个月ROI达240%'；如无则留空）",
-  "isConfidential": false
+  "quantifiedResult": "量化结果。规则：①如文档中有具体数字（如MTTR从X降至Y、节省Z%），直接提取原文数字；②如文档只有定性描述无具体数字，则根据行业基准生成估算值，格式为'[行业基准估算，待核实] MTTR改善约60-80%，安全人力效率提升约40%'；③估算时参考：金融/电信行业MTTR基准4-8小时，XDR部署后通常改善60-80%；SOC人力效率提升30-50%；合规审计时间缩短40-60%",
+  "roiHighlight": "ROI亮点一句话。规则：①如文档有ROI数据直接提取；②如无，根据行业基准估算，格式为'[行业基准估算，待核实] 12-18个月ROI约150-250%'",
+  "isConfidential": false,
+  "needsVerification": false
 }
 
 注意：
 1. 如果文档中有真实客户名称，请在 clientAlias 中用行业描述替代（如"某制造业龙头企业"），isConfidential 设为 true
-2. 量化结果是最重要的字段，请尽量从文档中提取具体数字
-3. 如果某字段无法从文档中提取，返回空字符串""`;
+2. 量化结果是最重要的字段——文档有数字就用原文数字，没有就用行业基准估算（必须标注"[行业基准估算，待核实]"）
+3. 如果 quantifiedResult 或 roiHighlight 使用了行业基准估算，needsVerification 设为 true
+4. 如果某字段确实无法提取也无法估算，返回空字符串""`;
 
       const result = await invokeLLM({
         model: 'gpt-4o',
@@ -5184,9 +5186,10 @@ ${input.extractedText.slice(0, 4000)}
           quantifiedResult: parsed.quantifiedResult || '',
           roiHighlight: parsed.roiHighlight || '',
           isConfidential: parsed.isConfidential ?? false,
+          needsVerification: parsed.needsVerification ?? false,
         };
       } catch {
-        return { title: input.filename?.replace(/\.[^.]+$/, '') || '', clientAlias: '', industry: '', clientSize: '大型企业', region: '', painPoint: '', solution: '', quantifiedResult: '', roiHighlight: '', isConfidential: false };
+        return { title: input.filename?.replace(/\.[^.]+$/, '') || '', clientAlias: '', industry: '', clientSize: '大型企业', region: '', painPoint: '', solution: '', quantifiedResult: '', roiHighlight: '', isConfidential: false, needsVerification: false };
       }
     }),
   }),

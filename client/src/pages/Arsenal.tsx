@@ -94,7 +94,11 @@ function CaseStudiesTab() {
       }));
       setShowForm(true);
       setEditingId(null);
-      toast.success("AI 解析完成，请核对后保存");
+      if ((parsed as any).needsVerification) {
+        toast.warning("AI 解析完成。量化结果/ROI 使用了行业基准估算（标注「待核实」），请核实后保存");
+      } else {
+        toast.success("AI 解析完成，请核对后保存");
+      }
     } catch (e: any) {
       toast.error("解析失败：" + (e.message || "未知错误"));
     } finally {
@@ -168,8 +172,21 @@ function CaseStudiesTab() {
                   {c.clientAlias && <p className="text-xs text-muted-foreground mt-0.5">客户：{c.clientAlias}</p>}
                   <p className="text-xs text-muted-foreground mt-1.5"><span className="text-foreground/70 font-medium">痛点：</span>{c.painPoint}</p>
                   <p className="text-xs text-muted-foreground mt-1"><span className="text-foreground/70 font-medium">方案：</span>{c.solution}</p>
-                  {c.quantifiedResult && <p className="text-xs mt-1.5 text-green-400 flex items-center gap-1"><TrendingUp className="h-3 w-3" />{c.quantifiedResult}</p>}
-                  {c.roiHighlight && <p className="text-xs mt-0.5 text-yellow-400 flex items-center gap-1"><Star className="h-3 w-3" />{c.roiHighlight}</p>}
+                  {c.quantifiedResult && (
+                    <p className={`text-xs mt-1.5 flex items-center gap-1 ${c.quantifiedResult.includes('[行业基准估算') ? 'text-yellow-500/80' : 'text-green-400'}`}>
+                      <TrendingUp className="h-3 w-3 flex-shrink-0" />{c.quantifiedResult}
+                    </p>
+                  )}
+                  {c.roiHighlight && (
+                    <p className={`text-xs mt-0.5 flex items-center gap-1 ${c.roiHighlight.includes('[行业基准估算') ? 'text-yellow-500/80' : 'text-yellow-400'}`}>
+                      <Star className="h-3 w-3 flex-shrink-0" />{c.roiHighlight}
+                    </p>
+                  )}
+                  {!c.quantifiedResult && !c.roiHighlight && (
+                    <p className="text-xs mt-1.5 text-muted-foreground/50 flex items-center gap-1">
+                      <TrendingUp className="h-3 w-3" />暂无量化数据
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
                   <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => startEdit(c)}>编辑</Button>
