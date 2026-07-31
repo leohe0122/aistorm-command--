@@ -32,6 +32,7 @@ function CaseStudiesTab() {
     onSuccess: () => { utils.caseStudies.list.invalidate(); toast.success("案例已添加"); setShowForm(false); resetForm(); },
     onError: () => toast.error("添加失败"),
   });
+  const parseFromDocMut = trpc.caseStudies.parseFromDoc.useMutation();
   const updateMut = trpc.caseStudies.update.useMutation({
     onSuccess: () => { utils.caseStudies.list.invalidate(); toast.success("案例已更新"); setEditingId(null); },
     onError: () => toast.error("更新失败"),
@@ -42,6 +43,8 @@ function CaseStudiesTab() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [filterIndustry, setFilterIndustry] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     title: "", clientAlias: "", isConfidential: false,
     industry: "", clientSize: "大型企业" as typeof CLIENT_SIZE_OPTIONS[number],
@@ -60,6 +63,45 @@ function CaseStudiesTab() {
     else { createMut.mutate(payload); }
   };
   const filtered = filterIndustry ? cases.filter((c: any) => c.industry === filterIndustry) : cases;
+
+  const handleDocUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      // Step 1: Upload file and extract text via existing endpoint
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload-doc", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("上传失败");
+      const { extractedText, fileUrl } = await res.json();
+      if (!extractedText) { toast.error("无法提取文档文字，请检查文件格式"); setUploading(false); return; }
+      // Step 2: AI parse structured fields
+      toast.info("AI 正在解析案例内容...");
+      const parsed = await parseFromDocMut.mutateAsync({ extractedText, filename: file.name });
+      // Step 3: Pre-fill form
+      setForm(f => ({
+        ...f,
+        title: parsed.title || f.title,
+        clientAlias: parsed.clientAlias || f.clientAlias,
+        isConfidential: parsed.isConfidential ?? f.isConfidential,
+        industry: parsed.industry || f.industry,
+        clientSize: (parsed.clientSize as any) || f.clientSize,
+        region: parsed.region || f.region,
+        painPoint: parsed.painPoint || f.painPoint,
+        solution: parsed.solution || f.solution,
+        quantifiedResult: parsed.quantifiedResult || f.quantifiedResult,
+        roiHighlight: parsed.roiHighlight || f.roiHighlight,
+        fullContent: extractedText.slice(0, 5000),
+      }));
+      setShowForm(true);
+      setEditingId(null);
+      toast.success("AI 解析完成，请核对后保存");
+    } catch (e: any) {
+      toast.error("解析失败：" + (e.message || "未知错误"));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -67,7 +109,15 @@ function CaseStudiesTab() {
           <h2 className="text-lg font-semibold flex items-center gap-2"><BookOpen className="h-5 w-5 text-primary" /> 成功案例库</h2>
           <p className="text-xs text-muted-foreground mt-0.5">结构化存储成功案例，AI 生成敲门砖建议时自动引用同行业案例数据</p>
         </div>
-        <Button size="sm" onClick={() => { setShowForm(true); setEditingId(null); resetForm(); }} className="gap-1.5"><Plus className="h-4 w-4" /> 添加案例</Button>
+        <div className="flex gap-2">
+          <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) { handleDocUpload(f); e.target.value = ""; } }} />
+          <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="gap-1.5">
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {uploading ? "AI 解析中..." : "上传案例文档"}
+          </Button>
+          <Button size="sm" onClick={() => { setShowForm(true); setEditingId(null); resetForm(); }} className="gap-1.5"><Plus className="h-4 w-4" /> 手动添加</Button>
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <Select value={filterIndustry || "all"} onValueChange={v => setFilterIndustry(v === "all" ? "" : v)}>
@@ -78,7 +128,10 @@ function CaseStudiesTab() {
       </div>
       {(showForm || editingId !== null) && (
         <div className="border border-primary/30 rounded-lg p-4 bg-primary/5 space-y-3">
-          <h3 className="text-sm font-semibold text-primary">{editingId ? "编辑案例" : "添加新案例"}</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-primary">{editingId ? "编辑案例" : "添加新案例"}</h3>
+            {!editingId && <span className="text-xs text-muted-foreground">💡 可点击「上传案例文档」让 AI 自动填写</span>}
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><label className="text-xs text-muted-foreground">案例标题 *</label><Input className="mt-1 h-8 text-sm" placeholder="如：某大型银行威胁检测响应优化项目" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
             <div><label className="text-xs text-muted-foreground">客户别名（对外展示）</label><Input className="mt-1 h-8 text-sm" placeholder="如：华南某股份制银行" value={form.clientAlias} onChange={e => setForm(f => ({ ...f, clientAlias: e.target.value }))} /></div>

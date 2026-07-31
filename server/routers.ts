@@ -5134,6 +5134,61 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
       await deleteCaseStudy(input.id);
       return { ok: true };
     }),
+
+    // 从上传文档的提取文字中 AI 解析结构化字段
+    parseFromDoc: publicProcedure.input(z.object({
+      extractedText: z.string(),
+      filename: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const prompt = `你是一位企业销售案例分析专家。请从以下文档内容中提取成功案例的结构化信息。
+
+文档名称：${input.filename || "未知"}
+文档内容：
+${input.extractedText.slice(0, 4000)}
+
+请提取以下字段，以 JSON 格式返回（不要有其他内容）：
+{
+  "title": "案例标题（简洁描述，如'某大型银行威胁检测响应优化'，不超过50字）",
+  "clientAlias": "客户别名（如文档中有客户名称，用行业+规模描述，如'华南某股份制银行'；如无则留空）",
+  "industry": "行业（从以下选项中选一个：金融/制造/电信/政府/医疗/科技/零售/能源/教育/其他）",
+  "clientSize": "客户规模（从以下选项中选一个：大型企业/中型企业/小型企业/政府机构）",
+  "region": "地区（如华南/华北/东南亚/港澳等，如文档中未提及则留空）",
+  "painPoint": "核心痛点（1-2句话，描述客户面临的核心安全挑战）",
+  "solution": "解决方案摘要（2-3句话，描述提供了什么方案和核心功能）",
+  "quantifiedResult": "量化结果（如有具体数字请提取，如'MTTR从4小时降至15分钟，节省人力成本30%'；如无则留空）",
+  "roiHighlight": "ROI亮点（一句话，如'18个月ROI达240%'；如无则留空）",
+  "isConfidential": false
+}
+
+注意：
+1. 如果文档中有真实客户名称，请在 clientAlias 中用行业描述替代（如"某制造业龙头企业"），isConfidential 设为 true
+2. 量化结果是最重要的字段，请尽量从文档中提取具体数字
+3. 如果某字段无法从文档中提取，返回空字符串""`;
+
+      const result = await invokeLLM({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const raw = String(result.choices[0]?.message?.content || '');
+      try {
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+        return {
+          title: parsed.title || '',
+          clientAlias: parsed.clientAlias || '',
+          industry: parsed.industry || '',
+          clientSize: parsed.clientSize || '大型企业',
+          region: parsed.region || '',
+          painPoint: parsed.painPoint || '',
+          solution: parsed.solution || '',
+          quantifiedResult: parsed.quantifiedResult || '',
+          roiHighlight: parsed.roiHighlight || '',
+          isConfidential: parsed.isConfidential ?? false,
+        };
+      } catch {
+        return { title: input.filename?.replace(/\.[^.]+$/, '') || '', clientAlias: '', industry: '', clientSize: '大型企业', region: '', painPoint: '', solution: '', quantifiedResult: '', roiHighlight: '', isConfidential: false };
+      }
+    }),
   }),
 
 });
