@@ -2270,6 +2270,44 @@ ${input.stageType === "0to1" ? `如果是0→1阶段，问题聚焦于：
       return { content: String(res.choices[0].message.content || ""), stageType: input.stageType, clientName: client.name, stage };
     }),
 
+    // ── AD 问询辅导建议生成（基于 SAM 回答记录）────────────────────────────────
+    generateCoachingSummary: publicProcedure.input(z.object({
+      clientId: z.number(),
+      stageType: z.enum(["0to1", "1toN"]),
+      inquiryQuestions: z.string(),  // AI 生成的问题原文
+      samAnswerNotes: z.string(),    // AD 记录的 SAM 回答
+    })).mutation(async ({ input }) => {
+      const client = await getClientById(input.clientId);
+      if (!client) throw new Error("客户不存在");
+      const prompt = `你是一位销售总监（AD），刚刚完成了对 SAM 的问询 Review。
+
+客户：${client.name}（阶段：${client.stage}）
+Review类型：${input.stageType === "0to1" ? "0→1 客户开发阶段" : "1→N 商机赢单阶段"}
+
+【AD 提出的问询问题】
+${input.inquiryQuestions}
+
+【AD 记录的 SAM 回答情况】
+${input.samAnswerNotes}
+
+请根据以上信息，生成一段简短的辅导建议（200字以内），格式如下：
+
+**整体判断：** [一句话评估 SAM 对这个客户/商机的掌握程度：扎实/存在盲区/需要重点辅导]
+
+**核心问题：** [SAM 最薄弱的1-2个方面，必须具体，不能泛泛]
+
+**辅导建议：** [AD 接下来应该怎么辅导这个 SAM，给出1-2个具体可执行的动作]
+
+**下次 Review 关注点：** [下次 Review 时重点核查什么]
+
+注意：如果 SAM 回答记录为空或内容不足，直接说明"回答记录不足，无法生成有效辅导建议，建议补充记录后重试"。`;
+      const res = await invokeLLM({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+      });
+      return { content: String(res.choices[0].message.content || "") };
+    }),
+
     // ── 数据缺口报告 ──────────────────────────────────────────────────────────
     dataGapReport: publicProcedure.query(async () => {
       const clients = await getAllClients();

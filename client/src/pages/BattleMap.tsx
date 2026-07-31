@@ -1362,7 +1362,28 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const [adInquiryContent, setAdInquiryContent] = useState("");
   const [adInquiryLoading, setAdInquiryLoading] = useState(false);
   const [adInquiryNotes, setAdInquiryNotes] = useState("");
+  const [adInquiryStageType, setAdInquiryStageType] = useState<"0to1" | "1toN">("0to1");
+  const [coachingSummary, setCoachingSummary] = useState("");
+  const [coachingSummaryLoading, setCoachingSummaryLoading] = useState(false);
+  const coachingSummaryMut = trpc.insights.generateCoachingSummary.useMutation();
+
+  const handleGenerateCoachingSummary = async () => {
+    if (!adInquiryNotes.trim()) { toast.error("请先填写 SAM 回答记录"); return; }
+    setCoachingSummaryLoading(true); setCoachingSummary("");
+    try {
+      const res = await coachingSummaryMut.mutateAsync({
+        clientId: client.id,
+        stageType: adInquiryStageType,
+        inquiryQuestions: adInquiryContent,
+        samAnswerNotes: adInquiryNotes,
+      });
+      setCoachingSummary(res.content);
+    } catch (e: any) { toast.error("生成失败：" + (e?.message || "未知错误")); }
+    finally { setCoachingSummaryLoading(false); }
+  };
+
   const handleAdInquiry = async (stageType: "0to1" | "1toN", oppId?: number) => {
+    setAdInquiryStageType(stageType);
     setAdInquiryOpen(true); setAdInquiryLoading(true); setAdInquiryContent(""); setReviewDropdownOpen(false);
     try {
       const res = await adInquiryMut.mutateAsync({ clientId: client.id, opportunityId: oppId, stageType });
@@ -1869,8 +1890,49 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                 ) : (
                   <div>
                     <div className="font-medium mb-0.5">⚠️ 尚不具备进入商机条件：</div>
-                    {transitionWarnings.map((w, i) => <div key={i}>• {w}</div>)}
-                    {criticalFails.filter(f => !transitionWarnings.some(w => w.includes(f.text.slice(0,10)))).map((f, i) => <div key={`cf-${i}`}>• {f.text}</div>)}
+                    {transitionWarnings.map((w, i) => {
+                      // Map warning to quick action
+                      const isChampionWarning = w.includes("Champion");
+                      const isInformalWarning = w.includes("正式会议");
+                      const isEBWarning = w.includes("EB");
+                      const handleQuickFix = () => {
+                        if (isChampionWarning) {
+                          setActiveTab("contacts");
+                          setExpanded(true);
+                          toast("请在关键人列表中标注 Champion 角色", { icon: "👤" });
+                        } else if (isInformalWarning) {
+                          setActiveTab("contacts");
+                          setExpanded(true);
+                          toast("请在关键人中更新非正式接触次数", { icon: "🤝" });
+                        } else if (isEBWarning) {
+                          setActiveTab("meddpicc");
+                          setExpanded(true);
+                          toast("请更新 E（经济买家）维度评分", { icon: "💼" });
+                        }
+                      };
+                      return (
+                        <div key={i} className="flex items-center gap-1 mt-0.5">
+                          <span>•</span>
+                          <span>{w}</span>
+                          <button type="button"
+                            onClick={(e) => { e.stopPropagation(); handleQuickFix(); }}
+                            className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/40 text-yellow-300 flex-shrink-0 transition-colors">
+                            → 去补充
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {criticalFails.filter(f => !transitionWarnings.some(w => w.includes(f.text.slice(0,10)))).map((f, i) => (
+                      <div key={`cf-${i}`} className="flex items-center gap-1 mt-0.5">
+                        <span>•</span>
+                        <span>{f.text}</span>
+                        <button type="button"
+                          onClick={(e) => { e.stopPropagation(); setActiveTab("meddpicc"); setExpanded(true); }}
+                          className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/40 text-yellow-300 flex-shrink-0 transition-colors">
+                          → 去补充
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -2709,7 +2771,26 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                     text.includes("Blue Sheet") || text.includes("战局") ? "blue-sheet" :
                     text.includes("关键人") || text.includes("Buying") ? "contacts" : null;
                   const isHighlighted = sectionKey && highlightedSection === sectionKey;
-                  return <h2 id={sectionKey || undefined} className={`text-base font-semibold text-purple-200 mt-4 mb-2 px-2 py-1 rounded transition-all ${isHighlighted ? "bg-yellow-500/20 border border-yellow-500/40 text-yellow-300" : ""}`}>{children}</h2>;
+                  // Map section to quick fix action
+                  const quickFixMap: Record<string, { label: string; action: () => void }> = {
+                    "meddpicc": { label: "→ 去修正评分", action: () => { setHighlightedSection(null); setReviewOpen(false); setTimeout(() => { setActiveTab("meddpicc"); setExpanded(true); toast("请核实并修正对应维度的评分依据", { icon: "📊" }); }, 200); } },
+                    "champion": { label: "→ 去修正Champion", action: () => { setHighlightedSection(null); setReviewOpen(false); setTimeout(() => { setActiveTab("contacts"); setExpanded(true); toast("请在关键人中更新 Champion 三维评分和非正式接触记录", { icon: "👤" }); }, 200); } },
+                    "blue-sheet": { label: "→ 去填写Blue Sheet", action: () => { setHighlightedSection(null); setReviewOpen(false); setTimeout(() => { setActiveTab("winstrategy"); setExpanded(true); toast("请补充 Blue Sheet 战略信息", { icon: "📋" }); }, 200); } },
+                    "contacts": { label: "→ 去更新关键人", action: () => { setHighlightedSection(null); setReviewOpen(false); setTimeout(() => { setActiveTab("contacts"); setExpanded(true); toast("请补充关键人覆盖和关系深度信息", { icon: "👥" }); }, 200); } },
+                  };
+                  const quickFix = sectionKey ? quickFixMap[sectionKey] : null;
+                  return (
+                    <div className={`flex items-center gap-2 mt-4 mb-2 px-2 py-1 rounded transition-all ${isHighlighted ? "bg-yellow-500/20 border border-yellow-500/40" : ""}`} id={sectionKey || undefined}>
+                      <h2 className={`text-base font-semibold flex-1 ${isHighlighted ? "text-yellow-300" : "text-purple-200"}`}>{children}</h2>
+                      {isHighlighted && quickFix && (
+                        <button type="button"
+                          onClick={quickFix.action}
+                          className="text-[10px] px-2 py-1 rounded bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/40 text-yellow-300 flex-shrink-0 transition-colors font-medium">
+                          {quickFix.label}
+                        </button>
+                      )}
+                    </div>
+                  );
                 },
                 h3: ({children}) => <h3 className="text-sm font-semibold text-blue-300 mt-3 mb-1">{children}</h3>,
                 p: ({children}) => {
@@ -2853,23 +2934,50 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
           )}
         </div>
         {adInquiryContent && !adInquiryLoading && (
-          <div className="border-t border-border pt-3 flex justify-between items-center gap-2">
-            <p className="text-xs text-muted-foreground flex-1">只有真正做过的人才能回答</p>
-            <div className="flex gap-2">
-              {adInquiryNotes && (
+          <>
+            {/* Coaching summary result */}
+            {(coachingSummary || coachingSummaryLoading) && (
+              <div className="border border-green-500/30 rounded-lg p-3 bg-green-500/5 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-green-400">🎯 辅导建议</span>
+                  {coachingSummaryLoading && <div className="w-3 h-3 border border-green-400 border-t-transparent rounded-full animate-spin" />}
+                </div>
+                {coachingSummary && (
+                  <ReactMarkdown
+                    components={{
+                      p: ({children}) => <p className="text-xs text-foreground/90 mb-1">{children}</p>,
+                      strong: ({children}) => <strong className="text-green-300 font-semibold">{children}</strong>,
+                    }}
+                  >{coachingSummary}</ReactMarkdown>
+                )}
+              </div>
+            )}
+            <div className="border-t border-border pt-3 flex justify-between items-center gap-2">
+              <p className="text-xs text-muted-foreground flex-1">只有真正做过的人才能回答</p>
+              <div className="flex gap-2 flex-wrap justify-end">
+                {adInquiryNotes && (
+                  <button type="button"
+                    onClick={handleGenerateCoachingSummary}
+                    disabled={coachingSummaryLoading}
+                    className="text-xs px-3 py-1.5 rounded border border-green-500/30 bg-green-500/10 hover:bg-green-500/20 text-green-400 disabled:opacity-50">
+                    {coachingSummaryLoading ? "生成中..." : "✨ 生成辅导建议"}
+                  </button>
+                )}
+                {adInquiryNotes && (
+                  <button type="button"
+                    onClick={() => { navigator.clipboard.writeText(`【AD问询 - ${client.name}】\n\n${adInquiryContent}\n\n【SAM回答记录】\n${adInquiryNotes}${coachingSummary ? `\n\n【辅导建议】\n${coachingSummary}` : ""}`); toast.success("完整记录已复制"); }}
+                    className="text-xs px-3 py-1.5 rounded border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary">
+                    📋 复制完整记录
+                  </button>
+                )}
                 <button type="button"
-                  onClick={() => { navigator.clipboard.writeText(`【AD问询 - ${client.name}】\n\n${adInquiryContent}\n\n【SAM回答记录】\n${adInquiryNotes}`); toast.success("完整记录已复制"); }}
-                  className="text-xs px-3 py-1.5 rounded border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary">
-                  📋 复制完整记录
+                  onClick={() => { navigator.clipboard.writeText(adInquiryContent); toast.success("问题已复制"); }}
+                  className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground">
+                  📋 仅复制问题
                 </button>
-              )}
-              <button type="button"
-                onClick={() => { navigator.clipboard.writeText(adInquiryContent); toast.success("问题已复制"); }}
-                className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground">
-                📋 仅复制问题
-              </button>
+              </div>
             </div>
-          </div>
+          </>
         )}
       </DialogContent>
     </Dialog>
