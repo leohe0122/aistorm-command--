@@ -1269,34 +1269,75 @@ ${situationSnapshot}
         "进入商机": "Need-Payoff Questions（推动Champion向EB传递价值）",
       };
 
-      const contactsSummary = contacts.slice(0, 10).map(c =>
-        `${c.name}（${c.title || ""}/${c.buyingRole || "未知"}，关系：${c.relationship}，立场：${c.stance}）`
-      ).join("\n");
-
-      const recentVisits = meetings.slice(0, 3).map((m, i) => {
-        const date = new Date(m.meetingDate).toLocaleDateString("zh-CN");
-        const summary = m.aiMinutes ? m.aiMinutes.slice(0, 300) : m.keyPoints?.slice(0, 300) || "";
-        return `第${i+1}次拜访（${date}）：${summary}`;
+      // 关系深度矩阵（区分正式/非正式接触，私信渠道）
+      const contactsSummary = contacts.slice(0, 10).map(c => {
+        const ca = c as any;
+        const informalCount = ca.informalContactCount ?? 0;
+        const customerInitCount = ca.customerInitiatedCount ?? 0;
+        const channels: string[] = [];
+        if (ca.hasWeChat) channels.push("微信");
+        if (ca.hasWhatsapp) channels.push("WhatsApp");
+        const depthLabel = informalCount >= 3 ? "深度" : informalCount >= 1 ? "中度" : "浅层（仅正式）";
+        return `${c.name}（${c.title || ""}/${c.buyingRole || "未知"}，立场：${c.stance}，非正式接触：${informalCount}次，客户主动：${customerInitCount}次，私信渠道：${channels.length > 0 ? channels.join("/") : "无"}，关系深度：${depthLabel}）`;
       }).join("\n");
 
+      // 一致性矛盾检测（0→1阶段规则）
+      const contradictions: string[] = [];
       const painScore = meddpicc?.implicatePainScore ?? 0;
       const championScore = meddpicc?.championScore ?? 0;
+      if (contacts.length < 3 && (meddpicc?.metricsScore ?? 0) > 40) {
+        contradictions.push("⚠️ 建图完成度与关键人数量矛盾：关键人少于3人但评分偏高");
+      }
+      if (championScore >= 50) {
+        const champion = contacts.find(c => c.buyingRole === "Champion" || c.relationship === "Champion");
+        const informalCount = (champion as any)?.informalContactCount ?? 0;
+        if (informalCount === 0) {
+          contradictions.push("⚠️ Champion确认依据不足：仅正式会议接触，Political Will未验证（非正式接触次数=0）");
+        }
+      }
+      if (painScore >= 50) {
+        const hasClientQuote = meetings.some(m => (m.aiMinutes || m.keyPoints || "").includes("客户说") || (m.aiMinutes || m.keyPoints || "").includes("他说") || (m.aiMinutes || m.keyPoints || "").includes("表示"));
+        if (!hasClientQuote) {
+          contradictions.push("⚠️ 痛点定义缺乏客户原话支撑：I维度≥50但拜访记录中未检测到客户直接表述");
+        }
+      }
+      if (["找人", "进入商机"].includes(stage)) {
+        const hasEB = contacts.some(c => c.buyingRole === "经济决策人");
+        if (!hasEB) {
+          contradictions.push("⚠️ 进入找人/商机阶段但EB未接触：0→1完成标准存疑");
+        }
+      }
+      // 所有接触均为正式会议检查
+      const allFormal = contacts.every(c => (c as any).informalContactCount === 0 || (c as any).informalContactCount === null);
+      const contradictionBlock = contradictions.length > 0
+        ? `\n【⚠️ AI一致性矛盾检测（${contradictions.length}项）】\n${contradictions.join("\n")}`
+        : "\n【✅ AI一致性检测：未发现明显矛盾】";
+
+      const recentVisits = meetings.slice(0, 3).map((m: any, i: number) => {
+        const date = new Date(m.meetingDate).toLocaleDateString("zh-CN");
+        const summary = m.aiMinutes ? m.aiMinutes.slice(0, 300) : m.keyPoints?.slice(0, 300) || "";
+        const contactType = m.contactType ? `[${m.contactType}]` : "[正式会议]";
+        return `第${i+1}次拜访（${date}）${contactType}：${summary}`;
+      }).join("\n");
 
       const recentSignals = signals.slice(0, 3).map(s =>
         `[${s.signalType}/${s.urgency}] ${s.rawSignal.slice(0, 100)}`
       ).join("\n");
 
-      const prompt = `你是一位企业级安全销售教练，专注于大客户0→1阶段的开发推进。
+      const prompt = `你是一位大客户销售关系教练，专注于企业级安全产品的客户开发阶段（0→1）。
+你的工作是帮SAM判断关系走到哪一层，找出推进阻碍，给出加深信任的具体行动。
+不要给价值主张建议，不要给产品介绍建议。这个阶段的核心是人，不是产品。
 
 当前客户阶段: ${stage}
 该阶段的退出标准: ${exitCriteria[stage] || "推进到下一阶段"}
 阶段停留天数: ${daysInStage}天
 ${daysInStage > 30 ? "⚠️ 警告：已超过30天，存在停滞风险" : ""}
+${allFormal ? "\n⚠️ 关键警告：所有关键人接触均为正式场合，客户真实态度存在不确定性。建议优先安排非正式接触。" : ""}
 
-关键人列表（含角色/关系/立场）:
+关键人列表（含角色/立场/关系深度矩阵）:
 ${contactsSummary || "暂无关键人记录"}
 
-最近3次拜访摘要:
+最近3次拜访摘要（含接触类型）:
 ${recentVisits || "暂无拜访记录"}
 
 相关情报信号:
@@ -1305,8 +1346,10 @@ ${recentSignals || "暂无情报信号"}
 当前MEDDPICC I维度（Identify Pain）得分: ${painScore}
 当前MEDDPICC C维度（Champion）得分: ${championScore}
 
-SPIN话术阶段映射（供话题建议使用）:
+SPIN话术阶段映射（供行动建议使用，不要在输出中解释框架）:
 当前阶段建议使用：${spinMapping[stage] || "综合运用SPIN提问"}
+
+${contradictionBlock}
 
 请按以下格式输出（不得省略任何一项）:
 
@@ -1314,27 +1357,36 @@ SPIN话术阶段映射（供话题建议使用）:
 **已完成项：**（列出已达成的退出条件）
 **缺失项：**（列出尚未完成的退出条件）
 
-## 2. 核心卡点
+## 2. 关系深度评估
+- 哪些关键人停留在正式会议层面（存在真实态度盲区）
+- 哪些关键人有非正式接触（信息可信度更高）
+- EB是否有私信渠道（微信/WhatsApp），无则标注关系深度风险
+
+## 3. 核心卡点
 （阻止推进到下一阶段的最关键一件事，只说一件，必须具体）
 
-## 3. 下一步3个具体行动
-- 行动1：做什么 + 找谁 + 建议话题/切入点
-- 行动2：做什么 + 找谁 + 建议话题/切入点
-- 行动3：做什么 + 找谁 + 建议话题/切入点
+## 4. 下一步3个具体行动
+- 行动1：做什么 + 找谁 + 建议话题/切入点（基于SPIN阶段映射）
+- 行动2：做什么 + 找谁 + 建议话题/切入点（基于SPIN阶段映射）
+- 行动3：做什么 + 找谁 + 建议话题/切入点（基于SPIN阶段映射）
 
-## 4. 下次拜访开场建议
-（基于最新情报信号定制一句开场话语，如无情报则基于当前阶段目标）
+## 5. 下次接触建议
+**建议接触类型：**（正式/非正式，基于当前关系深度）
+**建议开场话题：**（结合最新情报信号，一句话）
 
-## 5. 商机出现可能性
+## 6. 商机出现可能性
 **评级：** 低/中/高
-**依据：**（一句话，必须引用具体数据来源）
+**依据：**（一句话，必须基于当前关系深度而非产品匹配度，引用具体数据来源）
 
-## 6. 本周优先行动卡
+## 7. 本周优先行动卡
 **1件事：** [最关键的一个行动]
 **1个人：** [最需要接触/突破的一个人]
 **1句话：** [开场或推进的核心话术]
 
-注意：每个结论必须引用数据来源（哪次拜访记录、哪条情报）。如果某项数据缺失，明确标注"缺少X数据，以下判断存在盲区"。`;
+注意：
+- 每个结论必须引用数据来源（哪次拜访记录、接触类型、哪条情报）
+- 如果某项数据缺失，明确标注"缺少X数据，以下判断存在盲区"
+- 如果所有接触均为正式会议，必须在关系深度评估中标注：⚠️ 所有接触为正式场合，客户真实态度存在不确定性`;
 
       const res = await invokeLLM({
         model: "gpt-4o",
@@ -1427,11 +1479,71 @@ C2（Competition）: ${m.competitionScore}分 - ${m.competitionNotes?.slice(0,60
 
       const blueSheet = opp.bizObjective || opp.valueProposition || opp.winStrategy
         ? `业务目标：${opp.bizObjective || "未填写"}
-价值主张：${opp.valueProposition || "未填写"}
+价值ProPosition：${opp.valueProposition || "未填写"}
 赢单策略：${opp.winStrategy || "未填写"}`
         : "Blue Sheet尚未填写";
 
+      // 关系深度矩阵（1→N阶段：Champion非正式接触是核心信号）
+      const contactsWithDepth = contacts.slice(0, 8).map(c => {
+        const ca = c as any;
+        const informalCount = ca.informalContactCount ?? 0;
+        const customerInitCount = ca.customerInitiatedCount ?? 0;
+        const channels: string[] = [];
+        if (ca.hasWeChat) channels.push("微信");
+        if (ca.hasWhatsapp) channels.push("WhatsApp");
+        return `${c.name}（${c.buyingRole || "未知"}，${c.stance}，非正式接触：${informalCount}次，客户主动：${customerInitCount}次，私信：${channels.length > 0 ? channels.join("/") : "无"}）`;
+      }).join("\n");
+
+      // CoM框架检查（方案提案阶段及以后）
+      const isProposalStage = ["方案提案", "商务谈判"].includes(opp.stage);
+      const comCheck = isProposalStage ? `
+CoM框架完整度检查（方案提案阶段必须完整）:
+- Before State（客户现状痛点量化）: ${opp.bizObjective ? "已填写" : "📭 未填写"}
+- Negative Consequences（不解决的代价）: ${opp.valueProposition ? "已填写" : "📭 未填写"}
+- Required Capabilities（客户需要什么能力）: 请在分析中评估
+- Positive Outcomes（量化结果）: ${opp.winStrategy ? "已填写" : "📭 未填写"}` : "";
+
+      // 一致性矛盾检测（1→N阶段规则）
+      const contradictions1N: string[] = [];
+      const meddpiccData = meddpicc;
+      if (meddpiccData) {
+        if (meddpiccData.economicBuyerScore >= 70) {
+          const ebContact = contacts.find(c => c.buyingRole === "经济决策人");
+          const ebLastVisit = ebContact ? meetings.find(mt => (mt.attendees || "").includes(ebContact.name)) : null;
+          if (!ebLastVisit) {
+            contradictions1N.push("⚠️ EB评分≥70但无近期拜访记录关联EB，评分依据可能过时");
+          }
+        }
+        if (meddpiccData.championScore >= 60) {
+          const champion1N = contacts.find(c => c.buyingRole === "Champion" || c.relationship === "Champion");
+          const informalCount1N = (champion1N as any)?.informalContactCount ?? 0;
+          if (informalCount1N === 0) {
+            contradictions1N.push("⚠️ Champion评分可能虚高：所有接触为正式场合，Political Will真实性待验证（非正式接触=0）");
+          }
+        }
+        if (opp.stage === "技术验证" && daysInStage > 45) {
+          const hasSAVisit = meetings.some(mt => (mt.attendees || "").includes("SA") || (mt.keyPoints || "").includes("POC") || (mt.keyPoints || "").includes("技术验证"));
+          if (!hasSAVisit) {
+            contradictions1N.push("⚠️ 技术验证阶段超45天但无SA参与记录，POC进展存疑");
+          }
+        }
+        if (opp.stage === "方案提案" && !opp.bizObjective && !opp.winStrategy) {
+          contradictions1N.push("⚠️ 方案提案阶段Blue Sheet未填写，竞争策略不清晰");
+        }
+        // 单次跳分检测（如果MEDDPICC均分超过60但备注普遍不足）
+        const dims = [meddpiccData.metricsScore, meddpiccData.economicBuyerScore, meddpiccData.decisionCriteriaScore, meddpiccData.decisionProcessScore, meddpiccData.paperProcessScore, meddpiccData.implicatePainScore, meddpiccData.championScore, meddpiccData.competitionScore];
+        const notes = [meddpiccData.metricsNotes, meddpiccData.economicBuyerNotes, meddpiccData.decisionCriteriaNotes, meddpiccData.decisionProcessNotes, meddpiccData.paperProcessNotes, meddpiccData.implicatePainNotes, meddpiccData.championNotes, meddpiccData.competitionNotes];
+        const highScoreLowEvidence = dims.filter((s, i) => s >= 70 && (notes[i]?.length ?? 0) < 30).length;
+        if (highScoreLowEvidence >= 3) {
+          contradictions1N.push(`⚠️ ${highScoreLowEvidence}个维度评分≥70但备注不足30字，评分置信度已下调，建议补充拜访记录依据`);
+        }
+      }
+      const contradiction1NBlock = contradictions1N.length > 0
+        ? `\n【⚠️ AI一致性矛盾检测（${contradictions1N.length}项）】\n${contradictions1N.join("\n")}`
+        : "\n【✅ AI一致性检测：未发现明显矛盾】";
+
       const prompt = `你是一位MEDDPICC认证的销售战略顾问，专注于企业级安全产品的商机赢单。
+你的工作是识别商机漏洞、评估赢单风险、给出有数据支撑的下一步行动。
 
 商机: ${opp.name}
 当前阶段: ${opp.stage}，在当前阶段已停留 ${daysInStage} 天（${stagnationRisk}，预警阈值：黄${threshold.yellow}天/红${threshold.red}天）
@@ -1442,8 +1554,8 @@ C2（Competition）: ${m.competitionScore}分 - ${m.competitionNotes?.slice(0,60
 MEDDPICC评分（各维度0-100分，含评分依据）:
 ${meddpiccSummary}
 
-关键人覆盖（含Buying Group角色）:
-${contacts.slice(0, 8).map(c => `${c.name}（${c.buyingRole || "未知"}，${c.relationship}，${c.stance}）`).join("\n") || "暂无关键人"}
+关键人覆盖（含Buying Group角色+关系深度矩阵）:
+${contactsWithDepth || "暂无关键人"}
 
 最近3次拜访摘要:
 ${recentVisits || "暂无拜访记录"}
@@ -1453,15 +1565,17 @@ ${recentSignals || "暂无情报信号"}
 
 Blue Sheet内容:
 ${blueSheet}
+${comCheck}
+${contradiction1NBlock}
 
 请按以下格式输出（格式固定，不得省略）:
 
 ## 1. MEDDPICC健康雷达
-（每个维度：🟢绿/🟡黄/🔴红 + 一行理由；评分≥70且依据不足的标注⚠️；无数据的标注📭）
+（每个维度：🟢绿/🟡黄/🔴红 + 一行理由 + 数据来源；评分≥70且依据不足的标注⚠️；无数据的标注📭）
 
 ## 2. Champion评估
 **Champion状态：** ${championStatus}
-**评估：**（基于三维评分判断，如为伪Champion给出替代人选建议）
+**评估：**（基于三维评分判断；如为伪Champion给出替代人选建议；如所有接触均为正式会议，标注Political Will评分上限，建议安排非正式接触）
 
 ## 3. 赢单概率
 **概率：** X%
@@ -1490,11 +1604,20 @@ ${daysInStage >= threshold.yellow ? `**风险等级：** ${stagnationRisk}
 
 ## 7. Blue Sheet战局判断
 （一段话，不超过100字，包含"当前优势、最大风险、赢单关键"）
+${isProposalStage ? `
+## 8. CoM框架完整度
+（四个维度是否都已建立：Before State / Negative Consequences / Required Capabilities / Positive Outcomes；缺失项给出补全建议）
 
-## 8. 本周行动分工
+## 9. 本周行动分工` : `
+## 8. 本周行动分工`}
 **AD：** [1个优先行动]
 **SAM：** [1个优先行动]
-**SA：** [1个优先行动]`;
+**SA：** [1个优先行动]
+
+AI质疑层规则（内嵌在以上各节中执行）：
+- 某维度自评≥70但评分依据少于30字：在该维度后标注⚠️ 评分依据不足，置信度已下调
+- 缺失数据维度：标注📭 数据不足，无法判断，建议优先填补
+- Champion评分高但无非正式接触：在Champion评估中标注⚠️ Political Will真实性待验证`;
 
       const res = await invokeLLM({
         model: "gpt-4o",
@@ -2075,6 +2198,78 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
       await db.delete(coachingActions).where(eqFn(coachingActions.id, input.id));
       return { ok: true };
     }),
+
+    // ── AD 问询问题生成（区分 0→1 / 1→N 阶段）────────────────────────────────
+    generateAdInquiry: publicProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number().optional(),
+      stageType: z.enum(["0to1", "1toN"]),
+    })).mutation(async ({ input }) => {
+      const [client, contacts, meetings, meddpicc] = await Promise.all([
+        getClientById(input.clientId),
+        getContactsByClientId(input.clientId),
+        getMeetingsByClientId(input.clientId),
+        getMeddpiccByClientId(input.clientId),
+      ]);
+      if (!client) throw new Error("客户不存在");
+
+      const stage = client.stage;
+      const recentVisitSummary = meetings.slice(0, 2).map((m: any, i: number) => {
+        const date = new Date(m.meetingDate).toLocaleDateString("zh-CN");
+        const summary = (m.aiMinutes || m.keyPoints || "").slice(0, 150);
+        return `第${i+1}次（${date}）：${summary}`;
+      }).join("\n") || "暂无拜访记录";
+
+      const champion = contacts.find(c => c.buyingRole === "Champion" || c.relationship === "Champion");
+      const championInfo = champion
+        ? `${champion.name}（${champion.title || ""}），Champion三维评分：Access ${(champion as any).championAccessToPower ?? 0}/Will ${(champion as any).championPoliticalWill ?? 0}/Credibility ${(champion as any).championCredibility ?? 0}，非正式接触：${(champion as any).informalContactCount ?? 0}次`
+        : "尚未确认Champion";
+
+      const meddpiccDims = meddpicc ? [
+        { name: "M（可量化价值）", score: meddpicc.metricsScore },
+        { name: "E（经济买家）", score: meddpicc.economicBuyerScore },
+        { name: "D（决策标准）", score: meddpicc.decisionCriteriaScore },
+        { name: "D2（决策流程）", score: meddpicc.decisionProcessScore },
+        { name: "P（采购流程）", score: meddpicc.paperProcessScore },
+        { name: "I（痛点牵连）", score: meddpicc.implicatePainScore },
+        { name: "C（Champion）", score: meddpicc.championScore },
+        { name: "C2（竞争态势）", score: meddpicc.competitionScore },
+      ].sort((a, b) => a.score - b.score).slice(0, 3).map(d => `${d.name}：${d.score}分`).join("，") : "暂无评分";
+
+      const prompt = `你是一位销售总监（AD），正在对SAM进行Review。
+生成3个针对性问题，帮助AD判断SAM的数据录入是否真实、推进判断是否准确。
+问题必须是"只有真正做过这件事的人才能回答的"，不能是可以靠猜测回答的问题。
+
+当前阶段类型: ${input.stageType === "0to1" ? "0→1（客户开发阶段）" : "1→N（商机赢单阶段）"}
+客户名称: ${client.name}
+当前阶段: ${stage}
+MEDDPICC最薄弱3个维度: ${meddpiccDims}
+最近拜访摘要: ${recentVisitSummary}
+Champion信息: ${championInfo}
+
+${input.stageType === "0to1" ? `如果是0→1阶段，问题聚焦于：
+- 关系真实性（你是怎么判断这个人信任你了？他说了什么让你得出这个判断？）
+- 信息来源（这个痛点是客户自己说的还是你推断的？他的原话是什么？）
+- 关系深度（你们有没有在正式会议以外见过面？他主动联系过你吗？）` : `如果是1→N阶段，问题聚焦于：
+- MEDDPICC评分证据（你把这个维度打X分，最近哪次拜访支持这个判断？）
+- Champion行动力（Champion上次帮你做了什么具体动作？不是说支持，是做了什么？）
+- 竞争态势（客户有没有同时在评估竞品？你怎么知道的？）
+- Paper Process（采购流程走到哪一步了？谁在推动？）`}
+
+输出格式（严格遵守）：
+问题1: [具体问题]（考察维度：XXX）
+问题2: [具体问题]（考察维度：XXX）
+问题3: [具体问题]（考察维度：XXX）
+
+附：如果SAM答不出这些问题，说明什么（给AD的参考判断，2-3句话）`;
+
+      const res = await invokeLLM({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+      });
+      return { content: String(res.choices[0].message.content || ""), stageType: input.stageType, clientName: client.name, stage };
+    }),
+
     // ── 数据缺口报告 ──────────────────────────────────────────────────────────
     dataGapReport: publicProcedure.query(async () => {
       const clients = await getAllClients();

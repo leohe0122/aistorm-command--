@@ -1357,6 +1357,18 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const reviewBuyingGroupMut = trpc.insights.reviewBuyingGroup.useMutation();
   const reviewVisitTrendMut = trpc.insights.reviewVisitTrend.useMutation();
   const [reviewDropdownOpen, setReviewDropdownOpen] = useState(false);
+  const adInquiryMut = trpc.insights.generateAdInquiry.useMutation();
+  const [adInquiryOpen, setAdInquiryOpen] = useState(false);
+  const [adInquiryContent, setAdInquiryContent] = useState("");
+  const [adInquiryLoading, setAdInquiryLoading] = useState(false);
+  const handleAdInquiry = async (stageType: "0to1" | "1toN", oppId?: number) => {
+    setAdInquiryOpen(true); setAdInquiryLoading(true); setAdInquiryContent(""); setReviewDropdownOpen(false);
+    try {
+      const res = await adInquiryMut.mutateAsync({ clientId: client.id, opportunityId: oppId, stageType });
+      setAdInquiryContent(res.content);
+    } catch (e: any) { setAdInquiryContent("生成失败：" + (e?.message || "未知错误")); }
+    finally { setAdInquiryLoading(false); }
+  };
   // L2: Review 持久化
   const saveReviewMut = trpc.insights.saveReview.useMutation();
   const { data: latestReviews = [] } = trpc.insights.getLatestReviews.useQuery({ clientId: client.id });
@@ -1726,6 +1738,16 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                   <button type="button" onClick={() => handleReview("visitTrend")} className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-foreground">
                     📈 拜访趋势分析
                   </button>
+                  <div className="border-t border-border my-1" />
+                  <div className="px-3 py-1 text-[10px] text-muted-foreground font-medium">AD 问询工具</div>
+                  <button type="button" onClick={() => handleAdInquiry("0to1")} className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-orange-400">
+                    🔍 AD问询（0→1关系质量）
+                  </button>
+                  {opps.length > 0 && (
+                    <button type="button" onClick={() => handleAdInquiry("1toN", opps[0]?.id)} className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-orange-400">
+                      🔍 AD问询（1→N赢单机制）
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -2618,6 +2640,40 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
               className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
             >
               📋 复制全文
+            </button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+    {/* AD 问询问题 Dialog */}
+    <Dialog open={adInquiryOpen} onOpenChange={setAdInquiryOpen}>
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-orange-400">
+            🔍 AD 问询问题 — {client.name}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto">
+          {adInquiryLoading ? (
+            <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              AI 正在生成问询问题...
+            </div>
+          ) : (
+            <div className="prose prose-sm prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap p-1">
+              {adInquiryContent}
+            </div>
+          )}
+        </div>
+        {adInquiryContent && !adInquiryLoading && (
+          <div className="border-t border-border pt-3 flex justify-between items-center">
+            <p className="text-xs text-muted-foreground">在 Review 时向 SAM 提出这些问题，只有真正做过的人才能回答</p>
+            <button
+              type="button"
+              onClick={() => { navigator.clipboard.writeText(adInquiryContent); toast.success("已复制"); }}
+              className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground"
+            >
+              📋 复制
             </button>
           </div>
         )}
