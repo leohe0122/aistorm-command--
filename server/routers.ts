@@ -1882,6 +1882,46 @@ ${contactStances || "暂无关键人数据"}
       }
       return Object.values(latestByType);
     }),
+    // Review 改进闭环：与上次 Review 对比的变化摘要
+    getReviewDelta: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      reviewType: z.string(),
+    })).query(async ({ input }) => {
+      const allReviews = await getLatestReviewsByClient(input.clientId);
+      const sameType = allReviews.filter(r => r.reviewType === input.reviewType).sort((a: any, b: any) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      if (sameType.length < 2) return null;
+      const latest = sameType[0];
+      const prev = sameType[1];
+      const daysBetween = Math.round((new Date(latest.createdAt).getTime() - new Date(prev.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      const meddpiccHistory = await getMeddpiccHistory(input.clientId, 8);
+      const meddpiccDelta: Record<string, number> = {};
+      if (meddpiccHistory.length >= 2) {
+        const latestSnap = meddpiccHistory[0];
+        const prevSnap = meddpiccHistory[meddpiccHistory.length - 1];
+        const dims = ['metricsScore','economicBuyerScore','decisionCriteriaScore','decisionProcessScore','paperProcessScore','implicatePainScore','championScore','competitionScore'];
+        for (const dim of dims) {
+          const delta = ((latestSnap as any)[dim] ?? 0) - ((prevSnap as any)[dim] ?? 0);
+          if (delta !== 0) meddpiccDelta[dim] = delta;
+        }
+      }
+      const db = await getDb();
+      let newContacts = 0;
+      let newVisits = 0;
+      if (db) {
+        const { keyContacts, meetingMinutes } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const prevDate = new Date(prev.createdAt);
+        const [allContacts, allMeetings] = await Promise.all([
+          db.select({ id: keyContacts.id, createdAt: keyContacts.createdAt }).from(keyContacts).where(eq(keyContacts.clientId, input.clientId)),
+          db.select({ id: meetingMinutes.id, meetingDate: meetingMinutes.meetingDate }).from(meetingMinutes).where(eq(meetingMinutes.clientId, input.clientId)),
+        ]);
+        newContacts = (allContacts as any[]).filter((c: any) => new Date(c.createdAt) > prevDate).length;
+        newVisits = (allMeetings as any[]).filter((m: any) => new Date(m.meetingDate) > prevDate).length;
+      }
+      return { daysBetween, meddpiccDelta, newContacts, newVisits, prevReviewAt: prev.createdAt };
+    }),
 
     // 第五入口：AD 全局战场 Review（跨客户/跨商机/跨 SAM 的指挥官视角）
     globalReview: protectedProcedure.mutation(async () => {

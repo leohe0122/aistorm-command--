@@ -1813,6 +1813,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setReviewDropdownOpen(v => !v); }}
                 className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border bg-purple-500/10 text-purple-400 border-purple-500/30 hover:bg-purple-500/20 transition-colors font-medium"
+                title="AI 分析当前阶段进度，找出卡点，给出3个具体下一步行动"
               >
                 <Sparkles className="w-3 h-3" />
                 AI Review ▾
@@ -1840,11 +1841,11 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                   <div className="border-t border-border my-1" />
                   <div className="px-3 py-1 text-[10px] text-muted-foreground font-medium">AD 问询工具</div>
                   <button type="button" onClick={() => handleAdInquiry("0to1")} className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-orange-400">
-                    🔍 AD问询（0→1关系质量）
+                    <span title="生成3个只有真正做过这件事的人才能回答的问题，用于验证 SAM 数据真实性">🔍 AD问询（0→1关系质量）</span>
                   </button>
                   {opps.length > 0 && (
                     <button type="button" onClick={() => handleAdInquiry("1toN", opps[0]?.id)} className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 text-orange-400">
-                      🔍 AD问询（1→N赢单机制）
+                      <span title="生成3个只有真正做过这件事的人才能回答的问题，用于验证 SAM 数据真实性">🔍 AD问询（1→N赢单机制）</span>
                     </button>
                   )}
                 </div>
@@ -2265,7 +2266,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                 activeTab === "metrics" ? "text-primary border-b-2 border-primary bg-primary/5" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              📊 效能基线
+              <span title="量化客户现有安全运营成本，为方案提案提供 ROI 数字依据">📊 效能基线</span>
             </button>
           </div>
 
@@ -2698,6 +2699,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                     size="sm"
                     className="text-xs gap-1.5 bg-[#00A8D6] hover:bg-[#0090b8]"
                     disabled={wsGenerating}
+                    title="基于 MEDDPICC、竞品情报、效能数据，生成 IBM Blue Sheet 赢单策略"
                     onClick={() => {
                       setWsGenerating(true);
                       const meddpiccSummary = meddpicc ? `M:${meddpicc.metricsScore} E:${meddpicc.economicBuyerScore} D:${meddpicc.decisionCriteriaScore} I:${meddpicc.implicatePainScore} C:${meddpicc.championScore} C2:${meddpicc.competitionScore}` : '';
@@ -2826,6 +2828,39 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
           <div className="text-sm leading-relaxed">
             {highlightedSection && (
               <div className="mb-3 flex items-center gap-2 text-xs bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
+            {/* Review 改进闭环：与上次对比的变化摘要条 */}
+            {(() => {
+              const { data: delta } = trpc.insights.getReviewDelta.useQuery(
+                { clientId: client.id, reviewType },
+                { enabled: reviewOpen && !reviewLoading && !!reviewContent }
+              );
+              if (!delta) return null;
+              const dimLabels: Record<string, string> = {
+                metricsScore: 'M', economicBuyerScore: 'E', decisionCriteriaScore: 'D1',
+                decisionProcessScore: 'D2', paperProcessScore: 'P', implicatePainScore: 'I',
+                championScore: 'C', competitionScore: 'C2',
+              };
+              const deltaItems = Object.entries(delta.meddpiccDelta || {}).map(([k, v]) => ({
+                label: dimLabels[k] || k, value: v as number,
+              }));
+              return (
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] bg-blue-500/5 border border-blue-500/20 rounded-lg px-3 py-2">
+                  <span className="text-blue-400 font-medium flex-shrink-0">📊 距上次 Review {delta.daysBetween}天</span>
+                  {deltaItems.length > 0 && (
+                    <span className="text-muted-foreground">MEDDPICC：{deltaItems.map(d => (
+                      <span key={d.label} className={d.value > 0 ? 'text-green-400' : 'text-red-400'}>
+                        {d.label}{d.value > 0 ? `↑${d.value}` : `↓${Math.abs(d.value)}`}{' '}
+                      </span>
+                    ))}</span>
+                  )}
+                  {delta.newContacts > 0 && <span className="text-cyan-400">新增关键人 {delta.newContacts}位</span>}
+                  {delta.newVisits > 0 && <span className="text-purple-400">新增拜访 {delta.newVisits}次</span>}
+                  {deltaItems.length === 0 && delta.newContacts === 0 && delta.newVisits === 0 && (
+                    <span className="text-muted-foreground">暂无明显变化</span>
+                  )}
+                </div>
+              );
+            })()}
                 <span className="text-yellow-400">🔍 已高亮对应数据字段</span>
                 <button type="button" onClick={() => setHighlightedSection(null)} className="ml-auto text-muted-foreground hover:text-foreground">✕ 取消高亮</button>
               </div>
@@ -3692,13 +3727,54 @@ export default function BattleMap() {
             </div>
           ))}
           {clients.length === 0 && (
-            <button
-              onClick={openCreate}
-              className="col-span-full flex flex-col items-center justify-center gap-3 py-16 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors"
-            >
-              <Plus className="w-8 h-8" />
-              <span className="text-sm">点击添加第一个 T100 战略客户</span>
-            </button>
+            <div className="col-span-full">
+              {/* 新用户引导卡片 */}
+              <div className="border border-border/50 rounded-2xl p-8 bg-card/50 text-center space-y-6">
+                <div>
+                  <div className="text-3xl mb-2">🎯</div>
+                  <h2 className="text-lg font-bold text-foreground">欢迎使用 AIStorm Command</h2>
+                  <p className="text-sm text-muted-foreground mt-1">3步开始你的第一个大客户攻坚</p>
+                </div>
+                <div className="grid grid-cols-3 gap-4 text-left">
+                  {/* Step 1 */}
+                  <div className="p-4 bg-muted/20 border border-border/40 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-primary/20 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
+                      <span className="text-sm font-semibold text-foreground">新增目标客户</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">录入客户名称、行业、优先级，建立客户档案</p>
+                    <button type="button" onClick={openCreate}
+                      className="w-full text-xs px-3 py-1.5 rounded-lg bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 transition-colors font-medium">
+                      + 新增客户
+                    </button>
+                  </div>
+                  {/* Step 2 */}
+                  <div className="p-4 bg-muted/20 border border-border/40 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-400 text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
+                      <span className="text-sm font-semibold text-foreground">录入第一次拜访</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">录入接触记录，AI 自动生成会议纪要并更新 MEDDPICC</p>
+                    <a href="/meeting-minutes"
+                      className="block w-full text-xs px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-colors font-medium text-center">
+                      前往拜访日志
+                    </a>
+                  </div>
+                  {/* Step 3 */}
+                  <div className="p-4 bg-muted/20 border border-border/40 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 text-xs font-bold flex items-center justify-center flex-shrink-0">3</span>
+                      <span className="text-sm font-semibold text-foreground">获取 AI Review</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">AI 分析关系进度，给出阶段推进建议和下一步行动</p>
+                    <a href="/quick-review"
+                      className="block w-full text-xs px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 transition-colors font-medium text-center">
+                      快速 Review
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       ))}
