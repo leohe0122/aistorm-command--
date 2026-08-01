@@ -2781,7 +2781,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                 </div>
               )}
               {winStrategy?.aiSuggestion && (
-                <WinStrategyExtras clientId={client.id} aiSuggestion={winStrategy.aiSuggestion} enabled={expanded && activeTab === "winstrategy"} />
+                <WinStrategyExtras clientId={client.id} aiSuggestion={winStrategy.aiSuggestion} enabled={expanded && activeTab === "winstrategy"} stage={client.stage} />
               )}
 
               {!winStrategy && !wsEdit && (
@@ -3130,12 +3130,54 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
 const EMPTY_FORM = { name: "", nameEn: "", industry: "", priority: "P1" as "P0"|"P1"|"P2", stage: "建图" as string, hookTopic: "", securityAngle: "", monitorKeywords: "" };
 
 // WinStrategy 情报信号折叠面板 + 一键复制（独立组件，避免 hooks 违规）
-function WinStrategyExtras({ clientId, aiSuggestion, enabled }: { clientId: number; aiSuggestion: string; enabled: boolean }) {
+function WinStrategyExtras({ clientId, aiSuggestion, enabled, stage }: { clientId: number; aiSuggestion: string; enabled: boolean; stage?: string }) {
   const { data: wsSignals } = trpc.intelligence.listByClient.useQuery({ clientId }, { enabled });
   const top3 = (wsSignals || []).slice(0, 3);
   const [sigOpen, setSigOpen] = useState(false);
   const [wsCopied, setWsCopied] = useState(false);
+  const [extractOpen, setExtractOpen] = useState(false);
+  const [extractedActions, setExtractedActions] = useState<Array<{ title: string; description: string; role: string; dueDays: number }>>([]);
+  const [extractLoading, setExtractLoading] = useState(false);
+  const [editableActions, setEditableActions] = useState<Array<{ title: string; description: string; role: string; dueDays: number }>>([]);
+  const extractMut = trpc.winStrategyActions.extractActions.useMutation();
+  const addTaskMut = trpc.pod.addTask.useMutation();
+
+  const handleExtract = async () => {
+    setExtractLoading(true);
+    setExtractOpen(true);
+    try {
+      const res = await extractMut.mutateAsync({ clientId, aiSuggestion, stage: stage || '未知' });
+      setExtractedActions(res.actions);
+      setEditableActions(res.actions.map(a => ({ ...a })));
+    } catch (e: any) {
+      toast.error("提取失败：" + (e?.message || "未知错误"));
+      setExtractOpen(false);
+    } finally {
+      setExtractLoading(false);
+    }
+  };
+
+  const handleConfirmTasks = async () => {
+    try {
+      for (const action of editableActions) {
+        const dueDate = new Date(Date.now() + action.dueDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        await addTaskMut.mutateAsync({
+          clientId,
+          assignedRole: (action.role as "AD" | "SAM" | "SA" | "RSM"),
+          title: action.title,
+          description: action.description,
+          dueDate,
+        });
+      }
+      toast.success(`已创建 ${editableActions.length} 条行动任务，可在 AI行动指令台查看`);
+      setExtractOpen(false);
+    } catch (e: any) {
+      toast.error("创建任务失败：" + (e?.message || "未知错误"));
+    }
+  };
+
   return (
+    <>
     <div className="space-y-2 mt-2">
       <div className="flex justify-end">
         <button type="button"
@@ -3174,6 +3216,62 @@ function WinStrategyExtras({ clientId, aiSuggestion, enabled }: { clientId: numb
         </div>
       )}
     </div>
+    {/* 一键转任务按钮 */}
+    <div className="flex justify-end mt-1">
+      <button type="button" onClick={handleExtract}
+        className="text-[10px] px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors">
+        📋 一键转任务
+      </button>
+    </div>
+    {/* 一键转任务确认 Dialog */}
+    <Dialog open={extractOpen} onOpenChange={setExtractOpen}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-cyan-400 text-sm">📋 Win Strategy → 行动任务</DialogTitle>
+        </DialogHeader>
+        {extractLoading ? (
+          <div className="flex items-center gap-2 py-6 justify-center text-muted-foreground text-xs">
+            <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+            AI 正在提取行动项...
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {editableActions.map((action, idx) => (
+              <div key={idx} className="p-3 bg-muted/20 rounded-lg border border-border/30 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">{idx + 1}</span>
+                  <input type="text" value={action.title}
+                    onChange={e => setEditableActions(prev => prev.map((a, i) => i === idx ? { ...a, title: e.target.value } : a))}
+                    className="flex-1 text-xs bg-transparent border-b border-border/50 focus:border-primary outline-none py-0.5" />
+                </div>
+                <div className="text-[10px] text-muted-foreground">{action.description}</div>
+                <div className="flex items-center gap-3 text-[10px]">
+                  <select value={action.role}
+                    onChange={e => setEditableActions(prev => prev.map((a, i) => i === idx ? { ...a, role: e.target.value } : a))}
+                    className="bg-muted/30 border border-border/30 rounded px-1 py-0.5 text-[10px]">
+                    {["AD","SAM","SA","RSM"].map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <span className="text-muted-foreground">截止</span>
+                  <input type="number" value={action.dueDays} min={1} max={90}
+                    onChange={e => setEditableActions(prev => prev.map((a, i) => i === idx ? { ...a, dueDays: Number(e.target.value) } : a))}
+                    className="w-12 bg-muted/30 border border-border/30 rounded px-1 py-0.5 text-[10px] text-center" />
+                  <span className="text-muted-foreground">天内</span>
+                </div>
+              </div>
+            ))}
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setExtractOpen(false)}
+                className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground">取消</button>
+              <button type="button" onClick={handleConfirmTasks}
+                className="text-xs px-3 py-1.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30">
+                ✓ 确认创建 {editableActions.length} 条任务
+              </button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

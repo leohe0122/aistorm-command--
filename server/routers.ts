@@ -4663,6 +4663,35 @@ ${baselineContext}
       }),
   }),
 
+  winStrategyActions: router({
+    extractActions: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      aiSuggestion: z.string(),
+      stage: z.string(),
+    })).mutation(async ({ input }) => {
+      const prompt = `你是一位销售行动计划提取助手。从以下 Win Strategy 文本中提取3个最优先的可执行行动，分配给对应角色。
+
+Win Strategy 内容：
+${input.aiSuggestion}
+
+当前阶段：${input.stage}
+
+请以 JSON 格式返回3个行动项，每项包含：
+- title: 行动标题（15字以内）
+- description: 具体内容（50字以内）
+- role: 负责角色，必须是 AD / SAM / SA 之一
+- dueDays: 建议完成天数（数字，如7表示7天内）
+
+返回格式：{ "actions": [ {...}, {...}, {...} ] }`;
+      const res = await invokeLLM({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_schema", json_schema: { name: "actions", strict: true, schema: { type: "object", properties: { actions: { type: "array", items: { type: "object", properties: { title: { type: "string" }, description: { type: "string" }, role: { type: "string" }, dueDays: { type: "number" } }, required: ["title","description","role","dueDays"], additionalProperties: false } } }, required: ["actions"], additionalProperties: false } } },
+      });
+      const parsed = JSON.parse(String(res.choices[0].message.content || "{}"));
+      return { actions: (parsed.actions ?? []) as Array<{ title: string; description: string; role: string; dueDays: number }> };
+    }),
+  }),
   // ── AD 指挥台聚合接口 ─────────────────────────────────────────────────────
   dashboard: router({
     summary: publicProcedure.query(async () => {

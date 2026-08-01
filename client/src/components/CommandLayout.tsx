@@ -15,6 +15,7 @@ const navItems = [
   { path: "/dashboard", label: "AD 指挥台", icon: LayoutDashboard, desc: "Portfolio Review 看板" },
   { path: "/battle-map", label: "战场地图", icon: Map, desc: "MEDDPICC看板" },
   { path: "/intel-radar", label: "客户情报雷达", icon: Radio, desc: "信号监控与解读" },
+  { path: "/quick-review", label: "⚡ 快速 Review", icon: TrendingUp, desc: "选客户，一键生成 AI Review" },
   { path: "/ai-insights", label: "AI洞察简报", icon: FileText, desc: "拜访前客户洞察 1-Pager" },
   { path: "/meeting-minutes", label: "拜访作战日志", icon: MessageSquare, desc: "拜访录入·AI解析·更新战场" },
   { path: "/action-command", label: "AI行动指令台", icon: Zap, desc: "优先行动推荐" },
