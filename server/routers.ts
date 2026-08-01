@@ -2576,7 +2576,7 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         // Call 2: extract structured MEDDPICC suggestions (using gpt-5-mini — JSON extraction task)
         invokeLLM({
           model: "gpt-4o-mini",
-          messages: [{ role: "user", content: `你是一位MEDDPICC销售方法论专家。根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以如下JSON格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n{"items": [\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]}\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点牵连, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n必须返回JSON对象，key为items，value为数组。` }],
+          messages: [{ role: "user", content: `你是一位MEDDPICC销售方法论专家。根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以如下JSON格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n{"items": [\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]}\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点识别, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n必须返回JSON对象，key为items，value为数组。` }],
         }).then(r => {
           try {
             const parsed = JSON.parse(extractJSON(String(r.choices[0].message.content || "")));
