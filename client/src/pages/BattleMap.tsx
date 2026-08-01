@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -2780,6 +2780,9 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                   <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{winStrategy.aiSuggestion}</div>
                 </div>
               )}
+              {winStrategy?.aiSuggestion && (
+                <WinStrategyExtras clientId={client.id} aiSuggestion={winStrategy.aiSuggestion} enabled={expanded && activeTab === "winstrategy"} />
+              )}
 
               {!winStrategy && !wsEdit && (
                 <div className="text-center py-8 text-muted-foreground">
@@ -2825,6 +2828,18 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
               <div className="mb-3 flex items-center gap-2 text-xs bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
                 <span className="text-yellow-400">🔍 已高亮对应数据字段</span>
                 <button type="button" onClick={() => setHighlightedSection(null)} className="ml-auto text-muted-foreground hover:text-foreground">✕ 取消高亮</button>
+              </div>
+            )}
+            {!reviewLoading && reviewContent && (reviewContent.includes("效能基线未填写") || reviewContent.includes("效能基线数据缺失")) && (
+              <div className="mb-3 flex items-center gap-2 text-xs bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                <span className="text-amber-400">⚠️ 效能基线未填写，CoM Before State 量化依据缺失</span>
+                <button
+                  type="button"
+                  onClick={() => { setReviewOpen(false); setActiveTab("metrics"); setTimeout(() => { const el = document.querySelector('[data-highlight="effectiveness-baseline"]'); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); (el as HTMLElement).classList.add('ring-2', 'ring-amber-400'); setTimeout(() => (el as HTMLElement).classList.remove('ring-2', 'ring-amber-400'), 3000); } }, 400); }}
+                  className="ml-auto text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-colors flex-shrink-0"
+                >
+                  → 去填写效能基线
+                </button>
               </div>
             )}
             <ReactMarkdown
@@ -2920,7 +2935,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
           <div className="flex justify-end pt-2 border-t border-border/50">
             <button
               type="button"
-              onClick={() => { navigator.clipboard.writeText(reviewContent); toast.success("已复制到剪贴板"); }}
+              onClick={() => { const plain = reviewContent.replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/^[-•▸]\s/gm, '').replace(/`/g, ''); navigator.clipboard.writeText(plain); toast.success("已复制（纯文本）"); }}
               className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
             >
               📋 复制全文
@@ -3113,6 +3128,54 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
 }
 
 const EMPTY_FORM = { name: "", nameEn: "", industry: "", priority: "P1" as "P0"|"P1"|"P2", stage: "建图" as string, hookTopic: "", securityAngle: "", monitorKeywords: "" };
+
+// WinStrategy 情报信号折叠面板 + 一键复制（独立组件，避免 hooks 违规）
+function WinStrategyExtras({ clientId, aiSuggestion, enabled }: { clientId: number; aiSuggestion: string; enabled: boolean }) {
+  const { data: wsSignals } = trpc.intelligence.listByClient.useQuery({ clientId }, { enabled });
+  const top3 = (wsSignals || []).slice(0, 3);
+  const [sigOpen, setSigOpen] = useState(false);
+  const [wsCopied, setWsCopied] = useState(false);
+  return (
+    <div className="space-y-2 mt-2">
+      <div className="flex justify-end">
+        <button type="button"
+          onClick={() => {
+            const plain = aiSuggestion.replace(/#{1,6}\s/g, '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/^[-•]\s/gm, '').replace(/`/g, '');
+            navigator.clipboard.writeText(plain);
+            setWsCopied(true);
+            setTimeout(() => setWsCopied(false), 2000);
+          }}
+          className="text-[10px] px-2 py-1 rounded border border-border hover:bg-muted/50 text-muted-foreground transition-colors"
+        >
+          {wsCopied ? "✓ 已复制" : "📋 复制策略"}
+        </button>
+      </div>
+      {top3.length > 0 && (
+        <div className="border border-border/40 rounded-lg overflow-hidden">
+          <button type="button"
+            onClick={() => setSigOpen(o => !o)}
+            className="w-full flex items-center justify-between px-3 py-2 text-[10px] text-muted-foreground hover:bg-muted/30 transition-colors"
+          >
+            <span>📡 参考情报信号（最新 {top3.length} 条）</span>
+            <span>{sigOpen ? "▲" : "▼"}</span>
+          </button>
+          {sigOpen && (
+            <div className="px-3 pb-2 space-y-1.5 border-t border-border/30">
+              {top3.map((sig: any) => (
+                <div key={sig.id} className="text-[10px] bg-muted/20 rounded p-2">
+                  <span className={`inline-block px-1 py-0.5 rounded text-[9px] font-medium mr-1.5 ${sig.urgency === 'high' ? 'bg-red-500/20 text-red-400' : sig.urgency === 'medium' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-muted text-muted-foreground'}`}>
+                    {sig.signalType} / {sig.urgency}
+                  </span>
+                  <span className="text-foreground/80">{(sig.rawSignal || '').slice(0, 80)}{(sig.rawSignal || '').length > 80 ? '...' : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function BattleMap() {
   const utils = trpc.useUtils();
