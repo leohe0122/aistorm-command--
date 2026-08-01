@@ -68,7 +68,7 @@ export const TERM_DEFINITIONS: Record<string, {
     question: "合同签署需要经过哪些行政程序？预计需要多长时间？"
   },
   "Implicate Pain": {
-    full: "Implicate the Pain（痛点牵连/放大痛点）",
+    full: "Identify Pain（痛点识别）",
     chinese: "I — 痛点的量化与紧迫性",
     definition: "客户的业务痛点是否足够痛、足够急迫，以至于必须现在解决？需要帮助客户量化不解决这个问题的代价（合规罚款、数据泄露损失、竞争劣势等）。",
     example: "亚信安全海外分支机构若发生数据泄露，在新加坡PDPA下最高罚款100万新元，且需要72小时内向监管机构报告，业务中断损失更难以估量。",

@@ -294,7 +294,7 @@ function OppBlueSheetPanel({ opp, clientId, onClose }: { opp: any; clientId: num
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-medium text-cyan-400 mb-1 block">客户业务目标</label>
-              {weakBizObj && <WeakHint dims={[...(weakM ? ["M-价值量化"] : []), ...(weakI ? ["I-痛点牵连"] : [])]} />}
+              {weakBizObj && <WeakHint dims={[...(weakM ? ["M-价值量化"] : []), ...(weakI ? ["I-痛点识别"] : [])]} />}
               <Textarea className={cn("text-xs h-16 resize-none", weakBizObj && "border-orange-500/50 focus-visible:ring-orange-500/30")} placeholder="此商机解决客户什么核心业务问题？" value={blueSheet.bizObjective} onChange={e => setBlueSheet(p => ({ ...p, bizObjective: e.target.value }))} />
             </div>
             <div>
@@ -323,7 +323,7 @@ function OppBlueSheetPanel({ opp, clientId, onClose }: { opp: any; clientId: num
           </div>
           <div>
             <label className="text-[10px] font-medium text-primary mb-1 block">赢单策略</label>
-            {weakWinStrat && <WeakHint dims={[...(weakI ? ["I-痛点牵连"] : []), ...(weakDc ? ["Dc-决策标准"] : [])]} />}
+            {weakWinStrat && <WeakHint dims={[...(weakI ? ["I-痛点识别"] : []), ...(weakDc ? ["Dc-决策标准"] : [])]} />}
             <Textarea className={cn("text-xs h-14 resize-none", weakWinStrat && "border-orange-500/50 focus-visible:ring-orange-500/30")} placeholder="针对此商机的具体打法和差异化策略" value={blueSheet.winStrategy} onChange={e => setBlueSheet(p => ({ ...p, winStrategy: e.target.value }))} />
           </div>
           <div className="grid grid-cols-2 gap-3">
