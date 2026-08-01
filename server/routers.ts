@@ -1233,7 +1233,7 @@ ${situationSnapshot}
     }),
 
     // P1a: 0→1 Review — 基于客户阶段+关键人+拜访记录生成阶段推进建议
-    reviewZeroToOne: publicProcedure.input(z.object({
+    reviewZeroToOne: protectedProcedure.input(z.object({
       clientId: z.number(),
     })).mutation(async ({ input }) => {
       const [client, contacts, meetings, meddpicc, signals] = await Promise.all([
@@ -1393,11 +1393,12 @@ ${contradictionBlock}
         messages: [{ role: "user", content: prompt }],
       });
       const content = String(res.choices[0].message.content || "");
+      await saveAiReview({ clientId: input.clientId, opportunityId: null, reviewType: "0to1", content, createdBy: null });
       return { content, stage, daysInStage };
     }),
 
     // P1b: 1→N Review — MEDDPICC健康雷达+Blue Sheet战局判断+AI质疑层
-    reviewOneToN: publicProcedure.input(z.object({
+    reviewOneToN: protectedProcedure.input(z.object({
       clientId: z.number(),
       opportunityId: z.number(),
     })).mutation(async ({ input }) => {
@@ -1624,11 +1625,12 @@ AI质疑层规则（内嵌在以上各节中执行）：
         messages: [{ role: "user", content: prompt }],
       });
       const reviewContent = String(res.choices[0].message.content || "");
+      await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
       return { content: reviewContent, stage: opp.stage, daysInStage, stagnationRisk, championStatus };
     }),
 
     // P1c: Buying Group 覆盖分析 — 权力路径分析 + Champion→EB路径完整性
-    reviewBuyingGroup: publicProcedure.input(z.object({
+    reviewBuyingGroup: protectedProcedure.input(z.object({
       clientId: z.number(),
     })).mutation(async ({ input }) => {
       const [client, contacts, meetings] = await Promise.all([
@@ -1743,11 +1745,12 @@ ${recentVisits || "暂无拜访记录"}
         messages: [{ role: "user", content: prompt }],
       });
       const reviewContent = String(res.choices[0].message.content || "");
+      await saveAiReview({ clientId: input.clientId, opportunityId: null, reviewType: "buyingGroup", content: reviewContent, createdBy: null });
       return { content: reviewContent };
     }),
 
     // P1d: 跨拜访趋势分析 — 滚动叙事架构 + 下次拜访建议
-    reviewVisitTrend: publicProcedure.input(z.object({
+    reviewVisitTrend: protectedProcedure.input(z.object({
       clientId: z.number(),
     })).mutation(async ({ input }) => {
       const [client, contacts, meetings, meddpicc] = await Promise.all([
@@ -1837,7 +1840,7 @@ ${contactStances || "暂无关键人数据"}
     }),
 
     // L2: 保存 Review 结果（SAM 自 Review 持久化）
-    saveReview: publicProcedure.input(z.object({
+    saveReview: protectedProcedure.input(z.object({
       clientId: z.number(),
       opportunityId: z.number().optional(),
       reviewType: z.enum(["0to1", "1toN", "buyingGroup", "visitTrend"]),
@@ -1855,7 +1858,7 @@ ${contactStances || "暂无关键人数据"}
     }),
 
     // L2: 获取某客户各类型最新 Review
-    getLatestReviews: publicProcedure.input(z.object({
+    getLatestReviews: protectedProcedure.input(z.object({
       clientId: z.number(),
     })).query(async ({ input }) => {
       const reviews = await getLatestReviewsByClient(input.clientId);
@@ -1869,7 +1872,7 @@ ${contactStances || "暂无关键人数据"}
     }),
 
     // 第五入口：AD 全局战场 Review（跨客户/跨商机/跨 SAM 的指挥官视角）
-    globalReview: publicProcedure.mutation(async () => {
+    globalReview: protectedProcedure.mutation(async () => {
       const db = await getDb();
       if (!db) throw new Error("数据库不可用");
       const { clients: clientsTable, meddpicc: meddpiccTable, meetingMinutes: meetingMinutesTable, opportunities: opportunitiesTable, keyContacts: keyContactsTable } = await import('../drizzle/schema');
@@ -1972,7 +1975,7 @@ ${clientLines}
 请用中文回答，数据驱动，直接给出结论，不要泛泛而谈。`;
 
       const res = await invokeLLM({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [{ role: "user", content: prompt }],
       });
       const content = String(res.choices[0].message.content || "");
@@ -1980,7 +1983,7 @@ ${clientLines}
     }),
 
     // AD Review SAM 教练视角（跨商机聚合分析单个 SAM 的能力模式）
-    samCoachReview: publicProcedure.input(z.object({
+    samCoachReview: protectedProcedure.input(z.object({
       samId: z.number(),
       samName: z.string(),
     })).mutation(async ({ input }) => {
@@ -2331,7 +2334,7 @@ ${input.samAnswerNotes}
     }),
 
     // ── 数据缺口报告 ──────────────────────────────────────────────────────────
-    dataGapReport: publicProcedure.query(async () => {
+    dataGapReport: protectedProcedure.query(async () => {
       const clients = await getAllClients();
       const db = await getDb();
       if (!db) return [];
