@@ -1402,12 +1402,13 @@ ${contradictionBlock}
       clientId: z.number(),
       opportunityId: z.number(),
     })).mutation(async ({ input }) => {
-      const [client, contacts, meetings, meddpicc, signals] = await Promise.all([
+      const [client, contacts, meetings, meddpicc, signals, baseline] = await Promise.all([
         getClientById(input.clientId),
         getContactsByClientId(input.clientId),
         getMeetingsByClientId(input.clientId),
         getMeddpiccByClientId(input.clientId),
         getSignalsByClientId(input.clientId),
+        getEffectivenessBaseline(input.clientId),
       ]);
       if (!client) throw new Error("客户不存在");
 
@@ -1539,6 +1540,16 @@ CoM框架完整度检查（方案提案阶段必须完整）:
           contradictions1N.push(`⚠️ ${highScoreLowEvidence}个维度评分≥70但备注不足30字，评分置信度已下调，建议补充拜访记录依据`);
         }
       }
+            const baselineBlock = baseline ? `
+効能基线数据（CoM Before State量化依据）：
+- MTTR：${(baseline as any).currentMttr || "未填写"}
+- 威胁检出率：${(baseline as any).currentDetectionRate || "未填写"}
+- SOC人员：${(baseline as any).socHeadcount || "未填写"}人
+- 合规审计准备：${(baseline as any).complianceAuditDays || "未填写"}天/次
+- 每年安全事件损失：${(baseline as any).estimatedIncidentCost || "未填写"}
+- 数据来源：${(baseline as any).dataSource || "未填写"}
+${(baseline as any).quantifiedPainStatement ? `量化痛点陈述：${(baseline as any).quantifiedPainStatement.slice(0, 200)}` : ""}
+${(baseline as any).roiSummary ? `ROI摘要已生成，可作为方案提案依据` : "⚠️ ROI摘要未生成，建议在方案提案前完成"}` : "⚠️ 效能基线未填写，CoM Before State量化依据缺失";
       const contradiction1NBlock = contradictions1N.length > 0
         ? `\n【⚠️ AI一致性矛盾检测（${contradictions1N.length}项）】\n${contradictions1N.join("\n")}`
         : "\n【✅ AI一致性检测：未发现明显矛盾】";
@@ -1563,6 +1574,7 @@ ${recentVisits || "暂无拜访记录"}
 
 相关情报信号（含竞品动态）:
 ${recentSignals || "暂无情报信号"}
+${baselineBlock}
 
 Blue Sheet内容:
 ${blueSheet}
@@ -2965,7 +2977,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
       }
 
       const res = await invokeLLM({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [{ role: "user", content: prompt }],
         response_format: {
           type: "json_schema",
@@ -4599,6 +4611,17 @@ ${baselineText}
       }))
       .mutation(async ({ input }) => {
         const { invokeLLM } = await import('./_core/llm');
+        // 拉取效能基线和情报信号
+        const [baseline, signals] = await Promise.all([
+          getEffectivenessBaseline(input.clientId),
+          getSignalsByClientId(input.clientId),
+        ]);
+        const baselineContext = (baseline as any)?.estimatedIncidentCost
+          ? `效能基线（ROI依据）：MTTR ${(baseline as any).currentMttr || "未知"}，事件损失估算 ${(baseline as any).estimatedIncidentCost}，SOC ${(baseline as any).socHeadcount || "?"}人`
+          : "效能基线未填写";
+        const recentSignalsWin = signals.slice(0, 3).map((s: any) =>
+          `[${s.signalType}/${s.urgency}] ${s.rawSignal.slice(0, 80)}`
+        ).join("\n") || "暂无情报信号";
         const prompt = `你是一位顶级大客户销售顾问，请基于以下信息，为 SAM 生成一份 IBM Blue Sheet 风格的 Win Strategy 建议。
 
 客户：${input.clientName}
@@ -4608,6 +4631,10 @@ MEDDPICC 摘要：${input.meddpiccSummary || '暂无'}
 客户业务目标（SAM填写）：${input.bizObjective || '暂未填写'}
 我方价值主张（SAM填写）：${input.valueProposition || '暂未填写'}
 竞争态势（SAM填写）：${input.competitorSummary || '暂未填写'}
+竞品情报信号（最新3条）：
+${recentSignalsWin}
+
+${baselineContext}
 
 请生成：
 1. **赢单关键因素**：我们凭什么赢？（2-3条核心优势）
