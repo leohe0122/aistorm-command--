@@ -170,7 +170,7 @@ export const appRouter = router({
           { name: 'D1(决策标准)', score: meddpicc.decisionCriteriaScore },
           { name: 'D2(决策流程)', score: meddpicc.decisionProcessScore },
           { name: 'P(合同流程)', score: meddpicc.paperProcessScore },
-          { name: 'I(痛点牵连)', score: meddpicc.implicatePainScore },
+          { name: 'I（痛点识别）', score: meddpicc.implicatePainScore },
           { name: 'C1(Champion)', score: meddpicc.championScore },
           { name: 'C2(竞争态势)', score: meddpicc.competitionScore },
         ].sort((a, b) => a.score - b.score);
@@ -814,7 +814,7 @@ ${candidateList}
 - E(预算决策人): ${input.meddpicc.economicBuyerScore}/100, 已识别: ${input.meddpicc.economicBuyerName || "未知"}
 - D(决策标准): ${input.meddpicc.decisionCriteriaScore}/100
 - D(决策流程): ${input.meddpicc.decisionProcessScore}/100
-- I(痛点牵连): ${input.meddpicc.implicatePainScore}/100
+- I（痛点识别）: ${input.meddpicc.implicatePainScore}/100
 - C(内部Champion): ${input.meddpicc.championScore}/100, 已识别: ${input.meddpicc.championName || "未找到"}
 - C(竞争态势): ${input.meddpicc.competitionScore}/100`;
 
@@ -1109,7 +1109,7 @@ MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
             { name: "D（决策标准）", score: meddpicc.decisionCriteriaScore, notes: meddpicc.decisionCriteriaNotes },
             { name: "D2（决策流程）", score: meddpicc.decisionProcessScore, notes: meddpicc.decisionProcessNotes },
             { name: "P（采购流程）", score: meddpicc.paperProcessScore, notes: meddpicc.paperProcessNotes },
-            { name: "I（痛点牵连）", score: meddpicc.implicatePainScore, notes: meddpicc.implicatePainNotes },
+            { name: "I（痛点识别）", score: meddpicc.implicatePainScore, notes: meddpicc.implicatePainNotes },
             { name: "C（Champion）", score: meddpicc.championScore, notes: meddpicc.championNotes },
             { name: "C2（竞争态势）", score: meddpicc.competitionScore, notes: meddpicc.competitionNotes },
           ];
@@ -1168,7 +1168,7 @@ ${situationSnapshot}
 ## 三、SPIN提问预演
 **S（现状问题）：** [具体问题，结合已知的MEDDPICC薄弱维度]
 **P（困难问题）：** [具体问题]
-**I（影响问题）：** [具体问题，要能让高管感到刺痛]
+**I（痛点识别）：** [具体问题，要能让高管感到刺痛]
 **N（价值问题）：** [具体问题，引导高管自述解决方案价值]
 
 ## 四、会面目标与成功标准
@@ -1464,7 +1464,7 @@ E（Economic Buyer）: ${m.economicBuyerScore}分 - ${m.economicBuyerNotes?.slic
 D（Decision Criteria）: ${m.decisionCriteriaScore}分 - ${m.decisionCriteriaNotes?.slice(0,60) || "无备注"}${m.decisionCriteriaScore >= 70 && (m.decisionCriteriaNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
 D2（Decision Process）: ${m.decisionProcessScore}分 - ${m.decisionProcessNotes?.slice(0,60) || "无备注"}${m.decisionProcessScore >= 70 && (m.decisionProcessNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
 P（Paper Process）: ${m.paperProcessScore}分 - ${m.paperProcessNotes?.slice(0,60) || "无备注"}${m.paperProcessScore >= 70 && (m.paperProcessNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
-I（Identify Pain）: ${m.implicatePainScore}分 - ${m.implicatePainNotes?.slice(0,60) || "无备注"}${m.implicatePainScore >= 70 && (m.implicatePainNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
+I（痛点识别）: ${m.implicatePainScore}分 - ${m.implicatePainNotes?.slice(0,60) || "无备注"}${m.implicatePainScore >= 70 && (m.implicatePainNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}
 C（Champion）: ${m.championScore}分 - ${m.championNotes?.slice(0,60) || "无备注"}，Champion三维评分: Access ${championAccess}/Will ${championWill}/Credibility ${championCred}（${championStatus}）
 C2（Competition）: ${m.competitionScore}分 - ${m.competitionNotes?.slice(0,60) || "无备注"}${m.competitionScore >= 70 && (m.competitionNotes?.length || 0) < 30 ? " ⚠️ 评分依据不足" : ""}` : "暂无MEDDPICC评分";
 
@@ -2250,7 +2250,7 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
         { name: "D（决策标准）", score: meddpicc.decisionCriteriaScore },
         { name: "D2（决策流程）", score: meddpicc.decisionProcessScore },
         { name: "P（采购流程）", score: meddpicc.paperProcessScore },
-        { name: "I（痛点牵连）", score: meddpicc.implicatePainScore },
+        { name: "I（痛点识别）", score: meddpicc.implicatePainScore },
         { name: "C（Champion）", score: meddpicc.championScore },
         { name: "C2（竞争态势）", score: meddpicc.competitionScore },
       ].sort((a, b) => a.score - b.score).slice(0, 3).map(d => `${d.name}：${d.score}分`).join("，") : "暂无评分";
@@ -2918,7 +2918,7 @@ MEDDPICC各要素得分（商机级均值）：
 - D(决策标准): ${m.decisionCriteriaScore}/100
 - D(决策流程): ${m.decisionProcessScore}/100
 - P(采购流程): ${m.paperProcessScore}/100
-- I(痛点牵连): ${m.implicatePainScore}/100
+- I（痛点识别）: ${m.implicatePainScore}/100
 - C(内部Champion): ${m.championScore}/100
 - C(竞争态势): ${m.competitionScore}/100
 
@@ -2947,7 +2947,7 @@ MEDDPICC方向性评分（客户级手动评分，早期阶段分数偏低属正
 - D(决策标准): ${m.decisionCriteriaScore}/100
 - D(决策流程): ${m.decisionProcessScore}/100
 - P(采购流程): ${m.paperProcessScore}/100
-- I(痛点牵连): ${m.implicatePainScore}/100
+- I（痛点识别）: ${m.implicatePainScore}/100
 - C(内部Champion): ${m.championScore}/100
 - C(竞争态势): ${m.competitionScore}/100
 

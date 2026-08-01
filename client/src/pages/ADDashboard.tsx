@@ -457,6 +457,32 @@ export default function ADDashboard() {
     }
   };
 
+  // 单客户 AD 问询（第六入口，自动判断 0→1/1→N 阶段）
+  const IS_0TO1_STAGES = ["建图", "进门", "定痛", "找人"];
+  const [clientInquiryOpen, setClientInquiryOpen] = useState(false);
+  const [clientInquiryContent, setClientInquiryContent] = useState("");
+  const [clientInquiryLoading, setClientInquiryLoading] = useState(false);
+  const [clientInquiryStageType, setClientInquiryStageType] = useState<"0to1" | "1toN">("0to1");
+  const [clientInquiryClientName, setClientInquiryClientName] = useState("");
+  const adInquiryMutAD = trpc.insights.generateAdInquiry.useMutation();
+
+  const handleClientInquiry = async (clientId: number, clientName: string, clientStage: string) => {
+    const stageType = IS_0TO1_STAGES.includes(clientStage) ? "0to1" : "1toN";
+    setClientInquiryStageType(stageType);
+    setClientInquiryClientName(clientName);
+    setClientInquiryOpen(true);
+    setClientInquiryLoading(true);
+    setClientInquiryContent("");
+    try {
+      const res = await adInquiryMutAD.mutateAsync({ clientId, stageType });
+      setClientInquiryContent(res.content);
+    } catch (e: any) {
+      setClientInquiryContent("生成失败：" + (e?.message || "未知错误"));
+    } finally {
+      setClientInquiryLoading(false);
+    }
+  };
+
   // SAM 教练 Review（第三/四入口）
   const [coachReviewOpen, setCoachReviewOpen] = useState(false);
   const [coachReviewContent, setCoachReviewContent] = useState("");
@@ -1157,6 +1183,18 @@ export default function ADDashboard() {
                           → 指令台
                         </button>
                       </div>
+                      {/* 行4：AD 问询快捷按钮（自动判断阶段） */}
+                      <div className="flex items-center gap-2 mt-1">
+                        <button
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors flex-shrink-0"
+                          onClick={(e) => { e.stopPropagation(); handleClientInquiry(c.id, c.name, c.stage); }}
+                        >
+                          🎯 AD 问询
+                        </button>
+                        <span className="text-[9px] text-muted-foreground/40">
+                          {IS_0TO1_STAGES.includes(c.stage) ? "0→1 · 关系真实性" : "1→N · 赢单机制"}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
@@ -1512,6 +1550,48 @@ export default function ADDashboard() {
       <CoachingFollowUpPanel />
       {/* 数据健康度面板 */}
       <DataHealthPanel />
+
+      {/* 单客户 AD 问询 Dialog */}
+      <Dialog open={clientInquiryOpen} onOpenChange={(o) => { if (!o) { setClientInquiryContent(""); } setClientInquiryOpen(o); }}>
+        <DialogContent className="max-w-xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-400">
+              🎯 AD 问询 · {clientInquiryClientName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${clientInquiryStageType === "0to1" ? "bg-purple-500/10 text-purple-300 border border-purple-500/20" : "bg-blue-500/10 text-blue-300 border border-blue-500/20"}`}>
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${clientInquiryStageType === "0to1" ? "bg-purple-500/20 text-purple-300" : "bg-blue-500/20 text-blue-300"}`}>
+              {clientInquiryStageType === "0to1" ? "0→1 阶段" : "1→N 阶段"}
+            </span>
+            <span>{clientInquiryStageType === "0to1" ? "当前为0→1阶段，问题聚焦关系真实性" : "当前为1→N阶段，问题聚焦赢单机制"}</span>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {clientInquiryLoading ? (
+              <div className="flex items-center gap-2 py-8 justify-center text-muted-foreground text-sm">
+                <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                AI 正在生成针对性问询问题...
+              </div>
+            ) : (
+              <div className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap py-2">
+                {clientInquiryContent}
+              </div>
+            )}
+          </div>
+          {clientInquiryContent && !clientInquiryLoading && (
+            <div className="border-t border-border pt-3 flex justify-end gap-2">
+              <button type="button"
+                onClick={() => { navigator.clipboard.writeText(clientInquiryContent); toast.success("问询问题已复制"); }}
+                className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground">
+                📋 复制问题
+              </button>
+              <button type="button" onClick={() => setClientInquiryOpen(false)}
+                className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted/50 text-muted-foreground">
+                关闭
+              </button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

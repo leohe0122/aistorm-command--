@@ -220,7 +220,7 @@ export const MEDDPICC_DIMENSIONS: MeddpiccDimension[] = [
     key: "implicatePainScore",
     code: "I",
     fullName: "Implicate Pain",
-    chineseName: "痛点牵连",
+    chineseName: "痛点识别",
     question: "客户的痛点是否足够紧迫，必须现在解决？",
     levels: [
       {
