@@ -1354,6 +1354,11 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewType, setReviewType] = useState<"0to1" | "1toN" | "buyingGroup" | "visitTrend">("0to1");
   const [reviewOppId, setReviewOppId] = useState<number | null>(null);
+  // Review 改进闭环：提升到组件顶层（不能在 IIFE 中调用 hook）
+  const { data: reviewDelta } = trpc.insights.getReviewDelta.useQuery(
+    { clientId: client.id, reviewType },
+    { enabled: reviewOpen && !reviewLoading && !!reviewContent }
+  );
   const reviewZeroToOneMut = trpc.insights.reviewZeroToOne.useMutation();
   const reviewOneToNMut = trpc.insights.reviewOneToN.useMutation();
   const reviewBuyingGroupMut = trpc.insights.reviewBuyingGroup.useMutation();
@@ -2830,10 +2835,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
               <div className="mb-3 flex items-center gap-2 text-xs bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
             {/* Review 改进闭环：与上次对比的变化摘要条 */}
             {(() => {
-              const { data: delta } = trpc.insights.getReviewDelta.useQuery(
-                { clientId: client.id, reviewType },
-                { enabled: reviewOpen && !reviewLoading && !!reviewContent }
-              );
+              const delta = reviewDelta;
               if (!delta) return null;
               const dimLabels: Record<string, string> = {
                 metricsScore: 'M', economicBuyerScore: 'E', decisionCriteriaScore: 'D1',
