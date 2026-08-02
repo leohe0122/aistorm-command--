@@ -624,3 +624,9 @@
 - [x] 后端 CRUD 接口（list/create/update/delete）
 - [x] 功能8（敲门砖建议）注入同行业成功案例（最多2条），同行业情报信号兜底逻辑
 - [x] 武器库页面新增"成功案例库"Tab（增删改查，行业筛选，保密标记）
+
+## P2 体验完善（Round 64）
+- [x] P2 QuickReview 历史记录入口：右侧折叠面板展示历史 Review 列表（按类型颜色标签，点击加载内容）
+- [x] P2 每日简报个人推送：每日简报页面新增「立即生成并推送」按钮，AI 生成后同时推送到个人通知
+- [x] P2 每日简报个人推送：后端 dailyBriefing.ts 在飞书推送成功后自动调用 notifyOwner 推送个人通知
+- [x] P2 后端新增 insights.triggerDailyBriefing 接口（手动触发，生成简报并推送个人通知）

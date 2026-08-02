@@ -2430,6 +2430,28 @@ ${input.samAnswerNotes}
       }));
       return results.sort((a, b) => a.score - b.score);
     }),
+    // ── 手动触发每日简报（推送个人通知）──────────────────────────────────────
+    triggerDailyBriefing: protectedProcedure.mutation(async () => {
+      const { notifyOwner } = await import('./_core/notification');
+      const reportData = await getWeeklyReportData();
+      if (!reportData) return { ok: false, message: "暂无客户数据", briefing: "" };
+      const { allClients: clients, meddpiccData, latestScores, recentSignals, pendingTasks } = reportData;
+      const today = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
+      const clientSummaries = clients.map((client: any) => {
+        const meddpicc = meddpiccData.find((m: any) => m.clientId === client.id);
+        const latestScore = latestScores.find((s: any) => s.clientId === client.id);
+        const recentSignalsForClient = recentSignals.filter((s: any) => s.clientId === client.id);
+        const pendingTasksForClient = pendingTasks.filter((t: any) => t.clientId === client.id);
+        const avgScore = meddpicc ? Math.round((meddpicc.metricsScore + meddpicc.economicBuyerScore + meddpicc.decisionCriteriaScore + meddpicc.decisionProcessScore + meddpicc.paperProcessScore + meddpicc.implicatePainScore + meddpicc.championScore + meddpicc.competitionScore) / 8) : 0;
+        return { name: client.name, stage: client.stage, priority: client.priority, meddpiccScore: avgScore, opportunityScore: latestScore?.overallScore ?? null, riskLevel: latestScore?.riskLevel ?? null, recentSignalsCount: recentSignalsForClient.length, pendingTasksCount: pendingTasksForClient.length, topSignal: recentSignalsForClient[0]?.rawSignal?.slice(0, 100) ?? null };
+      });
+      const prompt = `你是T100专项AI作战指挥系统的每日简报生成器。今天是${today}。\n\n以下是重点客户的当前状态数据：\n${JSON.stringify(clientSummaries, null, 2)}\n\n请生成一份简洁的每日战情简报，格式如下：\n1. 今日重点关注（1-2句话，指出最需要关注的客户和事项）\n2. 各客户状态速览（每户1行，包含：客户名 | 阶段 | MEDDPICC均分 | 待办任务数 | 关键提示）\n3. 今日建议行动（3条具体行动建议，指明负责角色AD/SAM/SA）\n\n要求：简洁专业，总字数不超过400字，使用中文。`;
+      const llmResult = await invokeLLM({ messages: [{ role: "user", content: prompt }] });
+      const briefing = typeof llmResult.choices[0]?.message?.content === "string" ? llmResult.choices[0].message.content : "";
+      if (!briefing) return { ok: false, message: "AI 生成失败", briefing: "" };
+      await notifyOwner({ title: `📊 每日战情简报 · ${today}`, content: briefing.slice(0, 2000) });
+      return { ok: true, briefing, today, message: "简报已生成并推送" };
+    }),
   }),
 
   // ── Champion Ammo ─────────────────────────────────────────────────────────

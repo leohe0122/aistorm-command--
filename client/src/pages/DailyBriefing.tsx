@@ -6,6 +6,7 @@ import {
   Bell, CheckCircle2, RefreshCw, Save, Info, Send,
   ToggleLeft, ToggleRight, Clock, Webhook
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,8 +17,11 @@ export default function DailyBriefing() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [triggering, setTriggering] = useState(false);
+  const [latestBriefing, setLatestBriefing] = useState<{ content: string; today: string } | null>(null);
 
   const { data: configs = [], isLoading, refetch } = trpc.systemConfig.getAll.useQuery();
+  const triggerBriefing = (trpc.insights as any).triggerDailyBriefing.useMutation();
 
   const setConfig = trpc.systemConfig.set.useMutation({
     onSuccess: () => {
@@ -87,6 +91,23 @@ export default function DailyBriefing() {
       toast.error("发送失败，请检查网络");
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleTrigger = async () => {
+    setTriggering(true);
+    try {
+      const result = await triggerBriefing.mutateAsync({});
+      if (result.ok) {
+        setLatestBriefing({ content: result.briefing, today: result.today });
+        toast.success("简报已生成并推送到个人通知");
+      } else {
+        toast.error(result.message || "生成失败");
+      }
+    } catch (e: any) {
+      toast.error("触发失败：" + (e?.message || "未知错误"));
+    } finally {
+      setTriggering(false);
     }
   };
 
@@ -207,6 +228,39 @@ export default function DailyBriefing() {
 
         {/* Preview Panel */}
         <div className="xl:col-span-2 space-y-4">
+          {/* Manual Trigger */}
+          <div className="bg-card border border-border rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 text-primary" />
+                  立即生成今日简报
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">AI 读取当前客户数据，生成简报并推送到你的个人通知</div>
+              </div>
+              <Button
+                onClick={handleTrigger}
+                disabled={triggering}
+                className="gap-2 shrink-0"
+              >
+                {triggering ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}
+                {triggering ? "生成中..." : "立即生成并推送"}
+              </Button>
+            </div>
+            {latestBriefing && (
+              <div className="mt-3 border-t border-border pt-3">
+                <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3 h-3 text-green-400" />
+                  <span className="text-green-400">已推送</span>
+                  <span>· {latestBriefing.today}</span>
+                </div>
+                <div className="prose prose-sm prose-invert max-w-none text-xs leading-relaxed bg-muted/20 rounded-lg p-3">
+                  <ReactMarkdown>{latestBriefing.content}</ReactMarkdown>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Briefing Preview */}
           <div className="bg-card border border-border rounded-xl p-4">
             <div className="flex items-center gap-2 mb-4">

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { sdk } from "../_core/sdk";
 import { invokeLLM } from "../_core/llm";
+import { notifyOwner } from "../_core/notification";
 import {
   getWeeklyReportData,
   getSystemConfig,
@@ -133,6 +134,16 @@ ${JSON.stringify(clientSummaries, null, 2)}
 
     const feishuResult = await feishuRes.json();
     console.log("[DailyBriefing] Sent successfully:", feishuResult);
+
+    // Also push personal notification to project owner
+    try {
+      await notifyOwner({
+        title: `📊 每日战情简报 · ${today}`,
+        content: briefing.slice(0, 2000),
+      });
+    } catch (notifyErr) {
+      console.warn("[DailyBriefing] notifyOwner failed (non-critical):", notifyErr);
+    }
 
     return res.json({
       ok: true,
