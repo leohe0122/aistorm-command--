@@ -287,6 +287,92 @@ export async function sendFeishuWelcomeMessage(params: {
   }
 }
 
+// ── 发送重置密码通知 ──────────────────────────────────────────────────────────
+export async function sendFeishuPasswordReset(params: {
+  email: string;
+  name: string;
+  tempPassword: string;
+  loginUrl: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!ENV.feishuAppId || !ENV.feishuAppSecret) return { success: false, error: '飞书未配置' };
+    const token = await getFeishuToken();
+    if (!token) return { success: false, error: '获取 Token 失败' };
+    const lookupRes = await fetch(
+      `https://open.feishu.cn/open-apis/contact/v3/users/batch_get_id?user_id_type=open_id`,
+      { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ emails: [params.email] }) }
+    );
+    const lookupData = await lookupRes.json() as any;
+    const openId = lookupData?.data?.user_list?.[0]?.user_id;
+    if (!openId) return { success: false, error: `未找到飞书账号: ${params.email}` };
+    const card = {
+      config: { wide_screen_mode: true },
+      header: { title: { tag: "plain_text", content: "🔑 你的 AIStorm Command 密码已重置" }, template: "orange" },
+      elements: [
+        { tag: "div", text: { tag: "lark_md", content: `**${params.name}** 你好！\n\n管理员已为你重置了 AIStorm Command 的登录密码，以下是新的临时密码：` } },
+        { tag: "hr" },
+        { tag: "div", text: { tag: "lark_md", content: `**临时密码**\n\`${params.tempPassword}\`` } },
+        { tag: "hr" },
+        { tag: "action", actions: [{ tag: "button", text: { tag: "plain_text", content: "🚀 立即登录并修改密码" }, type: "primary", url: params.loginUrl }] },
+        { tag: "note", elements: [{ tag: "plain_text", content: "登录后请在侧边栏底部点击 🔑 按钮修改密码。如有问题请联系 Leo。" }] },
+      ],
+    };
+    await sendFeishuCard(openId, card);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
+// ── 发送账号状态变更通知 ──────────────────────────────────────────────────────
+export async function sendFeishuAccountStatus(params: {
+  email: string;
+  name: string;
+  isActive: boolean;
+  loginUrl: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!ENV.feishuAppId || !ENV.feishuAppSecret) return { success: false, error: '飞书未配置' };
+    const token = await getFeishuToken();
+    if (!token) return { success: false, error: '获取 Token 失败' };
+    const lookupRes = await fetch(
+      `https://open.feishu.cn/open-apis/contact/v3/users/batch_get_id?user_id_type=open_id`,
+      { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ emails: [params.email] }) }
+    );
+    const lookupData = await lookupRes.json() as any;
+    const openId = lookupData?.data?.user_list?.[0]?.user_id;
+    if (!openId) return { success: false, error: `未找到飞书账号: ${params.email}` };
+    const card = {
+      config: { wide_screen_mode: true },
+      header: {
+        title: { tag: "plain_text", content: params.isActive ? "✅ 你的账号已重新启用" : "⛔ 你的账号已被停用" },
+        template: params.isActive ? "green" : "red",
+      },
+      elements: [
+        {
+          tag: "div",
+          text: {
+            tag: "lark_md",
+            content: params.isActive
+              ? `**${params.name}** 你好！\n\n你的 AIStorm Command 账号已由管理员重新启用，现在可以正常登录使用。`
+              : `**${params.name}** 你好！\n\n你的 AIStorm Command 账号已由管理员暂停使用。如有疑问，请联系 Leo。`,
+          },
+        },
+        ...(params.isActive ? [
+          { tag: "hr" as const },
+          { tag: "action" as const, actions: [{ tag: "button", text: { tag: "plain_text", content: "🚀 立即登录" }, type: "primary", url: params.loginUrl }] },
+        ] : []),
+      ],
+    };
+    await sendFeishuCard(openId, card);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
 export async function feishuWebhookHandler(req: Request, res: Response) {
   try {
     const body = req.body;

@@ -5369,6 +5369,20 @@ ${input.aiSuggestion}
         const caller = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
         if (caller.length === 0 || caller[0].role !== 'admin') throw new Error('无权限');
         await db.update(emailUsers).set({ isActive: input.isActive }).where(eq(emailUsers.id, input.userId));
+        // 异步发送飞书账号状态通知
+        const targetUser = await db.select({ email: emailUsers.email, name: emailUsers.name }).from(emailUsers).where(eq(emailUsers.id, input.userId)).limit(1);
+        if (targetUser.length > 0) {
+          import('./feishuBot').then(({ sendFeishuAccountStatus }) => {
+            sendFeishuAccountStatus({
+              email: targetUser[0].email,
+              name: targetUser[0].name,
+              isActive: input.isActive,
+              loginUrl: 'https://command.aistorm.com',
+            }).then((r: { success: boolean; error?: string }) => {
+              if (!r.success) console.warn('[toggleUser] 飞书通知失败:', r.error);
+            });
+          }).catch((e: Error) => console.warn('[toggleUser] 飞书模块加载失败:', e.message));
+        }
         return { success: true };
       }),
 
@@ -5421,22 +5435,28 @@ ${input.aiSuggestion}
         podRole: input.podRole,
       });
       const newId = (result as any).insertId;
-      // 异步发送飞书欢迎消息（不阻塞返回）
+      // 发送飞书欢迎消息（等待结果以便前端回显状态）
       const plainPassword = input.password || 'Aistorm2024!';
-      import('./feishuBot').then(({ sendFeishuWelcomeMessage }) => {
-        const loginUrl = 'https://command.aistorm.com';
-        sendFeishuWelcomeMessage({
+      let feishuSent = false;
+      let feishuError: string | undefined;
+      try {
+        const { sendFeishuWelcomeMessage } = await import('./feishuBot');
+        const feishuResult = await sendFeishuWelcomeMessage({
           email: input.email.toLowerCase(),
           name: input.name,
           podRole: input.podRole,
           password: plainPassword,
-          loginUrl,
-        }).then((r: { success: boolean; error?: string }) => {
-          if (!r.success) console.warn('[createMember] 飞书欢迎消息发送失败:', r.error);
-          else console.log('[createMember] 飞书欢迎消息已发送至', input.email);
+          loginUrl: 'https://command.aistorm.com',
         });
-      }).catch(e => console.warn('[createMember] 飞书模块加载失败:', e.message));
-      return { id: newId, name: input.name };
+        feishuSent = feishuResult.success;
+        feishuError = feishuResult.error;
+        if (!feishuSent) console.warn('[createMember] 飞书欢迎消息发送失败:', feishuError);
+        else console.log('[createMember] 飞书欢迎消息已发送至', input.email);
+      } catch (e: any) {
+        feishuError = e.message;
+        console.warn('[createMember] 飞书模块加载失败:', e.message);
+      }
+      return { id: newId, name: input.name, feishuSent, feishuError };
     }),
 
     // 更新团队成员信息（改名/改角色）
@@ -5530,6 +5550,21 @@ ${input.aiSuggestion}
       const tempPassword = `${adj}${noun}${digits}`;
       const passwordHash = await bcrypt.hash(tempPassword, 10);
       await db.update(emailUsers).set({ passwordHash }).where(eq(emailUsers.id, input.userId));
+      // 异步发送飞书重置密码通知
+      const targetUser = await db.select({ email: emailUsers.email, name: emailUsers.name }).from(emailUsers).where(eq(emailUsers.id, input.userId)).limit(1);
+      if (targetUser.length > 0) {
+        import('./feishuBot').then(({ sendFeishuPasswordReset }) => {
+          sendFeishuPasswordReset({
+            email: targetUser[0].email,
+            name: targetUser[0].name,
+            tempPassword,
+            loginUrl: 'https://command.aistorm.com',
+          }).then((r: { success: boolean; error?: string }) => {
+            if (!r.success) console.warn('[resetMemberPassword] 飞书通知失败:', r.error);
+            else console.log('[resetMemberPassword] 飞书通知已发送至', targetUser[0].email);
+          });
+        }).catch((e: Error) => console.warn('[resetMemberPassword] 飞书模块加载失败:', e.message));
+      }
       return { tempPassword };
     }),
 

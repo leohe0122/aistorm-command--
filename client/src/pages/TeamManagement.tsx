@@ -124,7 +124,10 @@ export default function TeamManagement() {
   const [createForm, setCreateForm] = useState({ email: "", name: "", podRole: "SAM" as "AD"|"SAM"|"SA"|"RSM", password: "" });
   const createMut = trpc.admin.createMember.useMutation({
     onSuccess: (data) => {
-      toast.success(`成员 ${data.name} 已创建，初始密码：Aistorm2024!`);
+      const feishuStatus = (data as any).feishuSent
+        ? `✅ 飞书欢迎消息已发送至 ${createForm.email}`
+        : `⚠️ 飞书消息发送失败：${(data as any).feishuError || '未知原因'}`;
+      toast.success(`成员 ${data.name} 已创建\n${feishuStatus}`, { duration: 6000 });
       utils.admin.listUsers.invalidate();
       setShowCreate(false);
       setCreateForm({ email: "", name: "", podRole: "SAM", password: "" });
@@ -523,7 +526,7 @@ export default function TeamManagement() {
               </Select>
             </div>
             <p className="text-xs text-muted-foreground bg-muted/30 px-3 py-2 rounded-lg">
-              初始密码：<strong className="text-foreground">Aistorm2024!</strong>，成员首次登录后可自行修改
+              初始密码：<strong className="text-foreground">{createForm.password || 'Aistorm2024!'}</strong>，创建后将通过飞书自动发送给成员
             </p>
           </div>
           <DialogFooter>
