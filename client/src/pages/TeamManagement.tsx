@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { UserPlus, Pencil, Trash2, Users, RefreshCw, AlertTriangle } from "lucide-react";
+import { UserPlus, Pencil, Trash2, Users, RefreshCw, AlertTriangle, RotateCcw, Copy } from "lucide-react";
 import { KeyRound } from "lucide-react";
 
 const POD_ROLE_COLORS: Record<string, string> = {
@@ -189,6 +189,16 @@ export default function TeamManagement() {
   const [showBulkReassign, setShowBulkReassign] = useState(false);
   const [bulkFromId, setBulkFromId] = useState<string>("");
   const [bulkToId, setBulkToId] = useState<string>("");
+
+  // ── Reset Password ────────────────────────────────────────────────────────
+  const [resetResult, setResetResult] = useState<{ name: string; tempPassword: string } | null>(null);
+  const resetPasswordMut = (trpc.admin as any).resetMemberPassword.useMutation({
+    onSuccess: (data: any, variables: any) => {
+      const member = members.find((m: any) => m.id === variables.userId);
+      setResetResult({ name: member?.name ?? '成员', tempPassword: data.tempPassword });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
   const bulkReassignMut = (trpc.admin as any).bulkReassignClients.useMutation({
     onSuccess: (data: any) => {
       toast.success(`已将 ${data.affected} 个客户重新分配`);
@@ -254,6 +264,7 @@ export default function TeamManagement() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">状态</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">加入时间</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">最后登录</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">登录 IP</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">操作</th>
               </tr>
             </thead>
@@ -294,9 +305,12 @@ export default function TeamManagement() {
                   {new Date(m.createdAt).toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" })}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
-                    {(m as any).lastLoginAt
-                      ? new Date((m as any).lastLoginAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-                      : <span className="text-muted-foreground/40">未登录</span>}
+                  {(m as any).lastLoginAt
+                    ? new Date((m as any).lastLoginAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                    : <span className="text-muted-foreground/40">未登录</span>}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs font-mono">
+                    {(m as any).lastLoginIp || <span className="text-muted-foreground/40">—</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
@@ -325,6 +339,12 @@ export default function TeamManagement() {
                             onClick={() => { setCredTarget({ id: m.id, name: m.name, email: m.email }); setCredEmail(m.email); setCredPassword(""); setCredPassword2(""); }}
                             title="修改邮箱/密码">
                             <KeyRound className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 hover:text-orange-400"
+                            onClick={() => { if (confirm(`确认重置 ${m.name} 的密码？将生成一个临时密码。`)) resetPasswordMut.mutate({ userId: m.id }); }}
+                            title="重置密码"
+                            disabled={resetPasswordMut.isPending}>
+                            <RotateCcw className="w-3.5 h-3.5" />
                           </Button>
                         </>
                       )}
@@ -573,6 +593,37 @@ export default function TeamManagement() {
           </DialogFooter>
         </DialogContent>
     </Dialog>
+
+      {/* Reset Password Result Dialog */}
+      <Dialog open={!!resetResult} onOpenChange={(o) => { if (!o) setResetResult(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="w-4 h-4 text-orange-400" />
+              密码已重置：{resetResult?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-3 space-y-3">
+            <p className="text-sm text-muted-foreground">临时密码已生成，请将以下密码告知该成员，登录后建议立即修改：</p>
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-500/10 border border-orange-500/30">
+              <span className="flex-1 text-lg font-mono font-bold text-orange-300 tracking-widest">
+                {resetResult?.tempPassword}
+              </span>
+              <button
+                onClick={() => { navigator.clipboard.writeText(resetResult?.tempPassword ?? ''); toast.success("已复制到剪贴板"); }}
+                className="p-1.5 rounded hover:bg-orange-500/20 text-orange-400 transition-colors"
+                title="复制"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground/60">⚠️ 此密码仅显示一次，关闭后无法再次查看。</p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setResetResult(null)}>知道了</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Credentials Dialog */}
       <Dialog open={!!credTarget} onOpenChange={(o) => { if (!o) { setCredTarget(null); setCredEmail(""); setCredPassword(""); setCredPassword2(""); } }}>

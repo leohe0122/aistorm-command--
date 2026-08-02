@@ -4435,7 +4435,8 @@ ${context}
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         await db.insert(emailSessions).values({ token, userId: user.id, expiresAt });
         // Record last login time
-        await db.update(emailUsers).set({ lastLoginAt: new Date() }).where(eq(emailUsers.id, user.id));
+        const loginIp = (ctx.req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || ctx.req.socket?.remoteAddress || null;
+        await db.update(emailUsers).set({ lastLoginAt: new Date(), lastLoginIp: loginIp }).where(eq(emailUsers.id, user.id));
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie('email_session', token, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });
         return { success: true, user: { id: user.id, email: user.email, name: user.name, role: user.role, podRole: user.podRole } };
@@ -5347,6 +5348,7 @@ ${input.aiSuggestion}
         isActive: emailUsers.isActive,
         createdAt: emailUsers.createdAt,
         lastLoginAt: emailUsers.lastLoginAt,
+        lastLoginIp: emailUsers.lastLoginIp,
       }).from(emailUsers).orderBy(emailUsers.createdAt);
       return rows;
     }),
@@ -5494,6 +5496,27 @@ ${input.aiSuggestion}
     }),
 
     // 批量重新分配客户（将 fromUserId 的所有客户转给 toUserId）
+
+    // 重置成员密码（生成临时密码，返回给管理员）
+    resetMemberPassword: adminProcedure.input(z.object({
+      userId: z.number(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database unavailable' });
+      const { emailUsers } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      // Generate a readable temporary password: 3 words + 4 digits
+      const adjectives = ['Blue', 'Fast', 'Bold', 'Calm', 'Keen', 'Wise', 'Bright', 'Swift'];
+      const nouns = ['Tiger', 'Eagle', 'Storm', 'River', 'Cloud', 'Spark', 'Stone', 'Wave'];
+      const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+      const noun = nouns[Math.floor(Math.random() * nouns.length)];
+      const digits = String(Math.floor(1000 + Math.random() * 9000));
+      const tempPassword = `${adj}${noun}${digits}`;
+      const passwordHash = await bcrypt.hash(tempPassword, 10);
+      await db.update(emailUsers).set({ passwordHash }).where(eq(emailUsers.id, input.userId));
+      return { tempPassword };
+    }),
+
     bulkReassignClients: adminProcedure.input(z.object({
       fromUserId: z.number(),
       toUserId: z.number(),

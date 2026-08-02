@@ -153,7 +153,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder="yourname@aistorm.com"
+                    placeholder="your@email.com"
                     className="pl-9 h-11 text-sm bg-white/5 border-white/10 text-white placeholder:text-white/25 focus:border-cyan-500/50 focus:ring-cyan-500/20"
                     autoComplete="email"
                   />
