@@ -779,6 +779,22 @@ ${candidateList}
       });
       return compResults.slice(0, input.limit);
     }),
+    // Mark signal as processed (已处理)
+    markProcessed: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      const { intelligenceSignals } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      await db!.update(intelligenceSignals).set({ isProcessed: true }).where(eq(intelligenceSignals.id, input.id));
+      return { success: true };
+    }),
+    // Ignore signal (标记忽略)
+    ignoreSignal: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      const { intelligenceSignals } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      await db!.update(intelligenceSignals).set({ isProcessed: true, urgency: 'ignored' as any }).where(eq(intelligenceSignals.id, input.id));
+      return { success: true };
+    }),
   }),
 
   // ── Action Items ──────────────────────────────────────────────────────────

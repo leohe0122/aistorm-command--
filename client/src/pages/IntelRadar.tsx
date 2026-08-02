@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   Radio, Send, AlertTriangle, TrendingUp, Users, Briefcase, Code, HelpCircle,
-  Newspaper, Loader2, RefreshCw, ExternalLink, Calendar, Rss, Shield
+  Newspaper, Loader2, RefreshCw, ExternalLink, Calendar, Rss, Shield,
+  CheckCircle2, EyeOff, ChevronDown
 } from "lucide-react";
 import { Trash2 } from "lucide-react";
 import { Sparkles } from "lucide-react";
@@ -95,6 +95,15 @@ export default function IntelRadar() {
   const [autoMatchOpen, setAutoMatchOpen] = useState(false);
   const [autoMatchLoading, setAutoMatchLoading] = useState(false);
   const autoMatchMut = trpc.intelligence.autoMatch.useMutation();
+  const markProcessedMut = (trpc.intelligence as any).markProcessed.useMutation({
+    onSuccess: () => { refetch(); refetchAll(); toast.success("已标记为已处理"); },
+    onError: () => toast.error("操作失败"),
+  });
+  const ignoreSignalMut = (trpc.intelligence as any).ignoreSignal.useMutation({
+    onSuccess: () => { refetch(); refetchAll(); toast.success("已忽略此信号"); },
+    onError: () => toast.error("操作失败"),
+  });
+  const [showProcessed, setShowProcessed] = useState(false);
 
   const handleAutoMatch = async (signalId: number) => {
     setAutoMatchSignalId(signalId);
@@ -487,68 +496,120 @@ export default function IntelRadar() {
                     <div className="text-xs mt-1">从「外部新闻」Tab 选择新闻点击「用作信号」，或手动输入后点击「AI解读信号」</div>
                   </div>
                 ) : (
-                  (selectedClientId ? signals : allSignals).map((signal) => {
-                    const Icon = signalTypeIcon[signal.signalType] || HelpCircle;
-                    const clientName = clients.find(c => c.id === signal.clientId)?.name;
-                    return (
-                      <div key={signal.id} className="border border-border rounded-lg p-3 hover:border-muted-foreground/50 transition-colors">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {!selectedClientId && clientName && (
-                              <span className="text-xs font-medium text-primary">{clientName}</span>
+                  (() => {
+                    const allDisplaySignals = selectedClientId ? signals : allSignals;
+                    const activeSignals = (allDisplaySignals as any[]).filter((s: any) => !s.isProcessed && s.urgency !== 'ignored');
+                    const processedSignals = (allDisplaySignals as any[]).filter((s: any) => s.isProcessed || s.urgency === 'ignored');
+                    return (<>
+                      {activeSignals.map((signal: any) => {
+                        const Icon = signalTypeIcon[signal.signalType] || HelpCircle;
+                        const clientName = clients.find(c => c.id === signal.clientId)?.name;
+                        return (
+                          <div key={signal.id} className="border border-border rounded-lg p-3 hover:border-muted-foreground/50 transition-colors">
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {!selectedClientId && clientName && (
+                                  <span className="text-xs font-medium text-primary">{clientName}</span>
+                                )}
+                                <span className={cn("inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border", signalTypeColor[signal.signalType])}>
+                                  <Icon className="w-3 h-3" />
+                                  {signal.signalType}
+                                </span>
+                                <span className={cn("text-xs px-1.5 py-0.5 rounded border", urgencyColor[signal.urgency])}>
+                                  {signal.urgency}
+                                </span>
+                                {signal.opportunityId && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded border bg-cyan-500/15 text-cyan-400 border-cyan-500/30 font-medium">
+                                    🎯 商机窗口
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(signal.createdAt).toLocaleDateString("zh-CN")}
+                                </span>
+                                <button
+                                  onClick={() => markProcessedMut.mutate({ id: signal.id })}
+                                  className="p-1 rounded hover:bg-green-500/10 text-muted-foreground/50 hover:text-green-400 transition-colors"
+                                  title="标记为已处理"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => ignoreSignalMut.mutate({ id: signal.id })}
+                                  className="p-1 rounded hover:bg-yellow-500/10 text-muted-foreground/50 hover:text-yellow-400 transition-colors"
+                                  title="忽略此信号"
+                                >
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDeleteSignalId(signal.id)}
+                                  className="p-1 rounded hover:bg-red-500/10 text-muted-foreground/50 hover:text-red-400 transition-colors"
+                                  title="删除此信号"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleAutoMatch(signal.id)}
+                                  className="p-1 rounded hover:bg-purple-500/10 text-muted-foreground/50 hover:text-purple-400 transition-colors"
+                                  title="AI关联推送"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                </button>
+                                <input
+                                  type="checkbox"
+                                  className="w-3.5 h-3.5 accent-primary"
+                                  checked={selectedSignalIds.has(signal.id)}
+                                  onChange={() => toggleSignalSelect(signal.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              </div>
+                            </div>
+                            <div className="text-xs text-muted-foreground mb-2 line-clamp-2">{signal.rawSignal}</div>
+                            {signal.aiInterpretation && (
+                              <div className="text-xs text-foreground mb-1.5 leading-relaxed">{signal.aiInterpretation}</div>
                             )}
-                            <span className={cn("inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border", signalTypeColor[signal.signalType])}>
-                              <Icon className="w-3 h-3" />
-                              {signal.signalType}
-                            </span>
-                           <span className={cn("text-xs px-1.5 py-0.5 rounded border", urgencyColor[signal.urgency])}>
-                             {signal.urgency}
-                           </span>
-                           {(signal as any).opportunityId && (
-                             <span className="text-xs px-1.5 py-0.5 rounded border bg-cyan-500/15 text-cyan-400 border-cyan-500/30 font-medium">
-                               🎯 商机窗口
-                             </span>
-                           )}
+                            {signal.aiRecommendation && (
+                              <div className="text-xs text-primary/80 bg-primary/5 rounded p-2 border border-primary/15 leading-relaxed">
+                                💡 {signal.aiRecommendation}
+                              </div>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(signal.createdAt).toLocaleDateString("zh-CN")}
-                            </span>
-                            <button
-                              onClick={() => setConfirmDeleteSignalId(signal.id)}
-                              className="p-1 rounded hover:bg-red-500/10 text-muted-foreground/50 hover:text-red-400 transition-colors"
-                              title="删除此信号"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleAutoMatch(signal.id)}
-                              className="p-1 rounded hover:bg-purple-500/10 text-muted-foreground/50 hover:text-purple-400 transition-colors"
-                              title="AI关联推送：分析此信号与哪些客户最相关"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                            </button>
-                            <input
-                              type="checkbox"
-                              className="w-3.5 h-3.5 accent-primary"
-                              checked={selectedSignalIds.has(signal.id)}
-                              onChange={() => toggleSignalSelect(signal.id)}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          </div>
+                        );
+                      })}
+                      {processedSignals.length > 0 && (
+                        <div className="mt-2 border-t border-border/30 pt-2">
+                          <button
+                            onClick={() => setShowProcessed(p => !p)}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 w-full"
+                          >
+                            <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", showProcessed && "rotate-180")} />
+                            {showProcessed ? "收起已处理/忽略" : `显示 ${processedSignals.length} 条已处理/忽略的信号`}
+                          </button>
+                          {showProcessed && processedSignals.map((signal: any) => {
+                            const Icon = signalTypeIcon[signal.signalType] || HelpCircle;
+                            const clientName = clients.find(c => c.id === signal.clientId)?.name;
+                            return (
+                              <div key={signal.id} className="border border-border/40 rounded-lg p-2.5 opacity-50 hover:opacity-70 transition-opacity mt-1.5">
+                                <div className="flex items-center gap-2 flex-wrap mb-1">
+                                  {!selectedClientId && clientName && <span className="text-xs font-medium text-muted-foreground">{clientName}</span>}
+                                  <span className={cn("inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border", signalTypeColor[signal.signalType])}>
+                                    <Icon className="w-3 h-3" />
+                                    {signal.signalType}
+                                  </span>
+                                  <span className="text-xs px-1.5 py-0.5 rounded border bg-muted/30 text-muted-foreground border-muted/50">
+                                    {signal.urgency === 'ignored' ? '已忽略' : '已处理'}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground ml-auto">{new Date(signal.createdAt).toLocaleDateString("zh-CN")}</span>
+                                </div>
+                                <div className="text-xs text-muted-foreground line-clamp-1">{signal.rawSignal}</div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <div className="text-xs text-muted-foreground mb-2 line-clamp-2">{signal.rawSignal}</div>
-                        {signal.aiInterpretation && (
-                          <div className="text-xs text-foreground mb-1.5 leading-relaxed">{signal.aiInterpretation}</div>
-                        )}
-                        {signal.aiRecommendation && (
-                          <div className="text-xs text-primary/80 bg-primary/5 rounded p-2 border border-primary/15 leading-relaxed">
-                            💡 {signal.aiRecommendation}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
+                      )}
+                    </>);
+                  })()
                 )}
               </div>
             </div>
