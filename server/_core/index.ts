@@ -17,6 +17,53 @@ import fs from "fs";
 import { getDb } from "../db";
 import { demoTokens } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { parse as parseCookieHeader } from "cookie";
+import { PDFDocument, rgb, degrees } from "pdf-lib";
+
+// Storage keys for the base PDFs (uploaded via manus-upload-file --webdev)
+const CARDS_PDF_KEY = "/manus-storage/main_fa5b30eb.pdf";
+const MANUAL_PDF_KEY = "/manus-storage/main_732bfb87.pdf";
+
+async function fetchPdfBytes(storageKey: string): Promise<Uint8Array> {
+  const { storageGet } = await import("../storage");
+  const { url } = await storageGet(storageKey);
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Failed to fetch PDF: ${resp.status}`);
+  const buf = await resp.arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+async function addWatermarkToPdf(pdfBytes: Uint8Array, watermarkText: string): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  const pages = pdfDoc.getPages();
+
+  for (const page of pages) {
+    const { width, height } = page.getSize();
+    const fontSize = 13;
+    const angle = 35;
+    const spacingX = 200;
+    const spacingY = 90;
+    const cols = Math.ceil(width / spacingX) + 4;
+    const rows = Math.ceil(height / spacingY) + 4;
+
+    for (let r = -rows; r <= rows; r++) {
+      for (let c = -cols; c <= cols; c++) {
+        const cx = width / 2 + c * spacingX;
+        const cy = height / 2 + r * spacingY;
+        page.drawText(watermarkText, {
+          x: cx,
+          y: cy,
+          size: fontSize,
+          color: rgb(0.4, 0.4, 0.4),
+          opacity: 0.18,
+          rotate: degrees(angle),
+        });
+      }
+    }
+  }
+
+  return pdfDoc.save();
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -146,6 +193,50 @@ window.__DEMO_VIEWER__ = ${JSON.stringify({ name: record.recipientName, email: r
       res.sendFile(demoPath); // fallback on error
     }
   });
+  // ── Watermarked PDF download (requires valid session) ──
+  app.get("/api/download-pdf/:type", async (req, res) => {
+    try {
+      // Verify email session cookie (using raw header, no cookie-parser middleware needed)
+      const cookieMap = parseCookieHeader(req.headers.cookie || "");
+      const emailToken = cookieMap["email_session"];
+      if (!emailToken) { res.status(403).json({ error: "Not authenticated" }); return; }
+      const db = await getDb();
+      if (!db) { res.status(503).json({ error: "DB unavailable" }); return; }
+      const { emailSessions, emailUsers } = await import("../../drizzle/schema");
+      const { and, gt } = await import("drizzle-orm");
+      const sessions = await db.select({ userId: emailSessions.userId })
+        .from(emailSessions)
+        .where(and(eq(emailSessions.token, emailToken), gt(emailSessions.expiresAt, new Date())))
+        .limit(1);
+      if (!sessions.length) { res.status(403).json({ error: "Invalid session" }); return; }
+      const userRows = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
+      if (!userRows.length || userRows[0].role !== "admin") {
+        res.status(403).json({ error: "Admin only" });
+        return;
+      }
+
+      const type = req.params.type; // "cards" or "manual"
+      const recipientName = (req.query.name as string) || "内部培训材料";
+      const date = new Date().toLocaleDateString("zh-CN");
+      const watermarkText = `${recipientName}  ·  ${date}  ·  禁止外传`;
+
+      const storageKey = type === "cards" ? CARDS_PDF_KEY : MANUAL_PDF_KEY;
+      const fileName = type === "cards"
+        ? `AIStorm-Command-快速开始卡片-${recipientName}.pdf`
+        : `AIStorm-Command-操作手册-${recipientName}.pdf`;
+
+      const pdfBytes = await fetchPdfBytes(storageKey);
+      const watermarkedBytes = await addWatermarkToPdf(pdfBytes, watermarkText);
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+      res.send(Buffer.from(watermarkedBytes));
+    } catch (err) {
+      console.error("[download-pdf] error:", err);
+      res.status(500).json({ error: "PDF generation failed" });
+    }
+  });
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);

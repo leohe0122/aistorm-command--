@@ -649,3 +649,8 @@
 - [x] App.tsx 注册 /demo-access 路由
 - [x] CommandLayout.tsx 设置区新增「Demo 分发管理」导航入口（仅 admin 可见）
 - [x] demo.html 精确截图替换（25 张 Mulerun 精确截图 base64 嵌入，覆盖 slide-01/04-27）
+
+## 培训包动态水印下载（Round 66）
+- [x] 后端 GET /api/download-pdf/:type 接口（cards/manual，验证 admin session，用 pdf-lib 动态叠加斜排半透明水印）
+- [x] 原始 PDF 上传到 webdev 静态存储（cards: main_fa5b30eb.pdf，manual: main_732bfb87.pdf）
+- [x] DemoAccess 页面每条 token 记录旁新增「下载卡片」按钮（蓝色下载图标），点击下载带接收人姓名水印的 PDF

@@ -4,13 +4,14 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Copy, Plus, Trash2, Ban, ExternalLink, Shield, Eye, Clock } from "lucide-react";
+import { Copy, Plus, Trash2, Ban, ExternalLink, Shield, Eye, Clock, Download } from "lucide-react";
 
 export default function DemoAccess() {
   const { user } = useAuth();
   const [form, setForm] = useState({ recipientName: "", recipientEmail: "", note: "", expiresInDays: "" });
   const [showCreate, setShowCreate] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const { data: tokens, refetch } = trpc.demoAccess.listTokens.useQuery();
   const createMut = trpc.demoAccess.createToken.useMutation({
@@ -38,6 +39,28 @@ export default function DemoAccess() {
       </div>
     );
   }
+
+  const downloadPdf = async (recipientName: string, type: "cards" | "manual", id: number) => {
+    setDownloadingId(id);
+    try {
+      const url = `/api/download-pdf/${type}?name=${encodeURIComponent(recipientName)}`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = type === "cards"
+        ? `AIStorm-Command-快速开始卡片-${recipientName}.pdf`
+        : `AIStorm-Command-操作手册-${recipientName}.pdf`;
+      a.click();
+      URL.revokeObjectURL(objUrl);
+    } catch (e) {
+      toast.error("下载失败", { description: String(e) });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const copyLink = (token: string, id: number) => {
     const url = `https://command.aistorm.com/demo.html?token=${token}`;
@@ -177,7 +200,7 @@ export default function DemoAccess() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {t.isActive && !isExpired && (
+                    {t.isActive && !isExpired && (
                         <>
                           <Button
                             variant="ghost"
@@ -196,6 +219,16 @@ export default function DemoAccess() {
                             onClick={() => window.open(`https://command.aistorm.com/demo.html?token=${t.token}`, '_blank')}
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-blue-400 hover:text-blue-300"
+                            title="下载快速开始卡片（带水印）"
+                            disabled={downloadingId === t.id}
+                            onClick={() => downloadPdf(t.recipientName, "cards", t.id)}
+                          >
+                            <Download className="w-3.5 h-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
