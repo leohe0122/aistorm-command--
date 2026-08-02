@@ -1277,7 +1277,7 @@ ${situationSnapshot}
       const exitCriteria: Record<string, string> = {
         "建图": "识别出 Economic Buyer + 至少3个关键人，组织架构基本清晰",
         "进门": "与关键人完成首次正式会面，客户同意安排下一次深入交流",
-        "定痛": "客户亲口承认痛点，MEDDPICC I维度评分 ≥ 50",
+        "定痛": "① 客户承认痛点（I维度 ≥ 50，拜访记录中有客户原话支撑）+ ② 客户开始认可AIStorm能力（至少1个关键人态度为\"支持\"，或拜访记录出现正面表达）",
         "找人": "Champion确认（MEDDPICC C维度 ≥ 50）+ 完成与Economic Buyer的首次接触",
         "进入商机": "商机已立项，Blue Sheet已填写，MEDDPICC初始评分完成",
       };
@@ -1321,6 +1321,29 @@ ${situationSnapshot}
         const hasClientQuote = meetings.some(m => (m.aiMinutes || m.keyPoints || "").includes("客户说") || (m.aiMinutes || m.keyPoints || "").includes("他说") || (m.aiMinutes || m.keyPoints || "").includes("表示"));
         if (!hasClientQuote) {
           contradictions.push("⚠️ 痛点定义缺乏客户原话支撑：I维度≥50但拜访记录中未检测到客户直接表述");
+        }
+      }
+      // 定痛完整性检查：两个条件必须同时满足
+      if (stage === '定痛' && painScore >= 50) {
+        const hasPositiveStance = contacts.some(
+          (c: any) => c.stance === '支持'
+        );
+        const hasPosVisitRecord = meetings.some((m: any) => {
+          const text = (m.aiMinutes || '') + (m.keyPoints || '') + (m.summary || '');
+          return (
+            text.includes('认可') ||
+            text.includes('感兴趣') ||
+            text.includes('有意向') ||
+            text.includes('支持') ||
+            text.includes('赞同')
+          );
+        });
+        if (!hasPositiveStance && !hasPosVisitRecord) {
+          contradictions.push(
+            '⚠️ 定痛不完整：客户已承认痛点（I维度达标），但尚无能力认可信号——' +
+            '关键人态度中无"支持"，拜访记录中也未检测到正面表述。' +
+            '建议：安排能力展示或案例分享，在客户对AIStorm产生初步认可前不推进至"找人"阶段。'
+          );
         }
       }
       if (["找人", "进入商机"].includes(stage)) {
@@ -5183,6 +5206,14 @@ ${input.aiSuggestion}
           // 1. 无Champion且已在"定痛"阶段超过7天
           if (c.stage === '定痛' && championScore === 0 && stageDwellDays > 7) {
             anomalies.push('定痛阶段无Champion');
+          }
+          // 1b. 定痛阶段无能力认可信号（I维度达标但无支持态度且无正面拜访记录）
+          if (c.stage === '定痛' && (mDetails?.implicatePainScore ?? 0) >= 50) {
+            const clientContacts = decisionCoverageByClient.get(c.id)?.contacts ?? [];
+            const hasPositiveStanceAnomaly = clientContacts.some((ct: any) => ct.stance === '支持');
+            if (!hasPositiveStanceAnomaly) {
+              anomalies.push('定痛不完整：缺能力认可信号（无关键人态度为支持）');
+            }
           }
           // 2. 拜访次数=0且已建图超过14天
           if (c.stage === '建图' && visitCount === 0 && stageDwellDays > 14) {
