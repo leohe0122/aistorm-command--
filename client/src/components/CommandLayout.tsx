@@ -28,10 +28,6 @@ const settingsNavItems = [
   { path: "/team", label: "团队成员管理", icon: UserCog, desc: "增删改 SAM/RSM/SA/AD" },
 ];
 
-const adminNavItems = [
-  { path: "/admin/users", label: "用户管理", icon: Users, desc: "账号与角色管理" },
-];
-
 const roleColors: Record<string, string> = {
   AD: "bg-amber-500/20 text-amber-400 border-amber-500/40",
   SAM: "bg-cyan-500/20 text-cyan-400 border-cyan-500/40",
@@ -97,7 +93,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
   const visibleSettingsNavItems = settingsNavItems;
 
   const AD_ONLY_PATHS = ['/dashboard'];
-  const ADMIN_ONLY_PATHS = ['/settings', '/team', '/admin/users'];
+  const ADMIN_ONLY_PATHS = ['/settings', '/team'];
 
   const getItemLock = (path: string): { locked: boolean; message: string } | null => {
     if (!isAD && AD_ONLY_PATHS.includes(path)) {
@@ -231,37 +227,6 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
             );
           })}
         </div>
-
-        {/* Admin section */}
-        {emailUser?.role === 'admin' && (
-          <div className="px-2 pb-2 border-t border-border/50 pt-2">
-            <div className="text-[10px] text-muted-foreground px-3 mb-1 font-semibold uppercase tracking-widest">管理员</div>
-            {adminNavItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location === item.path;
-              return (
-                <Link key={item.path} href={item.path}>
-                  <div className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-lg mb-0.5 cursor-pointer transition-all group",
-                    isActive
-                      ? "text-white border border-[#00A8D6]/35"
-                      : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground border border-transparent"
-                  )}
-                    style={isActive ? { background: "linear-gradient(90deg, rgba(0,168,214,0.16) 0%, rgba(0,168,214,0.03) 100%)",
-                    boxShadow: "inset 2px 0 0 #00A8D6" } : undefined}
-                  >
-                    <Icon className={cn("w-4 h-4 flex-shrink-0", isActive ? "text-[#00A8D6]" : "text-muted-foreground group-hover:text-foreground")} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium leading-tight">{item.label}</div>
-                      <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">{item.desc}</div>
-                    </div>
-                    {isActive && <ChevronRight className="w-3 h-3 text-[#00A8D6] flex-shrink-0" />}
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        )}
 
         {/* Footer */}
         <div className="p-3 border-t border-border space-y-2">

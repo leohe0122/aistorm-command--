@@ -5492,6 +5492,31 @@ ${input.aiSuggestion}
       const { eq } = await import('drizzle-orm');
       return db.select({ id: clients.id, name: clients.name, priority: clients.priority, stage: clients.stage }).from(clients).where(eq(clients.assignedSamId, input.userId));
     }),
+
+    // 修改团队成员邮箱/密码
+    updateMemberCredentials: adminProcedure.input(z.object({
+      userId: z.number(),
+      email: z.string().email().optional(),
+      password: z.string().min(6).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      if (!input.email && !input.password) throw new TRPCError({ code: 'BAD_REQUEST', message: '请至少提供邮箱或密码' });
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database unavailable' });
+      const { emailUsers } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const updateData: any = {};
+      if (input.email) {
+        // Check email uniqueness (exclude current user)
+        const existing = await db.select({ id: emailUsers.id }).from(emailUsers).where(eq(emailUsers.email, input.email.toLowerCase())).limit(1);
+        if (existing.length > 0 && existing[0].id !== input.userId) throw new TRPCError({ code: 'CONFLICT', message: '该邮箱已被其他账号使用' });
+        updateData.email = input.email.toLowerCase();
+      }
+      if (input.password) {
+        updateData.passwordHash = await bcrypt.hash(input.password, 10);
+      }
+      await db.update(emailUsers).set(updateData).where(eq(emailUsers.id, input.userId));
+      return { success: true };
+    }),
   }),
   // ── Client Metrics (效能基线) ──────────────────────────────────────────────
   clientMetrics: router({

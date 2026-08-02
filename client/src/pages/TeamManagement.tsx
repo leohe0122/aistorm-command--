@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { UserPlus, Pencil, Trash2, Users, RefreshCw, AlertTriangle } from "lucide-react";
+import { KeyRound } from "lucide-react";
 
 const POD_ROLE_COLORS: Record<string, string> = {
   AD: "bg-amber-500/20 text-amber-400 border-amber-500/40",
@@ -169,6 +170,21 @@ export default function TeamManagement() {
     onError: (e) => toast.error(e.message),
   });
 
+  // ── Credentials (email/password) ─────────────────────────────────────────
+  const [credTarget, setCredTarget] = useState<{ id: number; name: string; email: string } | null>(null);
+  const [credEmail, setCredEmail] = useState("");
+  const [credPassword, setCredPassword] = useState("");
+  const [credPassword2, setCredPassword2] = useState("");
+  const updateCredMut = (trpc.admin as any).updateMemberCredentials.useMutation({
+    onSuccess: () => {
+      toast.success("凭证已更新");
+      utils.admin.listUsers.invalidate();
+      setCredTarget(null);
+      setCredEmail(""); setCredPassword(""); setCredPassword2("");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const otherMembers = members.filter(m => m.id !== deleteTarget?.id);
   const reassignTarget = reassignToId ? members.find(m => m.id === parseInt(reassignToId)) : null;
 
@@ -280,6 +296,11 @@ export default function TeamManagement() {
                             onClick={() => setDeleteTarget({ id: m.id, name: m.name })}
                             title="删除">
                             <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 hover:text-purple-400"
+                            onClick={() => { setCredTarget({ id: m.id, name: m.name, email: m.email }); setCredEmail(m.email); setCredPassword(""); setCredPassword2(""); }}
+                            title="修改邮箱/密码">
+                            <KeyRound className="w-3.5 h-3.5" />
                           </Button>
                         </>
                       )}
@@ -465,6 +486,74 @@ export default function TeamManagement() {
               disabled={deleteMut.isPending}>
               {deleteMut.isPending ? <RefreshCw className="w-3 h-3 animate-spin mr-1" /> : null}
               确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+    </Dialog>
+
+      {/* Credentials Dialog */}
+      <Dialog open={!!credTarget} onOpenChange={(o) => { if (!o) { setCredTarget(null); setCredEmail(""); setCredPassword(""); setCredPassword2(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-purple-400" />
+              修改登录凭证：{credTarget?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">邮箱地址</label>
+              <Input
+                value={credEmail}
+                onChange={e => setCredEmail(e.target.value)}
+                placeholder="新邮箱地址"
+                className="h-9 text-sm"
+                type="email"
+              />
+              <div className="text-[10px] text-muted-foreground mt-1">留空则不修改邮箱</div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">新密码</label>
+              <Input
+                value={credPassword}
+                onChange={e => setCredPassword(e.target.value)}
+                placeholder="新密码（至少6位）"
+                className="h-9 text-sm"
+                type="password"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">确认新密码</label>
+              <Input
+                value={credPassword2}
+                onChange={e => setCredPassword2(e.target.value)}
+                placeholder="再次输入新密码"
+                className="h-9 text-sm"
+                type="password"
+              />
+              {credPassword && credPassword2 && credPassword !== credPassword2 && (
+                <div className="text-[10px] text-red-400 mt-1">两次密码不一致</div>
+              )}
+              <div className="text-[10px] text-muted-foreground mt-1">留空则不修改密码</div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCredTarget(null)}>取消</Button>
+            <Button
+              onClick={() => {
+                if (!credEmail && !credPassword) { toast.error("请至少填写邮箱或新密码"); return; }
+                if (credPassword && credPassword !== credPassword2) { toast.error("两次密码不一致"); return; }
+                if (credPassword && credPassword.length < 6) { toast.error("密码至少6位"); return; }
+                updateCredMut.mutate({
+                  userId: credTarget!.id,
+                  email: credEmail && credEmail !== credTarget?.email ? credEmail : undefined,
+                  password: credPassword || undefined,
+                });
+              }}
+              disabled={updateCredMut.isPending}
+            >
+              {updateCredMut.isPending ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5 mr-1.5" />}
+              保存凭证
             </Button>
           </DialogFooter>
         </DialogContent>
