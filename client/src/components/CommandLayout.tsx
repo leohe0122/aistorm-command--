@@ -307,30 +307,33 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
       </main>
       {/* Mobile bottom navigation */}
       {/* Quick entry menu */}
+      <div className={cn(
+        "md:hidden fixed bottom-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-3 items-center transition-all duration-300 ease-out",
+        showQuickEntry ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-8 pointer-events-none"
+      )}>
+        <button
+          type="button"
+          onClick={() => {
+            setShowQuickEntry(false);
+            window.location.href = '/meeting-minutes?voice=1';
+          }}
+          className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-card border border-border shadow-xl text-sm font-medium text-foreground w-44 justify-center"
+        >
+          <span className="text-xl">🎙️</span>
+          语音录入
+        </button>
+        <a
+          href="/meeting-minutes"
+          onClick={() => setShowQuickEntry(false)}
+          className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-card border border-border shadow-xl text-sm font-medium text-foreground w-44 justify-center"
+        >
+          <span className="text-xl">✏️</span>
+          文本录入
+        </a>
+      </div>
       {showQuickEntry && (
         <>
           <div className="md:hidden fixed inset-0 z-40" onClick={() => setShowQuickEntry(false)} />
-          <div className="md:hidden fixed bottom-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-3 items-center">
-            <button
-              type="button"
-              onClick={() => {
-                setShowQuickEntry(false);
-                window.location.href = '/meeting-minutes?voice=1';
-              }}
-              className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-card border border-border shadow-xl text-sm font-medium text-foreground w-44 justify-center"
-            >
-              <span className="text-xl">🎙️</span>
-              语音录入
-            </button>
-            <a
-              href="/meeting-minutes"
-              onClick={() => setShowQuickEntry(false)}
-              className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-card border border-border shadow-xl text-sm font-medium text-foreground w-44 justify-center"
-            >
-              <span className="text-xl">✏️</span>
-              文本录入
-            </a>
-          </div>
         </>
       )}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-sidebar border-t border-border flex items-center justify-around px-1 py-1.5">

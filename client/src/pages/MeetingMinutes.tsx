@@ -107,6 +107,7 @@ export default function MeetingMinutes() {
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
   // Voice auto-trigger from ?voice=1 URL param
   const autoVoice = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('voice') === '1';
+  const [isRecording, setIsRecording] = useState(false);
   useEffect(() => {
     if (!autoVoice) return;
     window.history.replaceState({}, '', '/meeting-minutes');
@@ -123,17 +124,21 @@ export default function MeetingMinutes() {
       recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
         setKeyPoints(transcript);
-        toast.success('🎙️ 语音识别完成，内容已填入关键信息框');
+        setIsRecording(false);
+        toast.success('✅ 语音识别完成，内容已填入关键信息框', { duration: 3000 });
       };
       recognition.onerror = (event: any) => {
+        setIsRecording(false);
         if (event.error === 'not-allowed') {
           toast.error('请允许浏览器访问麦克风');
         } else {
           toast.error('语音识别失败，请手动输入');
         }
       };
+      recognition.onend = () => setIsRecording(false);
       recognition.start();
-      toast('🎙️ 正在录音，请说出拜访要点...', { duration: 5000 });
+      setIsRecording(true);
+      toast('🎙️ 正在录音，请说出拜访要点...', { duration: 6000 });
     }, 800);
     return () => clearTimeout(timer);
   }, [autoVoice]);
@@ -578,7 +583,16 @@ export default function MeetingMinutes() {
 
               <div>
                 <label className="text-xs text-muted-foreground mb-1.5 block">SAM 补充要点 *</label>
-                <Textarea
+              {isRecording && (
+                <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30">
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                  </span>
+                  <span className="text-xs text-red-400 font-medium">正在录音，请说出拜访要点...</span>
+                </div>
+              )}
+              <Textarea
                   className="resize-none h-28 text-sm"
                   placeholder={`输入碎片化要点（有妙记时可简短补充）...\n\n例如：\n- 客户对 FCC 合规压力很头疼\n- CTO 提到 Q4 有预算窗口\n- 竞品 PA 已在跟进`}
                   value={keyPoints}
