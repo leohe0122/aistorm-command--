@@ -3205,6 +3205,7 @@ function WinStrategyExtras({ clientId, aiSuggestion, enabled, stage }: { clientI
         });
       }
       toast.success(`已创建 ${editableActions.length} 条行动任务，可在 AI行动指令台查看`);
+      setCreatedTasks(editableActions.map(a => ({ title: a.title, role: a.role, dueDays: a.dueDays })));
       setExtractOpen(false);
     } catch (e: any) {
       toast.error("创建任务失败：" + (e?.message || "未知错误"));
@@ -3258,6 +3259,24 @@ function WinStrategyExtras({ clientId, aiSuggestion, enabled, stage }: { clientI
         📋 一键转任务
       </button>
     </div>
+    {/* 已创建任务卡片 */}
+    {createdTasks.length > 0 && (
+      <div className="mt-3 border border-cyan-500/20 rounded-lg overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 bg-cyan-500/5 border-b border-cyan-500/15">
+          <span className="text-[10px] font-medium text-cyan-400">✓ 已创建 {createdTasks.length} 条行动任务</span>
+          <a href="/action-command" className="text-[10px] text-primary hover:underline cursor-pointer">前往指令台查看 →</a>
+        </div>
+        <div className="divide-y divide-border/20">
+          {createdTasks.map((task, i) => (
+            <div key={i} className="flex items-center gap-2 px-3 py-2 text-[10px]">
+              <span className="px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium flex-shrink-0">{task.role}</span>
+              <span className="flex-1 text-foreground/80 truncate">{task.title}</span>
+              <span className="text-muted-foreground flex-shrink-0">{task.dueDays}天内</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
     {/* 一键转任务确认 Dialog */}
     <Dialog open={extractOpen} onOpenChange={setExtractOpen}>
       <DialogContent className="max-w-lg">
@@ -4206,3 +4225,4 @@ function ClientMetricsTab({ clientId }: { clientId: number }) {
     </div>
   );
 }
+  const [createdTasks, setCreatedTasks] = useState<Array<{ title: string; role: string; dueDays: number }>>([]);

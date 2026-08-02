@@ -1,10 +1,10 @@
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import AIStormLogo from "@/components/AIStormLogo";
 import { cn } from "@/lib/utils";
 import {
   Map, Radio, Zap, FileText, Shield, Users, MessageSquare, TrendingUp,
-  ChevronRight, Database, Bell, Crosshair, LogOut, LayoutDashboard, Settings
+  ChevronRight, Database, Bell, Crosshair, LogOut, LayoutDashboard, Settings, Plus
 } from "lucide-react";
 import { UserCog } from "lucide-react";
 import { useEmailAuth } from "@/App";
@@ -80,6 +80,13 @@ function EmailUserFooter() {
 export default function CommandLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { emailUser } = useEmailAuth();
+  const [showReviewTip, setShowReviewTip] = useState(() => {
+    try { return localStorage.getItem('aistorm_review_tip_dismissed') !== '1'; } catch { return true; }
+  });
+  const dismissTip = () => {
+    setShowReviewTip(false);
+    try { localStorage.setItem('aistorm_review_tip_dismissed', '1'); } catch {}
+  };
 
   // Role-based visibility: AD sees everything, others see restricted items
   const isAD = !emailUser || emailUser.podRole === 'AD';
@@ -268,12 +275,29 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
       <main className="flex-1 overflow-y-auto flex flex-col">
         {/* Global top bar — desktop only */}
         <div className="hidden md:flex items-center justify-end px-6 py-2 border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-40">
-          <Link href="/quick-review">
-            <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/25 hover:bg-primary/20 hover:border-primary/40 transition-all">
-              <Zap className="w-3.5 h-3.5" />
-              ⚡ 快速 Review
-            </button>
-          </Link>
+          <div className="relative">
+            <Link href="/quick-review" onClick={dismissTip}>
+              <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/25 hover:bg-primary/20 hover:border-primary/40 transition-all">
+                <Zap className="w-3.5 h-3.5" />
+                ⚡ 快速 Review
+              </button>
+            </Link>
+            {showReviewTip && (
+              <div className="absolute top-full right-0 mt-2 w-64 z-50 bg-card border border-primary/30 rounded-xl shadow-lg shadow-primary/10 p-3">
+                <div className="absolute -top-1.5 right-6 w-3 h-3 bg-card border-l border-t border-primary/30 rotate-45" />
+                <p className="text-xs text-foreground leading-relaxed">
+                  不知道从哪开始？点击这里让 AI 帮你梳理客户现状 🎯
+                </p>
+                <button
+                  type="button"
+                  onClick={dismissTip}
+                  className="mt-2 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  知道了，不再显示 ✕
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         {/* Page content */}
         <div className="flex-1 pb-16 md:pb-0">
@@ -282,26 +306,43 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
       </main>
       {/* Mobile bottom navigation */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-sidebar border-t border-border flex items-center justify-around px-2 py-1.5">
-        {[
-          { path: "/battle-map", icon: Map, label: "战场" },
-          { path: "/quick-review", icon: TrendingUp, label: "Review" },
-          { path: "/meeting-minutes", icon: MessageSquare, label: "拜访" },
-          { path: "/action-command", icon: Zap, label: "指令台" },
-          { path: "/dashboard", icon: LayoutDashboard, label: "指挥台" },
-        ].map(({ path, icon: Icon, label }) => {
-          const isActive = location === path || (location === "/" && path === "/dashboard");
-          return (
-            <Link key={path} href={path}>
-              <div className={cn(
-                "flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors",
-                isActive ? "text-[#00A8D6]" : "text-muted-foreground"
-              )}>
-                <Icon className="w-5 h-5" />
-                <span className="text-[9px] font-medium">{label}</span>
-              </div>
-            </Link>
-          );
-        })}
+        {/* 战场 */}
+        <Link href="/battle-map">
+          <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", location === "/battle-map" ? "text-[#00A8D6]" : "text-muted-foreground")}>
+            <Map className="w-5 h-5" />
+            <span className="text-[9px] font-medium">战场</span>
+          </div>
+        </Link>
+        {/* Review */}
+        <Link href="/quick-review">
+          <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", location === "/quick-review" ? "text-[#00A8D6]" : "text-muted-foreground")}>
+            <TrendingUp className="w-5 h-5" />
+            <span className="text-[9px] font-medium">Review</span>
+          </div>
+        </Link>
+        {/* + 录入 — center accent button */}
+        <Link href="/meeting-minutes">
+          <div className="flex flex-col items-center gap-0.5 px-2 py-0.5">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg, #00A8D6 0%, #1B6FBF 100%)" }}>
+              <Plus className="w-5 h-5 text-white" />
+            </div>
+            <span className="text-[9px] font-medium text-[#00A8D6]">录入</span>
+          </div>
+        </Link>
+        {/* 指令台 */}
+        <Link href="/action-command">
+          <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", location === "/action-command" ? "text-[#00A8D6]" : "text-muted-foreground")}>
+            <Zap className="w-5 h-5" />
+            <span className="text-[9px] font-medium">指令台</span>
+          </div>
+        </Link>
+        {/* 指挥台 */}
+        <Link href="/dashboard">
+          <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", location === "/" || location === "/dashboard" ? "text-[#00A8D6]" : "text-muted-foreground")}>
+            <LayoutDashboard className="w-5 h-5" />
+            <span className="text-[9px] font-medium">指挥台</span>
+          </div>
+        </Link>
       </nav>
     </div>
   );
