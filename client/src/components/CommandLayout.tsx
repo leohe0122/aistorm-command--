@@ -330,9 +330,9 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           </div>
         </Link>
         {[
-          { path: "/meeting-minutes", icon: MessageSquare, label: "拜访" },
+          { path: "/intel-radar", icon: Radio, label: "情报" },
           { path: "/action-command", icon: Zap, label: "指令台" },
-          { path: "/dashboard", icon: LayoutDashboard, label: "指挥台" },
+          { path: "/pod-center", icon: Users, label: "POD" },
         ].map(({ path, icon: Icon, label }) => {
           const isActive = location === path || (location === "/" && path === "/dashboard");
           return (
