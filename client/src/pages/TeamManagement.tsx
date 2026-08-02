@@ -490,7 +490,7 @@ export default function TeamManagement() {
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">公司邮箱 *</label>
-              <Input placeholder="name@aistorm.com" value={createForm.email}
+              <Input placeholder="name@company.com" value={createForm.email}
                 onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} />
             </div>
             <div>

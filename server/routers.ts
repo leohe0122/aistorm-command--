@@ -4398,13 +4398,11 @@ ${context}
   }),
 
 
-  // ── Email Auth (仅允许 @aistorm.com 邮箱) ────────────────────────────────────────────
+  // ── Email Auth ────────────────────────────────────────────
   emailAuth: router({
     register: publicProcedure
       .input(z.object({
-        email: z.string().email().refine(e => e.toLowerCase().endsWith('@aistorm.com'), {
-          message: '仅允许使用 @aistorm.com 邮箱注册'
-        }),
+        email: z.string().email(),
         password: z.string().min(8, '密码至少 8 个字符'),
         name: z.string().min(1, '请输入姓名'),
       }))
@@ -4427,7 +4425,6 @@ ${context}
         if (!db) throw new Error('Database unavailable');
         const { emailUsers, emailSessions } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
-        if (!input.email.toLowerCase().endsWith('@aistorm.com')) throw new Error('仅允许使用 @aistorm.com 邮箱登录');
         const rows = await db.select().from(emailUsers).where(eq(emailUsers.email, input.email.toLowerCase())).limit(1);
         if (rows.length === 0) throw new Error('邮箱或密码错误');
         const user = rows[0];

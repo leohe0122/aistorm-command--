@@ -55,10 +55,6 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password || !name) { toast.error("请填写所有字段"); return; }
-    if (!email.toLowerCase().endsWith("@aistorm.com")) {
-      toast.error("仅允许使用 @aistorm.com 邮箱注册");
-      return;
-    }
     if (password.length < 8) { toast.error("密码至少 8 个字符"); return; }
     setLoading(true);
     registerMut.mutate({ email, password, name });
