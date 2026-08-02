@@ -87,11 +87,14 @@ async function startServer() {
   app.post("/api/feishu/webhook", feishuWebhookHandler);
   // Serve demo.html directly from client/public (bypasses SPA routing)
   app.get("/demo.html", (_req, res) => {
-    const demoPath = path.resolve(import.meta.dirname, "../../client/public/demo.html");
+    // Try production path first (compiled output), then fall back to dev source path
+    const prodPath = path.resolve(import.meta.dirname, "public/demo.html");
+    const devPath = path.resolve(import.meta.dirname, "../../client/public/demo.html");
+    const demoPath = fs.existsSync(prodPath) ? prodPath : devPath;
     if (fs.existsSync(demoPath)) {
       res.sendFile(demoPath);
     } else {
-      res.status(404).send("demo.html not found");
+      res.status(404).send(`demo.html not found (tried: ${prodPath})`);
     }
   });
   // development mode uses Vite, production mode uses static files
