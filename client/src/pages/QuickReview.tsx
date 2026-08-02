@@ -2,7 +2,6 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
-import CommandLayout from "@/components/CommandLayout";
 
 const ZERO_TO_ONE_STAGES = ["建图", "进门", "定痛", "找人"];
 
@@ -62,7 +61,7 @@ export default function QuickReview() {
   };
 
   return (
-    <CommandLayout>
+    <div>
       <div className="p-6 max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div>
@@ -205,6 +204,6 @@ export default function QuickReview() {
           </div>
         )}
       </div>
-    </CommandLayout>
+    </div>
   );
 }
