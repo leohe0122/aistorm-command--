@@ -83,7 +83,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
   const [showReviewTip, setShowReviewTip] = useState(() => {
     try { return localStorage.getItem('aistorm_review_tip_dismissed') !== '1'; } catch { return true; }
   });
-  const dismissTip = () => {
+  const dismissReviewTip = () => {
     setShowReviewTip(false);
     try { localStorage.setItem('aistorm_review_tip_dismissed', '1'); } catch {}
   };
@@ -276,7 +276,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
         {/* Global top bar — desktop only */}
         <div className="hidden md:flex items-center justify-end px-6 py-2 border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-40">
           <div className="relative">
-            <Link href="/quick-review" onClick={dismissTip}>
+            <Link href="/quick-review" onClick={dismissReviewTip}>
               <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/25 hover:bg-primary/20 hover:border-primary/40 transition-all">
                 <Zap className="w-3.5 h-3.5" />
                 ⚡ 快速 Review
@@ -290,7 +290,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
                 </p>
                 <button
                   type="button"
-                  onClick={dismissTip}
+                  onClick={dismissReviewTip}
                   className="mt-2 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
                 >
                   知道了，不再显示 ✕
@@ -305,44 +305,45 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
         </div>
       </main>
       {/* Mobile bottom navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-sidebar border-t border-border flex items-center justify-around px-2 py-1.5">
-        {/* 战场 */}
-        <Link href="/battle-map">
-          <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", location === "/battle-map" ? "text-[#00A8D6]" : "text-muted-foreground")}>
-            <Map className="w-5 h-5" />
-            <span className="text-[9px] font-medium">战场</span>
-          </div>
-        </Link>
-        {/* Review */}
-        <Link href="/quick-review">
-          <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", location === "/quick-review" ? "text-[#00A8D6]" : "text-muted-foreground")}>
-            <TrendingUp className="w-5 h-5" />
-            <span className="text-[9px] font-medium">Review</span>
-          </div>
-        </Link>
-        {/* + 录入 — center accent button */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-sidebar border-t border-border flex items-center justify-around px-1 py-1.5">
+        {[
+          { path: "/battle-map", icon: Map, label: "战场" },
+          { path: "/quick-review", icon: TrendingUp, label: "Review" },
+        ].map(({ path, icon: Icon, label }) => {
+          const isActive = location === path;
+          return (
+            <Link key={path} href={path}>
+              <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", isActive ? "text-[#00A8D6]" : "text-muted-foreground")}>
+                <Icon className="w-5 h-5" />
+                <span className="text-[9px] font-medium">{label}</span>
+              </div>
+            </Link>
+          );
+        })}
+        {/* 中心录入按钮 */}
         <Link href="/meeting-minutes">
-          <div className="flex flex-col items-center gap-0.5 px-2 py-0.5">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg, #00A8D6 0%, #1B6FBF 100%)" }}>
-              <Plus className="w-5 h-5 text-white" />
+          <div className="flex flex-col items-center gap-0.5 px-1 py-0.5 -mt-3">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg" style={{ background: "linear-gradient(135deg, #00A8D6 0%, #1B6FBF 100%)" }}>
+              <Plus className="w-6 h-6 text-white" />
             </div>
             <span className="text-[9px] font-medium text-[#00A8D6]">录入</span>
           </div>
         </Link>
-        {/* 指令台 */}
-        <Link href="/action-command">
-          <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", location === "/action-command" ? "text-[#00A8D6]" : "text-muted-foreground")}>
-            <Zap className="w-5 h-5" />
-            <span className="text-[9px] font-medium">指令台</span>
-          </div>
-        </Link>
-        {/* 指挥台 */}
-        <Link href="/dashboard">
-          <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", location === "/" || location === "/dashboard" ? "text-[#00A8D6]" : "text-muted-foreground")}>
-            <LayoutDashboard className="w-5 h-5" />
-            <span className="text-[9px] font-medium">指挥台</span>
-          </div>
-        </Link>
+        {[
+          { path: "/meeting-minutes", icon: MessageSquare, label: "拜访" },
+          { path: "/action-command", icon: Zap, label: "指令台" },
+          { path: "/dashboard", icon: LayoutDashboard, label: "指挥台" },
+        ].map(({ path, icon: Icon, label }) => {
+          const isActive = location === path || (location === "/" && path === "/dashboard");
+          return (
+            <Link key={path} href={path}>
+              <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", isActive ? "text-[#00A8D6]" : "text-muted-foreground")}>
+                <Icon className="w-5 h-5" />
+                <span className="text-[9px] font-medium">{label}</span>
+              </div>
+            </Link>
+          );
+        })}
       </nav>
     </div>
   );

@@ -3176,12 +3176,14 @@ function WinStrategyExtras({ clientId, aiSuggestion, enabled, stage }: { clientI
   const [extractedActions, setExtractedActions] = useState<Array<{ title: string; description: string; role: string; dueDays: number }>>([]);
   const [extractLoading, setExtractLoading] = useState(false);
   const [editableActions, setEditableActions] = useState<Array<{ title: string; description: string; role: string; dueDays: number }>>([]);
+  const [createdTasks, setCreatedTasks] = useState<Array<{ title: string; role: string; dueDays: number }>>([]);
   const extractMut = trpc.winStrategyActions.extractActions.useMutation();
   const addTaskMut = trpc.pod.addTask.useMutation();
 
   const handleExtract = async () => {
     setExtractLoading(true);
     setExtractOpen(true);
+    setCreatedTasks([]);
     try {
       const res = await extractMut.mutateAsync({ clientId, aiSuggestion, stage: stage || '未知' });
       setExtractedActions(res.actions);
@@ -4227,4 +4229,3 @@ function ClientMetricsTab({ clientId }: { clientId: number }) {
     </div>
   );
 }
-  const [createdTasks, setCreatedTasks] = useState<Array<{ title: string; role: string; dueDays: number }>>([]);
