@@ -6,7 +6,13 @@ import { getProductLinePrompt, PRODUCT_LINE_VALUES } from "@shared/productLines"
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
+// Admin-only procedure: requires login + admin role
+const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
+  return next({ ctx });
+});
 
 // Helper: extract JSON from model output that may be wrapped in ```json ... ``` markdown blocks
 function extractJSON(raw: string): string {
@@ -83,7 +89,7 @@ export const appRouter = router({
       const result = await getClientById(input.id);
       return result ?? null;
     }),
-    update: publicProcedure.input(z.object({
+    update: protectedProcedure.input(z.object({
       id: z.number(),
       name: z.string().optional(),
       nameEn: z.string().optional(),
@@ -100,7 +106,7 @@ export const appRouter = router({
       invalidateClientsCache();
       return updateClient(id, data as any);
     }),
-    create: publicProcedure.input(z.object({
+    create: protectedProcedure.input(z.object({
       name: z.string().min(1),
       nameEn: z.string().optional(),
       industry: z.string().optional(),
@@ -338,7 +344,7 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
       const result = await getMeddpiccByClientId(input.clientId);
       return result ?? null;
     }),
-    update: publicProcedure.input(z.object({
+    update: protectedProcedure.input(z.object({
       clientId: z.number(),
       metricsScore: z.number().min(0).max(100).optional(),
       metricsNotes: z.string().optional(),
@@ -967,10 +973,10 @@ ${signalsSummary}
       return { ok: true };
     }),
     // One-click adopt all: persist adopted actions as POD tasks for each role
-    deleteOne: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+    deleteOne: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
       deleteActionById(input.id)
     ),
-    clearPending: publicProcedure.input(z.object({ clientId: z.number() })).mutation(({ input }) =>
+    clearPending: protectedProcedure.input(z.object({ clientId: z.number() })).mutation(({ input }) =>
       clearPendingActionsByClient(input.clientId)
     ),
     adoptAll: publicProcedure.input(z.object({
@@ -2180,7 +2186,7 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
 
     // ── 辅导 Action Items ────────────────────────────────────────────────────
     // AD 下发辅导建议（从教练 Review 中提取并保存 Action Items）
-    createCoachingActions: publicProcedure.input(z.object({
+    createCoachingActions: protectedProcedure.input(z.object({
       samId: z.number(),
       samName: z.string(),
       actions: z.array(z.object({
@@ -2761,13 +2767,13 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
     complete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
       completePodTask(input.id)
     ),
-    deleteOne: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+    deleteOne: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
       deletePodTask(input.id)
     ),
-    clearCompleted: publicProcedure.mutation(() =>
+    clearCompleted: protectedProcedure.mutation(() =>
       clearCompletedPodTasks()
     ),
-    clearByRole: publicProcedure.input(z.object({ role: z.enum(["AD", "SAM", "SA", "RSM"]) })).mutation(({ input }) =>
+    clearByRole: protectedProcedure.input(z.object({ role: z.enum(["AD", "SAM", "SA", "RSM"]) })).mutation(({ input }) =>
       clearPodTasksByRole(input.role)
     ),
     updateTaskStatus: publicProcedure.input(z.object({
@@ -3059,7 +3065,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
     listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(({ input }) =>
       getContactsByClientId(input.clientId)
     ),
-    update: publicProcedure.input(z.object({
+    update: protectedProcedure.input(z.object({
       id: z.number(),
       name: z.string().optional(),
       title: z.string().optional(),
@@ -3168,7 +3174,7 @@ ${contactList}
       const { eq, desc } = await import('drizzle-orm');
       return db.select().from(opportunities).where(eq(opportunities.clientId, input.clientId)).orderBy(desc(opportunities.createdAt));
     }),
-    create: publicProcedure.input(z.object({
+    create: protectedProcedure.input(z.object({
       clientId: z.number(),
       name: z.string(),
       stage: z.enum(['初步需求', '需求挖掘', '技术验证', '方案提案', '商务谈判', '赢单', '丢单']).optional(),
@@ -3185,7 +3191,7 @@ ${contactList}
       const [result] = await db.insert(opportunities).values(input as any);
       return { id: (result as any).insertId };
     }),
-    update: publicProcedure.input(z.object({
+    update: protectedProcedure.input(z.object({
       id: z.number(),
       name: z.string().optional(),
       stage: z.enum(['初步需求', '需求挖掘', '技术验证', '方案提案', '商务谈判', '赢单', '丢单']).optional(),
@@ -3250,7 +3256,7 @@ ${contactList}
     }),
 
     // 创建或更新商机级 MEDDPICC 评分
-    upsertMeddpicc: publicProcedure.input(z.object({
+    upsertMeddpicc: protectedProcedure.input(z.object({
       opportunityId: z.number(),
       clientId: z.number(),
       metricsScore: z.number().min(0).max(4).optional(),
@@ -3328,7 +3334,7 @@ ${contactList}
       const { desc } = await import('drizzle-orm');
       return db.select().from(killSheets).orderBy(desc(killSheets.createdAt));
     }),
-    create: publicProcedure.input(z.object({
+    create: protectedProcedure.input(z.object({
       competitorName: z.string(),
       competitorType: z.string().optional(),
       productLine: z.string().optional(),
@@ -3348,7 +3354,7 @@ ${contactList}
       const [result] = await db.insert(killSheets).values(input as any);
       return { id: (result as any).insertId };
     }),
-    update: publicProcedure.input(z.object({
+    update: protectedProcedure.input(z.object({
       id: z.number(),
       competitorName: z.string().optional(),
       competitorType: z.string().optional(),
@@ -4255,7 +4261,7 @@ ${context}
   systemConfig: router({
     getAll: publicProcedure.query(() => getAllSystemConfigs()),
     get: publicProcedure.input(z.object({ key: z.string() })).query(({ input }) => getSystemConfig(input.key)),
-    set: publicProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ input }) =>
+    set: adminProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ input }) =>
       setSystemConfig(input.key, input.value)
     ),
   }),
@@ -5304,7 +5310,7 @@ ${input.aiSuggestion}
         return { success: true };
       }),
 
-    updateUserRole: publicProcedure
+    updateUserRole: adminProcedure
       .input(z.object({ userId: z.number(), podRole: z.string(), role: z.string() }))
       .mutation(async ({ input, ctx }) => {
         const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
@@ -5324,7 +5330,7 @@ ${input.aiSuggestion}
       }),
 
     // 创建新团队成员（SAM/RSM/SA/AD）
-    createMember: publicProcedure.input(z.object({
+    createMember: adminProcedure.input(z.object({
       email: z.string().email(),
       name: z.string().min(1),
       podRole: z.enum(["AD", "SAM", "SA", "RSM"]),
@@ -5356,7 +5362,7 @@ ${input.aiSuggestion}
     }),
 
     // 更新团队成员信息（改名/改角色）
-    updateMember: publicProcedure.input(z.object({
+    updateMember: adminProcedure.input(z.object({
       userId: z.number(),
       name: z.string().min(1).optional(),
       podRole: z.enum(["AD", "SAM", "SA", "RSM"]).optional(),
