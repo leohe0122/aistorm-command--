@@ -259,7 +259,7 @@ const NARRATIONS = ["欢迎来到 AIStorm Command 全员培训。这套系统的
 let current=0,autoPlay=true,muted=false,speaking=false,timer=null,audioEl=null;
 function speak(idx){
   stopAudio();if(muted)return;
-  const src=AUDIO_SRCS[idx+1];if(!src)return;
+  const src=AUDIO_SRCS[idx];if(!src)return;
   audioEl=new Audio(src);
   audioEl.onended=()=>{speaking=false;if(autoPlay)timer=setTimeout(()=>{if(!speaking)next();},1000);};
   audioEl.onerror=()=>{speaking=false;};
@@ -267,7 +267,7 @@ function speak(idx){
 }
 function stopAudio(){if(audioEl){audioEl.pause();audioEl.src="";audioEl=null;}speaking=false;clearTimeout(timer);}
 function showSlide(n){
-  if(n<0||n>=28)return;stopAudio();
+  if(n<0||n>=29)return;stopAudio();
   document.getElementById('slide-'+(current+1)).classList.remove('active');
   current=n;
   document.getElementById('slide-'+(current+1)).classList.add('active');
