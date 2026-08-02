@@ -2102,7 +2102,7 @@ ${clientLines}
       const [allMeddpicc, allOpps, allContacts, allMeetings] = await Promise.all([
         db.select().from(meddpiccTable),
         db.select().from(opportunitiesTable),
-        db.select({ clientId: keyContactsTable.clientId, buyingRole: keyContactsTable.buyingRole, championAccess: (keyContactsTable as any).championAccess, championWill: (keyContactsTable as any).championWill, championCredibility: (keyContactsTable as any).championCredibility }).from(keyContactsTable),
+        db.select({ clientId: keyContactsTable.clientId, buyingRole: keyContactsTable.buyingRole, championAccessToPower: keyContactsTable.championAccessToPower, championPoliticalWill: keyContactsTable.championPoliticalWill, championCredibility: keyContactsTable.championCredibility }).from(keyContactsTable),
         db.select({ clientId: meetingMinutesTable.clientId, meetingDate: meetingMinutesTable.meetingDate }).from(meetingMinutesTable).orderBy(descFn(meetingMinutesTable.meetingDate)),
       ]);
 
