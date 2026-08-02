@@ -4660,7 +4660,7 @@ ${baselineText}
         const rows = await db.select().from(winStrategies).where(eq(winStrategies.clientId, input.clientId)).limit(1);
         return rows[0];
       }),
-    generateAI: publicProcedure
+    generateAI: protectedProcedure
       .input(z.object({
         clientId: z.number(),
         clientName: z.string(),
@@ -4721,7 +4721,29 @@ ${baselineContext}
             await db.insert(winStrategies).values({ clientId: input.clientId, aiSuggestion });
           }
         }
+        // 写入版本历史（不覆盖，每次生成保留一条）
+        const dbH = await getDb();
+        if (dbH) {
+          const { winStrategyHistory } = await import('../drizzle/schema');
+          await dbH.insert(winStrategyHistory).values({
+            clientId: input.clientId,
+            aiSuggestion,
+            stage: input.stage,
+          });
+        }
         return { aiSuggestion };
+      }),
+    getHistory: protectedProcedure
+      .input(z.object({ clientId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { winStrategyHistory } = await import('../drizzle/schema');
+        const { desc, eq } = await import('drizzle-orm');
+        return db.select().from(winStrategyHistory)
+          .where(eq(winStrategyHistory.clientId, input.clientId))
+          .orderBy(desc(winStrategyHistory.createdAt))
+          .limit(10);
       }),
   }),
 

@@ -819,3 +819,17 @@ export const feishuPendingRecords = mysqlTable("feishu_pending_records", {
 });
 export type FeishuPendingRecord = typeof feishuPendingRecords.$inferSelect;
 export type InsertFeishuPendingRecord = typeof feishuPendingRecords.$inferInsert;
+
+/**
+ * Win Strategy 版本历史（每次 AI 生成保留一条，不覆盖）
+ */
+export const winStrategyHistory = mysqlTable("win_strategy_history", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull(),
+  opportunityId: int("opportunityId"),
+  aiSuggestion: text("aiSuggestion").notNull(),
+  stage: varchar("stage", { length: 50 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type WinStrategyHistory = typeof winStrategyHistory.$inferSelect;
+export type InsertWinStrategyHistory = typeof winStrategyHistory.$inferInsert;

@@ -3179,6 +3179,8 @@ function WinStrategyExtras({ clientId, aiSuggestion, enabled, stage }: { clientI
   const [createdTasks, setCreatedTasks] = useState<Array<{ title: string; role: string; dueDays: number }>>([]);
   const extractMut = trpc.winStrategyActions.extractActions.useMutation();
   const addTaskMut = trpc.pod.addTask.useMutation();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const { data: wsHistory = [] } = (trpc.winStrategy as any).getHistory.useQuery({ clientId }, { enabled });
 
   const handleExtract = async () => {
     setExtractLoading(true);
@@ -3329,6 +3331,36 @@ function WinStrategyExtras({ clientId, aiSuggestion, enabled, stage }: { clientI
         )}
       </DialogContent>
     </Dialog>
+    {/* 版本历史折叠面板 */}
+    {(wsHistory as any[]).length > 0 && (
+      <div className="mt-3 border border-border/40 rounded-lg overflow-hidden">
+        <button
+          onClick={() => setHistoryOpen(h => !h)}
+          className="flex items-center justify-between w-full px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+        >
+          <span className="flex items-center gap-1.5">
+            <span>🕐</span>
+            历史版本（{(wsHistory as any[]).length} 条）
+          </span>
+          <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", historyOpen && "rotate-180")} />
+        </button>
+        {historyOpen && (
+          <div className="border-t border-border/30 divide-y divide-border/20 max-h-64 overflow-y-auto">
+            {(wsHistory as any[]).map((h: any, i: number) => (
+              <div key={h.id} className="px-3 py-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] text-muted-foreground">
+                    版本 {(wsHistory as any[]).length - i} · {new Date(h.createdAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  {h.stage && <span className="text-[10px] px-1 py-0.5 rounded bg-muted/40 text-muted-foreground/70">{h.stage}</span>}
+                </div>
+                <div className="text-xs text-muted-foreground/80 line-clamp-3 leading-relaxed">{h.aiSuggestion?.slice(0, 200)}...</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )}
     </>
   );
 }

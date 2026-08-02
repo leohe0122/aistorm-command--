@@ -197,6 +197,13 @@
       "when": 1785498727280,
       "tag": "0027_hesitant_changeling",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1785643542869,
+      "tag": "0028_overconfident_talon",
+      "breakpoints": true
     }
   ]
 }
