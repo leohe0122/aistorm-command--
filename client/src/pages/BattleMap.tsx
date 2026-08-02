@@ -1558,6 +1558,9 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   });
   const rsmUsers = samUsers.filter((u: any) => u.podRole === 'RSM');
 
+  // 定痛阶段推进确认对话框
+  const [showAdvanceConfirm, setShowAdvanceConfirm] = useState(false);
+
   const handleReview = async (type: "0to1" | "1toN" | "buyingGroup" | "visitTrend", oppId?: number) => {
     setReviewType(type as any);
     setReviewOppId(oppId ?? null);
@@ -1699,6 +1702,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
         { text: `M（Metrics）评分 ≥ 2/4，客户有可量化目标（当前 ${mScore}/4）`, pass: mScore >= 2, critical: true },
         { text: `I（Implicate Pain）评分 ≥ 2/4，痛点已量化（当前 ${iScore}/4）`, pass: iScore >= 2, critical: true },
         { text: `至少 2 次拜访记录（当前 ${visitCount} 次）`, pass: visitCount >= 2 },
+        { text: `客户已表达能力认可信号（关键人态度有"支持"，或拜访记录含正面表述）`, pass: contacts.some((c: any) => c.stance === '支持') },
       ]
     },
     "找人": {
@@ -1953,27 +1957,76 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
             ))}
           </div>
           {canAdvance ? (
-            <div className="flex items-center gap-2">
-              <div className="text-xs text-green-400 font-medium">✓ 所有关键条件已满足，可以推进到下一阶段</div>
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-green-400 font-medium">✓ 所有关键条件已满足，可以推进到下一阶段</div>
+            <button
+              onClick={() => {
+                const nextStage = STAGES[STAGES.indexOf(client.stage) + 1];
+                if (nextStage) {
+                  // 定痛 → 找人：若无能力认可信号，需要 AD 手动确认
+                  const lackCapabilitySignal = client.stage === '定痛' && !contacts.some((c: any) => c.stance === '支持');
+                  if (lackCapabilitySignal) {
+                    setShowAdvanceConfirm(true);
+                  } else {
+                    updateClient.mutate({ id: client.id, stage: nextStage });
+                    setShowStageGate(false);
+                    toast.success(`已推进到「${nextStage}」阶段`);
+                  }
+                }
+              }}
+              className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium transition-colors"
+            >
+              确认推进 → {STAGES[STAGES.indexOf(client.stage) + 1]}
+            </button>
+          </div>
+          ) : (
+            <div className="text-xs text-orange-400/80 bg-orange-500/5 border border-orange-500/20 rounded-lg p-2">
+              ⚠ 请先完成上方标红的关键条件，再推进到下一阶段。未完成关键条件强行推进会导致商机质量失真。
+            </div>
+          )}
+        </div>
+      )}
+      {/* 定痛推进确认对话框 */}
+      {showAdvanceConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowAdvanceConfirm(false)}>
+          <div className="bg-card border border-orange-500/40 rounded-xl shadow-2xl p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-4">
+              <span className="text-2xl flex-shrink-0">⚠️</span>
+              <div>
+                <h3 className="text-base font-semibold text-foreground mb-1">定痛不完整 — 确认强制推进？</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  当前无关键人态度标注为「支持」，客户对 AIStorm 能力的认可信号尚未确认。
+                </p>
+              </div>
+            </div>
+            <div className="bg-orange-500/8 border border-orange-500/20 rounded-lg p-3 mb-4 text-xs text-orange-300 space-y-1">
+              <div>• 定痛阶段需同时满足：痛点确认 + 能力认可</div>
+              <div>• 强行推进至「找人」可能导致 Champion 激活失败</div>
+              <div>• 建议先安排能力展示或案例分享，获得至少 1 个关键人的支持态度</div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowAdvanceConfirm(false)}
+                className="text-sm px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              >
+                取消，继续完善
+              </button>
               <button
                 onClick={() => {
                   const nextStage = STAGES[STAGES.indexOf(client.stage) + 1];
                   if (nextStage) {
                     updateClient.mutate({ id: client.id, stage: nextStage });
                     setShowStageGate(false);
-                    toast.success(`已推进到「${nextStage}」阶段`);
+                    setShowAdvanceConfirm(false);
+                    toast.warning(`已强制推进到「${nextStage}」阶段（能力认可信号未完整）`);
                   }
                 }}
-                className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium transition-colors"
+                className="text-sm px-4 py-2 rounded-lg bg-orange-500/20 text-orange-300 border border-orange-500/40 hover:bg-orange-500/30 transition-colors font-medium"
               >
-                确认推进 → {STAGES[STAGES.indexOf(client.stage) + 1]}
+                我已知晓风险，强制推进
               </button>
             </div>
-          ) : (
-            <div className="text-xs text-orange-400/80 bg-orange-500/5 border border-orange-500/20 rounded-lg p-2">
-              ⚠ 请先完成上方标红的关键条件，再推进到下一阶段。未完成关键条件强行推进会导致商机质量失真。
-            </div>
-          )}
+          </div>
         </div>
       )}
       {/* 0→1 → 1→N 阶段转换进度条 */}
