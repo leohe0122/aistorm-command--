@@ -1413,6 +1413,7 @@ h2.slide-title {
     <div id="slide-progress-track"><div id="slide-progress-fill" style="width:0%"></div></div>
   </div>
   <div id="autoplay-btn" class="playing" onclick="toggleAutoplay()">⏸ AUTO</div>
+  <div id="mute-btn" onclick="toggleMute()" style="background:none;border:1px solid var(--card-border);color:var(--blue);padding:4px 14px;border-radius:4px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace;white-space:nowrap;">🔊 旁白</div>
   <button class="nav-btn" onclick="prevSlide()">◀</button>
   <button class="nav-btn" onclick="nextSlide()">▶</button>
   <div id="keys-hint">SPACE/→ 下一页 · N 讲师备注 · A 自动播放</div>
@@ -1595,6 +1596,108 @@ document.addEventListener('touchend', e => {
   if (dx < -50) nextSlide();
   if (dx > 50) prevSlide();
 });
+
+// ─── WEB SPEECH NARRATION ──────────────────────────────────
+const narrations = [
+  // Slide 1 - Title
+  '欢迎来到 AIStorm Command 的演示。Command 是 AIStorm 专为战略大客户销售设计的 AI 原生管理系统。今天的演示大约五十五分钟，我们将从设计理念讲到两个真实销售场景的系统实操，最后是 AD 视角的管理 Review。',
+
+  // Slide 2 - Problems
+  '传统大客户管理有三个核心痛点。第一，销售凭经验、靠直觉，导致机会判断不一致，优秀的方法论无法传承和规模化。第二，AD 无法实时掌握团队动态，Review 靠 SAM 口头汇报，信息失真，发现问题时往往已经太晚。第三，输单后才开始复盘，其实早期预警信号早就在那里，只是没有系统把它们显示出来。Command 的存在，就是让这些信号变得可见、可管理、可行动。',
+
+  // Slide 3 - 0→1 vs 1→N
+  '这是 Command 最核心的设计洞察：零到一和一到 N 是两种完全不同的战争。零到一是关系问题，核心工具是 SPIN 销售法，关键动作是找到 Champion、建立信任、挖掘并量化客户痛点，成功标准是拿到经济决策人的会面。一到 N 是赢单问题，核心工具是 MEDDPICC 加 Command of Message，关键动作是控住评标标准、管理采购流程、应对竞品，成功标准是合同按时签署。很多销售失败，就是用错了阶段的工具。',
+
+  // Slide 4 - Methodologies
+  '在这两个阶段背后，Command 集成了四大国际顶级销售方法论。第一是 MEDDPICC，这是 PTC 公司发展出来的商机健康度八维评分体系，在全球顶级 B2B 企业广泛使用。第二是 SPIN 销售法，由 Neil Rackham 基于 IBM 销售研究开发，通过四类问题系统化挖掘客户需求。第三是 IBM 蓝表，用于竞争定位分析，帮助 SAM 看清自己在竞争中的真实位置。第四是 Command of Message，确保全团队对外语言一致，让客户真正听懂我们的价值。这些方法论在外企实践了三十年，Command 把它们数字化、本土化，让每一位 SAM 都能用上。',
+
+  // Slide 5 - Four Roles
+  'Command 根据真实销售组织结构设计了四类角色。AD，也就是大客户总监，是战略决策者，负责看团队整体 Pipeline 健康度，向 SAM 下发辅导建议。SAM，战略客户经理，是一线执行者，负责管理客户关系、记录接触信息、推进商机。SA，解决方案架构师，是技术支撑者，负责 POC 实施和方案设计。RSM，区域销售总监，负责区域整体资源调配和政策落地。今天的演示将重点展示 SAM 视角和 AD 视角。',
+
+  // Slide 6 - Demo Intro
+  '接下来是演示的核心部分。我们选取了两个最典型的真实销售场景。场景 A 是星展银行 DBS，代表零到一的关系突破阶段，当前处于找人阶段，预算四十五万新加坡元。场景 B 是马来西亚国家石油公司 Petronas，代表一到 N 的竞争赢单阶段，预算八十万美元已经获批。现在由 SAM Henry Sin 登录系统，我们先看他的客户视角。',
+
+  // Slide 7 - DBS Overview
+  '这是星展银行的客户总览页面。注意几个关键信号。首先看 MEDDPICC 评分，总体偏低，尤其是 E 分经济决策人只有二十五分，说明 EB 接触严重不足；P 分 Paper Process 是零，采购流程完全没有启动。最重要的是这个黄色警告：Champion James Wong 的政治意愿评分是三分之二，但非正式接触次数是零。系统 AI 给出了非常具体的建议——所有三次接触均为正式会议场合，Champion 真实性存疑，建议安排至少一次非正式接触来验证其内部推动意愿。这就是方法论驱动的 AI，不是泛泛的建议。',
+
+  // Slide 8 - DBS Contacts
+  '这是星展银行的关键人地图。系统自动标记了两个风险。第一，James Wong 被标记为 Champion 但旁边有警告标志——非正式接触零次，Champion 真实性待验证。第二，CFO Sarah Chen 被标记为 EB 空白，四十五万新加坡元的预算需要她最终审批，但接触次数是零，这是最大的风险敞口。AI 洞察非常直接：建议通过 Kevin Lim 建立与 Sarah 的连接。这个界面让 AD 在做 Review 时立刻看到问题所在，不需要 SAM 解释。',
+
+  // Slide 9 - Petronas MEDDPICC
+  '现在看 Petronas 的 MEDDPICC 仪表盘，这是一到 N 场景的典型案例。整体评分比较高，M、E、D 都是七十五分绿色，I 痛点评分是一百分。但注意最大的风险点：P 维度 Paper Process 是五十分橙色警告，Zainab 正在谈合同条款，七月底截止，Claroty 已经提交了更宽松的合同版本在施压。右侧是 Champion Farid Hassan，综合评分九分满分——这是一个强 Champion 的标准样本：五次非正式接触，包括三次饭局、两次工厂参观，已经帮助起草了内部立项报告。对比刚才星展银行的 James Wong，观众立刻就能理解为什么 Champion 质量如此重要。',
+
+  // Slide 10 - AI Capabilities
+  'Command 的 AI 能力不是一个聊天框，而是三个深度嵌入销售动作的智能功能。第一，智能会议准备：在下次拜访 Zainab 之前，系统自动生成关键谈判要点、对方可能的反驳预案、以及建议让步空间。不需要 SAM 从零准备，会前十分钟打开即用。第二，Champion 验证提醒：当非正式接触等于零但 Champion 评分大于一时，系统自动触发验证提醒，防止 False Champion 导致预测错误，这是目前行业最常见的输单原因之一。第三，竞品动态追踪：情报信号自动关联 MEDDPICC 维度，Claroty 降价事件直接反映在 Competition 维度评分上，不是孤立的信息噪音。AI 的价值，是让判断有据可依。',
+
+  // Slide 11 - Transition
+  '现在切换视角，看 AD 如何用 Command 做 Review。同样是这三个客户，AD 看到的不是客户详情，而是团队风险汇总和辅导指令。这个视角切换本身就说明了 Command 的设计逻辑——同一套数据，不同角色看到不同维度的问题。',
+
+  // Slide 12 - AD Coaching Panel
+  '这是 AD 工作台。两条辅导建议都是系统自动识别风险后，由 AD 确认并下发给 SAM 的。第一条针对星展银行，高优先级，要求本月内完成 James Wong 的非正式接触验证，截止八月二十日。第二条针对 Petronas，紧急级别，要求本周内推动采购合同条款最终确认，截止八月十日。这不是邮件、不是微信消息，而是系统内有追踪、有截止日期、有完成状态的辅导工单。SAM 完成后在系统里更新，AD 实时看到执行状态。这就是 Command 把管理动作数字化的方式。下方的 Pipeline 汇总显示：三个 P0 和 P1 客户，两个风险预警，本季度预测金额一百二十五万美元。',
+
+  // Slide 13 - AD Review Philosophy
+  'AD 对零到一和一到 N 两个阶段的 Review 焦点完全不同。在零到一阶段，AD 要问的是：你真的找到 Champion 了吗，还是只是一个愿意见你的人？经济决策人知道我们的存在吗？痛点是否已经量化？Champion 有没有在 EB 面前力推过我们？在一到 N 阶段，AD 要问的是：Paper Process 启动了吗？时间线是否现实？竞品在做什么动作，我们如何具体回应？Champion 能不能帮我们在 EB 层面加速采购流程？Command 把这两套 Review 框架都内置在系统的自动检测规则里。AD 的 Review 从"你进展怎样了"，变成了"这七个信号说明什么"。',
+
+  // Slide 14 - Value Summary
+  'Command 给团队带来三个核心改变。第一，销售不再靠感觉判断 Champion 真实性——三维评分加上非正式接触次数，系统自动标记风险，数据说话。第二，AD Review 不再靠 SAM 口头汇报——实时数据面板加辅导工单，AD 主动发现问题，下发可追踪的指令。第三，赢了和输了都知道原因——每个商机的 MEDDPICC 历史完整记录，可以复盘，可以复制，优秀的销售方法可以被传承。让优秀可以被定义、被测量、被传承——这是 Command 最核心的价值主张。',
+
+  // Slide 15 - Closing
+  '感谢大家今天参与这场演示。AIStorm Command 的演示系统已经就绪，三个客户的数据已经完整内置。如果需要体验真实系统，账号请联系 Leo。方法论的力量，乘以 AI 的速度——这就是 AIStorm Command。'
+];
+
+let speechEnabled = true;
+let currentUtterance = null;
+const muteBtn = document.getElementById('mute-btn');
+
+function toggleMute() {
+  speechEnabled = !speechEnabled;
+  if (!speechEnabled) {
+    window.speechSynthesis.cancel();
+    muteBtn.textContent = '🔇 旁白';
+    muteBtn.style.color = 'var(--text-dim)';
+    muteBtn.style.borderColor = 'var(--card-border)';
+  } else {
+    muteBtn.textContent = '🔊 旁白';
+    muteBtn.style.color = 'var(--blue)';
+    muteBtn.style.borderColor = 'rgba(14,165,233,0.4)';
+    speakSlide(current);
+  }
+}
+
+function speakSlide(idx) {
+  if (!speechEnabled) return;
+  window.speechSynthesis.cancel();
+  const text = narrations[idx];
+  if (!text) return;
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'zh-CN';
+  utter.rate = 1.0;
+  utter.pitch = 1.0;
+  utter.volume = 1.0;
+
+  // Try to pick a Chinese voice if available
+  const voices = window.speechSynthesis.getVoices();
+  const zhVoice = voices.find(v => v.lang.startsWith('zh') && v.localService) ||
+                  voices.find(v => v.lang.startsWith('zh'));
+  if (zhVoice) utter.voice = zhVoice;
+
+  currentUtterance = utter;
+  window.speechSynthesis.speak(utter);
+}
+
+// Patch showSlide to also trigger narration
+const _origShowSlide = showSlide;
+showSlide = function(idx) {
+  _origShowSlide(idx);
+  // Small delay so slide animation starts first
+  setTimeout(() => speakSlide(idx), 400);
+};
+
+// Voices may load async
+window.speechSynthesis.onvoiceschanged = () => {
+  if (current === 0 && speechEnabled) speakSlide(0);
+};
 
 // ─── INIT ──────────────────────────────────────────────────
 showSlide(0);
