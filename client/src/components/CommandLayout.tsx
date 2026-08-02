@@ -104,7 +104,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar */}
-      <aside className="w-64 flex-shrink-0 flex flex-col border-r border-border bg-sidebar overflow-y-auto">
+      <aside className="hidden md:flex w-64 flex-shrink-0 flex-col border-r border-border bg-sidebar overflow-y-auto">
 
         {/* Brand Header */}
         <div className="px-4 pt-4 pb-3 border-b border-border relative">
@@ -265,9 +265,44 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto">
-        {children}
+      <main className="flex-1 overflow-y-auto flex flex-col">
+        {/* Global top bar — desktop only */}
+        <div className="hidden md:flex items-center justify-end px-6 py-2 border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-40">
+          <Link href="/quick-review">
+            <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary border border-primary/25 hover:bg-primary/20 hover:border-primary/40 transition-all">
+              <Zap className="w-3.5 h-3.5" />
+              ⚡ 快速 Review
+            </button>
+          </Link>
+        </div>
+        {/* Page content */}
+        <div className="flex-1 pb-16 md:pb-0">
+          {children}
+        </div>
       </main>
+      {/* Mobile bottom navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-sidebar border-t border-border flex items-center justify-around px-2 py-1.5">
+        {[
+          { path: "/battle-map", icon: Map, label: "战场" },
+          { path: "/quick-review", icon: TrendingUp, label: "Review" },
+          { path: "/meeting-minutes", icon: MessageSquare, label: "拜访" },
+          { path: "/action-command", icon: Zap, label: "指令台" },
+          { path: "/dashboard", icon: LayoutDashboard, label: "指挥台" },
+        ].map(({ path, icon: Icon, label }) => {
+          const isActive = location === path || (location === "/" && path === "/dashboard");
+          return (
+            <Link key={path} href={path}>
+              <div className={cn(
+                "flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors",
+                isActive ? "text-[#00A8D6]" : "text-muted-foreground"
+              )}>
+                <Icon className="w-5 h-5" />
+                <span className="text-[9px] font-medium">{label}</span>
+              </div>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }

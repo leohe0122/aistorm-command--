@@ -1648,7 +1648,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
     <>
     <div className={cn("bg-card border rounded-xl overflow-hidden transition-all", expanded ? "border-primary/30" : "border-border hover:border-muted-foreground/50")}>
       {/* Card Header */}
-      <div className="p-4">
+      <div className={cn("p-4", !expanded && "md:p-4 py-3 px-3")} onClick={!expanded ? () => setExpanded(true) : undefined} style={!expanded ? { cursor: 'pointer' } : undefined}>
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
