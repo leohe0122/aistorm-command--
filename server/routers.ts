@@ -3122,7 +3122,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
       const { id, ...data } = input;
       return updateContact(id, data as any);
     }),
-    add: publicProcedure.input(z.object({
+    add: protectedProcedure.input(z.object({
       clientId: z.number(),
       name: z.string(),
       title: z.string().optional(),
@@ -3135,7 +3135,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
       reportingTo: z.string().optional(),
       buyingRole: z.enum(['经济决策人', '技术决策人', '用户影响者', '阻碍者', 'Champion', '内部线人', '未知']).optional(),
     })).mutation(({ input }) => insertContact(input as any)),
-    delete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
       deleteContact(input.id)
     ),
     deleteBatch: protectedProcedure.input(z.object({ ids: z.array(z.number()) })).mutation(async ({ input }) => {
@@ -4302,6 +4302,83 @@ ${context}
     set: adminProcedure.input(z.object({ key: z.string(), value: z.string() })).mutation(({ input }) =>
       setSystemConfig(input.key, input.value)
     ),
+
+    // 检测飞书应用权限
+    checkFeishuPermissions: adminProcedure.mutation(async () => {
+      const { ENV } = await import('./_core/env');
+      const checks: Array<{ name: string; pass: boolean; detail: string }> = [];
+
+      // 1. 检查 App ID/Secret 是否配置
+      const hasCredentials = !!(ENV.feishuAppId && ENV.feishuAppSecret);
+      checks.push({
+        name: 'App ID / Secret 已配置',
+        pass: hasCredentials,
+        detail: hasCredentials ? `App ID: ${ENV.feishuAppId.slice(0, 12)}...` : '未配置 FEISHU_APP_ID 或 FEISHU_APP_SECRET',
+      });
+      if (!hasCredentials) return { checks, allPass: false };
+
+      // 2. 获取 Tenant Access Token
+      let token = '';
+      try {
+        const tokenRes = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: ENV.feishuAppId, app_secret: ENV.feishuAppSecret }),
+        });
+        const tokenData = await tokenRes.json() as any;
+        token = tokenData.tenant_access_token ?? '';
+        checks.push({
+          name: '获取 Tenant Access Token',
+          pass: !!token,
+          detail: token ? '成功' : `失败：${tokenData.msg || '未知错误'} (code: ${tokenData.code})`,
+        });
+      } catch (e: any) {
+        checks.push({ name: '获取 Tenant Access Token', pass: false, detail: `网络错误：${e.message}` });
+        return { checks, allPass: false };
+      }
+      if (!token) return { checks, allPass: false };
+
+      // 3. 检测发送消息权限（尝试查询 Bot 信息）
+      try {
+        const botRes = await fetch('https://open.feishu.cn/open-apis/bot/v3/info', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const botData = await botRes.json() as any;
+        const botOk = botData.code === 0;
+        checks.push({
+          name: '机器人信息可读（im:message 权限）',
+          pass: botOk,
+          detail: botOk ? `机器人名称：${botData.bot?.app_name || '未知'}` : `失败：${botData.msg} (code: ${botData.code})`,
+        });
+      } catch (e: any) {
+        checks.push({ name: '机器人信息可读', pass: false, detail: `网络错误：${e.message}` });
+      }
+
+      // 4. 检测通讯录权限（查询用户 ID 所需）
+      try {
+        const contactRes = await fetch(
+          'https://open.feishu.cn/open-apis/contact/v3/users/batch_get_id?user_id_type=open_id',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ emails: ['test@example.com'] }),
+          }
+        );
+        const contactData = await contactRes.json() as any;
+        // code 0 = success (user not found is ok), code 99991663 = no permission
+        const contactOk = contactData.code !== 99991663 && contactData.code !== 99991401;
+        checks.push({
+          name: '通讯录查询权限（contact:user.employee_id:readonly）',
+          pass: contactOk,
+          detail: contactOk ? '权限已开通' : `权限不足：${contactData.msg} (code: ${contactData.code})，请在飞书开放平台开通该权限`,
+        });
+      } catch (e: any) {
+        checks.push({ name: '通讯录查询权限', pass: false, detail: `网络错误：${e.message}` });
+      }
+
+      const allPass = checks.every(c => c.pass);
+      return { checks, allPass };
+    }),
   }),
 
   // ── LLM Configuration ─────────────────────────────────────────────────────
