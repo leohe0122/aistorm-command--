@@ -416,44 +416,44 @@
 ## Round 56 — AD Review SAM 教练视角 + SAM 筛选 + 全局 Review 图表
 
 ### Mock 数据生成
-- [ ] 为现有客户分配 SAM（使用系统中已有的用户账号）
-- [ ] 确保每个 SAM 至少负责 2-3 个客户，数据分布合理
+- [x] 为现有客户分配 SAM（使用系统中已有的用户账号）
+- [x] 确保每个 SAM 至少负责 2-3 个客户，数据分布合理
 - [x] 创建 TDH/Vivian Lu/Henry 三个 SAM 用户
 - [x] 分配客户归属（TDH→5个国内客户，Vivian→香港电讯，Henry→星展银行/马来西亚石油/泰国中央百货）
 
 ### 战场地图 SAM 筛选
-- [ ] 战场地图顶部新增 SAM 筛选下拉（"全部 SAM" + 各 SAM 姓名）
-- [ ] 筛选后只显示该 SAM 负责的客户卡片
-- [ ] 筛选状态持久化（切换 Tab 不丢失）
+- [x] 战场地图顶部新增 SAM 筛选下拉（"全部 SAM" + 各 SAM 姓名）
+- [x] 筛选后只显示该 SAM 负责的客户卡片
+- [x] 筛选状态持久化（切换 Tab 不丢失）
 - [x] 战场地图顶部新增 SAM 筛选 pill 按钮（全部/TDH/Vivian Lu/Henry/未分配）
 - [x] 筛选后只显示对应 SAM 的客户卡片
 
 ### AD Review SAM 教练视角（第三/四入口）
-- [ ] 后端：insights.samCoachReview 接口（跨商机聚合分析单个 SAM 的能力模式）
-- [ ] 后端分析维度：MEDDPICC 各维度均分、阶段推进速度、Champion 找人质量、赢单率 vs 团队基准
-- [ ] 前端：AD 指挥台新增"SAM 教练 Review"入口（按 SAM 选择 + 生成报告）
-- [ ] 前端：教练 Review 结果包含 SAM 能力雷达图 + AI 文字诊断 + 辅导建议
+- [x] 后端：insights.samCoachReview 接口（跨商机聚合分析单个 SAM 的能力模式）
+- [x] 后端分析维度：MEDDPICC 各维度均分、阶段推进速度、Champion 找人质量、赢单率 vs 团队基准
+- [x] 前端：AD 指挥台新增"SAM 教练 Review"入口（按 SAM 选择 + 生成报告）
+- [x] 前端：教练 Review 结果包含 SAM 能力雷达图 + AI 文字诊断 + 辅导建议
 - [x] 后端：insights.samCoachReview 接口（MEDDPICC均分/赢单率/Champion质量/拜访频率聚合分析）
 - [x] 前端：AD 指挥台新增"👨‍🏫 SAM 教练 Review"按钮 + SAM 选择器下拉
 - [x] 前端：教练 Review Dialog 含能力摘要卡片 + MEDDPICC 雷达图 + 维度进度条 + AI 诊断报告
 
 ### AD 全局 Review 图表可视化
-- [ ] 漏斗健康度：各阶段客户数量横向条形图
-- [ ] 资源优先级：P0/P1/P2 客户 MEDDPICC 均分气泡图或散点图
-- [ ] MEDDPICC 团队均分：8维度雷达图（显示团队系统性短板）
-- [ ] 全局 Review Dialog 中图表与 AI 文字分析并排展示
+- [x] 漏斗健康度：各阶段客户数量横向条形图
+- [x] 资源优先级：P0/P1/P2 客户 MEDDPICC 均分气泡图或散点图
+- [x] MEDDPICC 团队均分：8维度雷达图（显示团队系统性短板）
+- [x] 全局 Review Dialog 中图表与 AI 文字分析并排展示
 - [x] 漏斗健康度：各阶段横向条形图（彩色分阶段）
 - [x] 资源优先级：P0/P1/P2 MEDDPICC 均分对比柱状图
 - [x] MEDDPICC 团队均分：8维度雷达图
 - [x] 全局 Review Dialog 图表 + AI 分析并排展示（宽屏 max-w-5xl）
 
 ### SAM 用户管理（增删改停用）
-- [ ] 后端：clients.createSamUser 接口（创建新 SAM/RSM 用户）
-- [ ] 后端：clients.updateSamUser 接口（改名/改角色/停用）
-- [ ] 后端：clients.deleteSamUser 接口（删除用户，自动清空其名下客户归属）
-- [ ] 前端：系统设置中新增"团队成员管理"页面（列表 + 增删改停用）
-- [ ] 前端：删除/停用 SAM 时，弹出"客户重新分配"对话框，批量将其名下客户转移给其他 SAM
-- [ ] 前端：SAM 姓名支持在管理页面直接修改（支持 TDH → 真实姓名的更名场景）
+- [x] 后端：clients.createSamUser 接口（创建新 SAM/RSM 用户）
+- [x] 后端：clients.updateSamUser 接口（改名/改角色/停用）
+- [x] 后端：clients.deleteSamUser 接口（删除用户，自动清空其名下客户归属）
+- [x] 前端：系统设置中新增"团队成员管理"页面（列表 + 增删改停用）
+- [x] 前端：删除/停用 SAM 时，弹出"客户重新分配"对话框，批量将其名下客户转移给其他 SAM
+- [x] 前端：SAM 姓名支持在管理页面直接修改（支持 TDH → 真实姓名的更名场景）
 - [x] 后端：admin.createMember / updateMember / deleteMember / getMemberClients 接口
 - [x] 前端：侧边栏新增"团队成员管理"页面（/team 路由）
 - [x] 前端：支持增删改停用，删除时弹出客户归属重分配对话框
@@ -462,34 +462,34 @@
 ## Round 57 — RSM 字段 + 辅导建议下发 + 组合筛选
 
 ### RSM 字段展示与分配
-- [ ] 数据库：clients 表新增 assignedRsmId/assignedRsmName 字段
-- [ ] 后端：clients.assignRsm 接口（分配/取消分配 RSM）
-- [ ] 后端：clients.list 返回 assignedRsmName 字段
-- [ ] 前端：客户卡片展示负责 RSM，支持下拉分配（仅显示 RSM 角色用户）
-- [ ] 前端：战场地图支持按 RSM 筛选（与 SAM 筛选并列）
+- [x] 数据库：clients 表新增 assignedRsmId/assignedRsmName 字段
+- [x] 后端：clients.assignRsm 接口（分配/取消分配 RSM）
+- [x] 后端：clients.list 返回 assignedRsmName 字段
+- [x] 前端：客户卡片展示负责 RSM，支持下拉分配（仅显示 RSM 角色用户）
+- [x] 前端：战场地图支持按 RSM 筛选（与 SAM 筛选并列）
 - [x] 数据库：clients 表新增 assignedRsmId/assignedRsmName 字段
 - [x] 后端：clients.assignRsm 接口（分配/取消分配 RSM）
 - [x] 前端：客户卡片展示负责 RSM，支持下拉分配（仅显示 RSM 角色用户）
 - [x] 前端：RSM 分配与 SAM 分配并列显示在客户卡片
 
 ### AD 教练辅导建议下发
-- [ ] 数据库：coaching_actions 表（coachingId/clientId/samId/title/description/dueDate/isCompleted/createdBy/createdAt）
-- [ ] 后端：insights.createCoachingActions 接口（从教练 Review 中提取并保存 Action Items）
-- [ ] 后端：insights.listCoachingActions 接口（SAM 查询自己的辅导 Action Items）
-- [ ] 后端：insights.completeCoachingAction 接口（SAM 标记完成）
-- [ ] 前端：AD 教练 Review Dialog 底部新增"📋 下发辅导建议"按钮
-- [ ] 前端：下发后弹出 Action Items 编辑确认框（可调整标题/截止日期）
-- [ ] 前端：SAM 视图（战场地图/POD中枢）可见来自 AD 的辅导 Action Items
+- [x] 数据库：coaching_actions 表（coachingId/clientId/samId/title/description/dueDate/isCompleted/createdBy/createdAt）
+- [x] 后端：insights.createCoachingActions 接口（从教练 Review 中提取并保存 Action Items）
+- [x] 后端：insights.listCoachingActions 接口（SAM 查询自己的辅导 Action Items）
+- [x] 后端：insights.completeCoachingAction 接口（SAM 标记完成）
+- [x] 前端：AD 教练 Review Dialog 底部新增"📋 下发辅导建议"按钮
+- [x] 前端：下发后弹出 Action Items 编辑确认框（可调整标题/截止日期）
+- [x] 前端：SAM 视图（战场地图/POD中枢）可见来自 AD 的辅导 Action Items
 - [x] 数据库：coaching_actions 表创建完成
 - [x] 后端：insights.createCoachingActions / listCoachingActions / listAllCoachingActions / completeCoachingAction / deleteCoachingAction 接口
 - [x] 前端：AD 教练 Review Dialog 底部"📋 下发辅导建议"按钮
 - [x] 前端：下发确认 Dialog（可编辑标题/描述/截止日期，支持增删）
 
 ### 战场地图组合筛选
-- [ ] 阶段筛选：0→1（建图/进门/定痛/找人）vs 1→N（进入商机）
-- [ ] 健康度筛选：健康（MEDDPICC均分≥60）/ 需关注（30-60）/ 高风险（<30）
-- [ ] 组合筛选：SAM × 阶段 × 健康度三维组合，实时显示命中数量
-- [ ] 筛选状态显示：当前激活的筛选条件 badge 展示，一键清除
+- [x] 阶段筛选：0→1（建图/进门/定痛/找人）vs 1→N（进入商机）
+- [x] 健康度筛选：健康（MEDDPICC均分≥60）/ 需关注（30-60）/ 高风险（<30）
+- [x] 组合筛选：SAM × 阶段 × 健康度三维组合，实时显示命中数量
+- [x] 筛选状态显示：当前激活的筛选条件 badge 展示，一键清除
 - [x] 阶段筛选：0→1（建图/进门/定痛/找人）vs 1→N（进入商机）
 - [x] 健康度筛选：健康(≥60) / 需关注(30-59) / 高风险(<30)
 - [x] 组合筛选：SAM × 阶段 × 健康度三维组合，实时显示命中数量
@@ -498,27 +498,27 @@
 ## Round 58 — SAM 待办辅导建议 + 灵活角色分配 + AD 辅导跟进面板
 
 ### 角色分配逻辑优化（同一成员可在不同客户上担任不同角色）
-- [ ] 数据库：clients 表新增 assignedSamRole 字段（该客户上的 SAM 角色：SAM/RSM）
-- [ ] 后端：clients.assignSam 接口支持传入 role 参数（SAM 或 RSM）
-- [ ] 前端：客户分配下拉支持为每个成员选择"以 SAM 身份"或"以 RSM 身份"分配
-- [ ] 前端：客户卡片展示实际分配角色（而非固定显示 podRole）
+- [x] 数据库：clients 表新增 assignedSamRole 字段（该客户上的 SAM 角色：SAM/RSM）
+- [x] 后端：clients.assignSam 接口支持传入 role 参数（SAM 或 RSM）
+- [x] 前端：客户分配下拉支持为每个成员选择"以 SAM 身份"或"以 RSM 身份"分配
+- [x] 前端：客户卡片展示实际分配角色（而非固定显示 podRole）
 - [x] 前端：RSM 分配下拉改为显示所有活跃用户（含 SAM/RSM/AD 角色标签），支持 Vivian/Henry 在国内客户上担任 RSM
 
 ### SAM 工作台待办辅导建议模块
-- [ ] 前端：SAM 工作台（POD 中枢或专属页面）新增"📋 待办辅导建议"卡片
-- [ ] 前端：展示 AD 下发的所有 Action Items（标题/描述/截止日期/下发时间/下发人）
-- [ ] 前端：SAM 可标记每条 Action Item 为已完成（带完成时间）
-- [ ] 前端：已完成和未完成分区展示，未完成优先显示
+- [x] 前端：SAM 工作台（POD 中枢或专属页面）新增"📋 待办辅导建议"卡片
+- [x] 前端：展示 AD 下发的所有 Action Items（标题/描述/截止日期/下发时间/下发人）
+- [x] 前端：SAM 可标记每条 Action Item 为已完成（带完成时间）
+- [x] 前端：已完成和未完成分区展示，未完成优先显示
 - [x] 前端：POD 中枢底部新增"📋 待办辅导建议"卡片
 - [x] 前端：展示 AD 下发的 Action Items（标题/描述/截止日期/下发人/下发时间）
 - [x] 前端：SAM 可点击圆圈标记完成（带完成时间），或点击"查看详情"弹窗
 - [x] 前端：待完成/已完成分区展示，超期高亮红色
 
 ### AD 教练 Review 辅导跟进面板
-- [ ] 前端：AD 指挥台新增"辅导跟进"Tab 或独立面板
-- [ ] 前端：按 SAM 分组展示所有下发的 Action Items
-- [ ] 前端：每条 Action Item 显示状态（待完成/已完成）、完成时间、是否超期
-- [ ] 前端：整体进度统计（各 SAM 完成率 + 超期数量）
+- [x] 前端：AD 指挥台新增"辅导跟进"Tab 或独立面板
+- [x] 前端：按 SAM 分组展示所有下发的 Action Items
+- [x] 前端：每条 Action Item 显示状态（待完成/已完成）、完成时间、是否超期
+- [x] 前端：整体进度统计（各 SAM 完成率 + 超期数量）
 - [x] 前端：AD 指挥台底部新增"辅导跟进面板"
 - [x] 前端：按 SAM 分组展示所有 Action Items，含进度条（完成率）
 - [x] 前端：每条 Action Item 显示状态/完成时间/超期警告
@@ -551,14 +551,14 @@
 - [x] 数据模型：新增 client_metrics 表（效能基线）
 - [x] 前端：拜访录入表单新增接触类型选择（5项快速录入最小集）
 - [x] 前端：客户详情页新增效能基线录入区
-- [ ] 前端：Champion三维评分加入非正式接触校验逻辑
+  - [x] 前端：Champion三维评分加入非正式接触校验逻辑
 
 ## P1 阶段（Round 61）
 ### 飞书机器人接入
 - [x] 后端：新增 /api/feishu/webhook 接收飞书消息机器人事件
 - [x] 后端：AI 解析自然语言消息，提取客户名/接触类型/关键信息
 - [x] 后端：推送飞书确认卡片（交互式卡片，SAM 点击确认后写入数据库）
-- [ ] 前端：系统设置中新增飞书机器人配置入口（App ID/Secret）
+  - [x] 前端：系统设置中新增飞书机器人配置入口（App ID/Secret）
 ### 关系深度矩阵
 - [x] 前端：关键人卡片展示非正式接触次数/客户主动发起次数/渠道标签
 - [x] 前端：客户主动发起信号用特殊颜色高亮（⭐ 标识）

@@ -165,6 +165,10 @@ function FeishuBriefingTab() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [appId, setAppId] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+  const [savingApp, setSavingApp] = useState(false);
 
   const { data: configs = [], isLoading, refetch } = trpc.systemConfig.getAll.useQuery();
   const setConfig = trpc.systemConfig.set.useMutation({ onSuccess: () => refetch() });
@@ -175,10 +179,15 @@ function FeishuBriefingTab() {
       const en = (configs as any[]).find(c => c.configKey === "feishu_daily_briefing_enabled");
       if (wh?.configValue) setWebhook(wh.configValue);
       if (en) setEnabled(en.configValue !== "false");
+      const aid = (configs as any[]).find(c => c.configKey === "feishu_app_id");
+      const asec = (configs as any[]).find(c => c.configKey === "feishu_app_secret");
+      if (aid?.configValue) setAppId(aid.configValue);
+      if (asec?.configValue) setAppSecret(asec.configValue);
     }
   }, [configs]);
 
   const handleSave = async () => {
+    if (!appId.trim()) { /* no-op guard */ }
     if (!webhook.trim()) { toast.error("请填写飞书 Webhook 地址"); return; }
     if (!webhook.startsWith("https://open.feishu.cn/open-apis/bot/v2/hook/")) {
       toast.error("Webhook 格式不正确，应以 https://open.feishu.cn/open-apis/bot/v2/hook/ 开头"); return;
@@ -206,6 +215,16 @@ function FeishuBriefingTab() {
     } catch (e: any) {
       setTestResult({ ok: false, message: `网络错误：${e.message}` });
     } finally { setTesting(false); }
+  };
+
+  const handleSaveApp = async () => {
+    if (!appId.trim() || !appSecret.trim()) { toast.error("请填写 App ID 和 App Secret"); return; }
+    setSavingApp(true);
+    try {
+      await setConfig.mutateAsync({ key: "feishu_app_id", value: appId.trim() });
+      await setConfig.mutateAsync({ key: "feishu_app_secret", value: appSecret.trim() });
+      toast.success("飞书应用凭证已保存");
+    } finally { setSavingApp(false); }
   };
 
   return (
@@ -288,8 +307,77 @@ function FeishuBriefingTab() {
               <li>点击右上角「设置」图标</li>
               <li>选择「群机器人」→「添加机器人」</li>
               <li>选择「自定义机器人」</li>
-              <li>复制生成的 Webhook 地址</li>
+            <li>复制生成的 Webhook 地址</li>
             </ol>
+          </div>
+        </div>
+      </div>
+
+      {/* Feishu App ID/Secret Section */}
+      <div className="border-t border-border pt-6">
+        <div className="mb-4">
+          <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-purple-400" />
+            飞书应用凭证（App ID / Secret）
+          </h4>
+          <p className="text-xs text-muted-foreground mt-1">
+            用于交互式卡片回调、消息确认按钮等高级功能。与群机器人 Webhook 不同，需在飞书开放平台创建企业自建应用获取。
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="p-4 rounded-lg border border-border bg-card/30 space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">App ID</label>
+              <Input
+                placeholder="cli_xxxxxxxxxxxxxxxxxx"
+                value={appId}
+                onChange={e => setAppId(e.target.value)}
+                className="h-9 text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">App Secret</label>
+              <div className="relative">
+                <Input
+                  type={showSecret ? "text" : "password"}
+                  placeholder="App Secret（保密）"
+                  value={appSecret}
+                  onChange={e => setAppSecret(e.target.value)}
+                  className="h-9 text-sm font-mono pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret(s => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <Button size="sm" onClick={handleSaveApp} disabled={savingApp}>
+              {savingApp ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
+              保存凭证
+            </Button>
+            {appId && appSecret && (
+              <div className="flex items-center gap-1.5 text-xs text-green-400">
+                <CheckCircle2 className="w-3.5 h-3.5" /> 凭证已配置
+              </div>
+            )}
+          </div>
+          <div className="p-4 rounded-lg border border-border bg-card/30 space-y-3">
+            <div className="text-sm font-medium text-foreground flex items-center gap-2">
+              <Info className="w-4 h-4 text-blue-400" /> 如何获取 App ID/Secret
+            </div>
+            <ol className="space-y-1.5 text-xs text-muted-foreground list-decimal list-inside">
+              <li>访问 <span className="text-primary font-mono">open.feishu.cn</span> 开放平台</li>
+              <li>进入「开发者后台」→「创建企业自建应用」</li>
+              <li>在「凭证与基础信息」页面获取 App ID 和 App Secret</li>
+              <li>在「事件订阅」中配置 Webhook 回调地址</li>
+              <li>在「权限管理」中开通消息读写权限</li>
+            </ol>
+            <div className="text-[10px] text-muted-foreground bg-muted/20 rounded p-2">
+              💡 当前已配置的飞书机器人（App ID: <span className="font-mono text-foreground">{appId ? appId.slice(0, 8) + '...' : '未配置'}</span>）
+            </div>
           </div>
         </div>
       </div>

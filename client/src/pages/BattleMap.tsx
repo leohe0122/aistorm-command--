@@ -1084,9 +1084,77 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
                   <input type="checkbox" defaultChecked={(contact as any).hasFeishu || false}
                     onChange={(e) => setEditData({ ...editData, hasWeChat: e.target.checked })}
                     className="w-3 h-3" />
-                  💚 微信渠道
+              💚 微信渠道
                 </label>
               </div>
+              {/* Champion 三维评分（仅当 buyingRole 为 Champion 时显示） */}
+              {((editData.buyingRole ?? (contact as any).buyingRole) === "Champion" || contact.relationship === "Champion") && (
+                <div className="border border-green-500/30 rounded-lg p-2.5 bg-green-500/5 space-y-2">
+                  <div className="text-[10px] font-semibold text-green-400 mb-1.5">🏆 Champion 三维评分（1-3分）</div>
+                  {/* Political Will 校验 */}
+                  {(() => {
+                    const pw = editData.championPoliticalWill ?? (contact as any).championPoliticalWill ?? 0;
+                    const informal = editData.informalContactCount ?? (contact as any).informalContactCount ?? 0;
+                    const showWarning = pw >= 2 && informal === 0;
+                    return showWarning ? (
+                      <div className="flex items-start gap-1.5 p-2 rounded bg-yellow-500/10 border border-yellow-500/30 text-[10px] text-yellow-400">
+                        <span className="mt-0.5">⚠️</span>
+                        <span>Political Will ≥2 但非正式接触次数为 0，Champion 意愿评分可能虚高——建议先完成至少 1 次非正式接触（饭局/微信私聊）再评分。</span>
+                      </div>
+                    ) : null;
+                  })()}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-[10px] text-muted-foreground mb-0.5 block">触达 EB 能力</label>
+                      <select className="w-full h-6 text-xs bg-muted/30 border border-border rounded px-1"
+                        defaultValue={(contact as any).championAccessToPower || 0}
+                        onChange={e => setEditData({ ...editData, championAccessToPower: parseInt(e.target.value) })}>
+                        <option value={0}>未评</option>
+                        <option value={1}>1 — 弱</option>
+                        <option value={2}>2 — 中</option>
+                        <option value={3}>3 — 强</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground mb-0.5 block">Political Will</label>
+                      <select className="w-full h-6 text-xs bg-muted/30 border border-border rounded px-1"
+                        defaultValue={(contact as any).championPoliticalWill || 0}
+                        onChange={e => setEditData({ ...editData, championPoliticalWill: parseInt(e.target.value) })}>
+                        <option value={0}>未评</option>
+                        <option value={1}>1 — 被动</option>
+                        <option value={2}>2 — 支持</option>
+                        <option value={3}>3 — 主动推</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-muted-foreground mb-0.5 block">可信度</label>
+                      <select className="w-full h-6 text-xs bg-muted/30 border border-border rounded px-1"
+                        defaultValue={(contact as any).championCredibility || 0}
+                        onChange={e => setEditData({ ...editData, championCredibility: parseInt(e.target.value) })}>
+                        <option value={0}>未评</option>
+                        <option value={1}>1 — 一般</option>
+                        <option value={2}>2 — 受信任</option>
+                        <option value={3}>3 — 高影响力</option>
+                      </select>
+                    </div>
+                  </div>
+                  {/* Show total score */}
+                  {(() => {
+                    const a = editData.championAccessToPower ?? (contact as any).championAccessToPower ?? 0;
+                    const p = editData.championPoliticalWill ?? (contact as any).championPoliticalWill ?? 0;
+                    const c = editData.championCredibility ?? (contact as any).championCredibility ?? 0;
+                    const total = a + p + c;
+                    if (total === 0) return null;
+                    const color = total >= 7 ? "text-green-400" : total >= 5 ? "text-yellow-400" : "text-red-400";
+                    const label = total >= 7 ? "强Champion" : total >= 5 ? "中等Champion" : "弱Champion";
+                    return (
+                      <div className={`text-[10px] font-medium ${color}`}>
+                        综合评分：{total}/9 — {label}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
               <div className="flex gap-2">
                 <Button size="sm" className="h-6 text-xs px-2 gap-1" onClick={() => updateContact.mutate({ id: contact.id, ...editData })}
                   disabled={updateContact.isPending}>
