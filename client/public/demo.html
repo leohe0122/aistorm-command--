@@ -1210,27 +1210,30 @@ h2.slide-title {
 <!-- SLIDE 10: AI CAPABILITIES                   -->
 <!-- ═══════════════════════════════════════════ -->
 <div class="slide" id="s10" data-duration="60"
-  data-notes="很多人看到AI就想到聊天机器人——输入一句话，AI给一个建议。Command的AI不是这样的。它的三个核心AI能力都是嵌入在具体销售动作里的：1.会前准备是主动触发的，不需要SAM去问；2.Champion验证是规则驱动的自动检测；3.情报关联是把孤立信息和MEDDPICC维度自动绑定。这是'AI原生'和'AI附加'的区别。">
+  data-notes="很多人看到AI就想到聊天机器人——输入一句话，AI给一个建议。Command的AI不是这样的。它的三个核心AI能力都是嵌入在具体销售动作里的：1.会前准备是主动触发的，不需要SAM去问；2.Champion验证是规则驱动的自动检测；3.情报关联是把孤立信息和MEDDPICC维度自动绑定。重点要讲每个能力对应的业务结果——这是EMT最关心的。">
   <h2 class="slide-title anim anim-d1">Command 的 AI 不只是聊天框</h2>
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;width:100%;max-width:960px;" class="anim anim-d2">
     <div class="ai-cap-card">
       <div class="ai-cap-icon">📋</div>
       <div class="ai-cap-title">智能会议准备</div>
-      <div class="ai-cap-desc">下次拜访Zainab前，AI自动生成：<br><br>• 关键谈判要点清单<br>• 对方可能的反驳预案<br>• 建议让步空间与底线<br><br>不需要SAM从零开始准备，会前10分钟打开即用。</div>
+      <div class="ai-cap-desc">拜访前AI自动生成：谈判要点、对方反驳预案、建议让步空间。<br><br>会前10分钟打开即用，不需要SAM从零准备。<br><br>
+      <div style="margin-top:10px;padding:8px 12px;background:rgba(16,185,129,0.08);border-radius:6px;font-size:12px;color:var(--green);">业务结果：SAM会前准备时间 <strong>↓ 80%</strong>，拜访质量更高</div></div>
     </div>
     <div class="ai-cap-card">
       <div class="ai-cap-icon">🚨</div>
       <div class="ai-cap-title">Champion 验证提醒</div>
-      <div class="ai-cap-desc">系统规则自动检测：<br><br>当 <strong style="color:var(--amber);">非正式接触 = 0</strong><br>但 <strong style="color:var(--amber);">Champion评分 &gt; 1</strong><br><br>立即触发验证提醒。防止False Champion导致预测错误，是目前行业最常见的输单原因之一。</div>
+      <div class="ai-cap-desc">自动检测：非正式接触=0但Champion评分&gt;1时立即预警。<br><br>防止False Champion进入Commit预测，这是行业最常见的输单根因。<br><br>
+      <div style="margin-top:10px;padding:8px 12px;background:rgba(16,185,129,0.08);border-radius:6px;font-size:12px;color:var(--green);">业务结果：虚假商机进入Commit <strong>↓ 30%</strong>，预测准确率提升</div></div>
     </div>
     <div class="ai-cap-card">
       <div class="ai-cap-icon">🔗</div>
       <div class="ai-cap-title">竞品动态追踪</div>
-      <div class="ai-cap-desc">情报信号自动关联MEDDPICC维度：<br><br>Claroty降价事件<br>→ 直接标记到 <strong style="color:var(--orange);">Competition 维度</strong><br><br>不是孤立的信息噪音，而是实时反映在商机健康评分里。</div>
+      <div class="ai-cap-desc">情报信号自动关联MEDDPICC维度。Claroty降价 → 直接反映在Competition评分，不是孤立噪音。<br><br>AD和SAM同步看到竞争态势变化。<br><br>
+      <div style="margin-top:10px;padding:8px 12px;background:rgba(16,185,129,0.08);border-radius:6px;font-size:12px;color:var(--green);">业务结果：竞品响应速度 <strong>↑ 2×</strong>，不再事后才知道</div></div>
     </div>
   </div>
   <div class="grand-statement anim anim-d3" style="font-size:15px;padding:16px 28px;">
-    AI的价值不是替代判断，是让判断<strong style="color:var(--blue)">有据可依</strong>
+    AI的价值不是替代判断，是让判断<strong style="color:var(--blue)">有据可依，结果可见</strong>
   </div>
 </div>
 
@@ -1305,34 +1308,48 @@ h2.slide-title {
 <!-- SLIDE 13: AD REVIEW PHILOSOPHY              -->
 <!-- ═══════════════════════════════════════════ -->
 <div class="slide" id="s13" data-duration="60"
-  data-notes="这一页是给AD的思维框架。0→1和1→N阶段，AD问的问题完全不同。0→1阶段AD是在帮SAM识别关系层的真实性；1→N阶段AD是在帮SAM管控时间线和竞争风险。Command把这两套Review问题都内置在系统的自动检测规则里，让AD不需要每次都想到这些问题——系统会自动提示。">
-  <h2 class="slide-title anim anim-d1" style="margin-bottom:32px;">AD 对两个阶段的 Review 焦点完全不同</h2>
+  data-notes="这一页是给AD的思维框架。0→1阶段AD聚焦关系真实性：Champion是真的吗？EB接触了吗？痛点量化了吗？1→N阶段AD聚焦流程和竞争：时间线现实吗？竞品怎么应对？Command把这两套Review问题内置在系统检测规则里——AD不需要每次现想，系统自动提示。">
+  <h2 class="slide-title anim anim-d1" style="margin-bottom:28px;">AD Review 的两套焦点</h2>
   <div class="card-grid-2 anim anim-d2" style="max-width:900px;">
     <div class="war-col">
-      <div class="war-col-title" style="color:var(--blue);">0→1 阶段</div>
-      <div class="war-col-sub" style="color:var(--text-dim);font-size:12px;">星展银行 · 泰国中央百货</div>
-      <div class="review-q"><div class="q-dot"></div><div>你真的找到 Champion 了吗？还是只是一个<strong>愿意见你的人</strong>？</div></div>
-      <div class="review-q"><div class="q-dot"></div><div>经济决策人知道我们的存在吗？他们的态度是什么？</div></div>
-      <div class="review-q"><div class="q-dot"></div><div>客户的痛点是否已经<strong>量化</strong>？数字是多少？</div></div>
-      <div class="review-q"><div class="q-dot"></div><div>Champion 有没有在 EB 面前力推过我们？有没有非正式接触验证？</div></div>
-      <div style="margin-top:14px;padding:10px;background:rgba(14,165,233,0.06);border-radius:6px;font-size:12px;color:var(--blue);">
-        Command 自动检测：Champion评分 vs 非正式接触次数的一致性
+      <div class="war-col-title" style="color:var(--blue);font-size:18px;">0→1 阶段</div>
+      <div class="war-col-sub" style="color:var(--text-dim);font-size:12px;margin-bottom:18px;">关系真实性</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(14,165,233,0.05);border-radius:8px;border:1px solid rgba(14,165,233,0.1);">
+          <div style="font-size:20px;">🎯</div>
+          <div><div style="font-size:13px;font-weight:600;">Champion 是真的吗？</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px;">非正式接触 vs 评分是否一致</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(14,165,233,0.05);border-radius:8px;border:1px solid rgba(14,165,233,0.1);">
+          <div style="font-size:20px;">💰</div>
+          <div><div style="font-size:13px;font-weight:600;">EB 接触了吗？</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px;">预算拍板人是否知道我们存在</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(14,165,233,0.05);border-radius:8px;border:1px solid rgba(14,165,233,0.1);">
+          <div style="font-size:20px;">📊</div>
+          <div><div style="font-size:13px;font-weight:600;">痛点量化了吗？</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px;">有没有客户认可的ROI数字</div></div>
+        </div>
       </div>
     </div>
     <div class="war-col">
-      <div class="war-col-title" style="color:var(--gold);">1→N 阶段</div>
-      <div class="war-col-sub" style="color:var(--text-dim);font-size:12px;">马来西亚国家石油公司 Petronas</div>
-      <div class="review-q"><div class="q-dot" style="background:var(--gold);"></div><div>Paper Process 启动了吗？时间线是否<strong>现实</strong>？</div></div>
-      <div class="review-q"><div class="q-dot" style="background:var(--gold);"></div><div>竞品在做什么动作？我们如何具体回应？</div></div>
-      <div class="review-q"><div class="q-dot" style="background:var(--gold);"></div><div>Champion 能不能帮我们在 EB 层面<strong>加速采购流程</strong>？</div></div>
-      <div class="review-q"><div class="q-dot" style="background:var(--gold);"></div><div>我们的价值主张是否已经<strong>控住了评标标准</strong>？</div></div>
-      <div style="margin-top:14px;padding:10px;background:rgba(245,158,11,0.06);border-radius:6px;font-size:12px;color:var(--gold);">
-        Command 自动检测：Paper Process评分 + 截止日期压力 + 竞品情报关联
+      <div class="war-col-title" style="color:var(--gold);font-size:18px;">1→N 阶段</div>
+      <div class="war-col-sub" style="color:var(--text-dim);font-size:12px;margin-bottom:18px;">流程与竞争管控</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(245,158,11,0.05);border-radius:8px;border:1px solid rgba(245,158,11,0.1);">
+          <div style="font-size:20px;">📋</div>
+          <div><div style="font-size:13px;font-weight:600;">Paper Process 启动了吗？</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px;">时间线是否现实，采购介入了吗</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(245,158,11,0.05);border-radius:8px;border:1px solid rgba(245,158,11,0.1);">
+          <div style="font-size:20px;">⚔️</div>
+          <div><div style="font-size:13px;font-weight:600;">竞品在做什么？</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px;">我们如何具体回应，不是泛泛说"我们更好"</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(245,158,11,0.05);border-radius:8px;border:1px solid rgba(245,158,11,0.1);">
+          <div style="font-size:20px;">🚀</div>
+          <div><div style="font-size:13px;font-weight:600;">Champion 能加速吗？</div><div style="font-size:12px;color:var(--text-dim);margin-top:2px;">能否在EB层面推动采购流程</div></div>
+        </div>
       </div>
     </div>
   </div>
   <div class="grand-statement anim anim-d3" style="font-size:14px;padding:14px 24px;margin-top:20px;">
-    Command 让 AD 的 Review 从<span style="color:var(--text-dim);">「你进展怎样了」</span>变成<strong style="color:var(--blue);">「这7个信号说明什么」</strong>
+    Command 让 AD 的 Review 从<span style="color:var(--text-dim);">「你进展怎样了」</span>变成<strong style="color:var(--blue);">「这6个信号说明什么」</strong>
   </div>
 </div>
 
@@ -1367,7 +1384,7 @@ h2.slide-title {
 <!-- ═══════════════════════════════════════════ -->
 <!-- SLIDE 15: CLOSING                           -->
 <!-- ═══════════════════════════════════════════ -->
-<div class="slide" id="s15" data-duration="30"
+<div class="slide" id="s15" data-duration="20"
   data-notes="结束语。演示系统已就绪，三个客户数据已内置，用Leo或Henry的账号可以直接登录体验真实系统。如果需要给更多同事开通体验账号，联系Leo即可。">
   <div class="closing-glow" style="top:-150px;left:50%;transform:translateX(-50%);width:800px;height:800px;"></div>
   <div class="closing-glow" style="bottom:-200px;right:-200px;background:radial-gradient(circle,rgba(245,158,11,0.06),transparent 70%);"></div>
@@ -1398,6 +1415,45 @@ h2.slide-title {
       <span class="badge badge-gold">SPIN Selling</span>
       <span class="badge badge-green">IBM Blue Sheet</span>
       <span class="badge" style="background:rgba(168,85,247,0.12);color:#A855F7;border:1px solid rgba(168,85,247,0.3);">Command of Message</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SLIDE 16: CALL TO ACTION                    -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="slide" id="s16" data-duration="40"
+  data-notes="这是最重要的一张。EMT看完演示，最可能的问题是：这个系统现在能用吗？谁在用？下一步怎么走？三个行动选项要清晰：今天就能体验、下周可以做团队培训、Q4全团队上线。给他们一个具体的下一步，不要让演示变成'很好，改天再说'。">
+  <div style="text-align:center;" class="anim anim-d1">
+    <div style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--blue);letter-spacing:3px;margin-bottom:20px;">NEXT STEPS</div>
+    <h2 style="font-size:clamp(26px,3.5vw,40px);font-weight:700;margin-bottom:8px;">今天，你可以做三件事</h2>
+    <div style="font-size:15px;color:var(--text-dim);margin-bottom:40px;">演示系统已就绪，三个场景随时可体验</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;max-width:860px;margin:0 auto;" class="anim anim-d2">
+      <div style="background:rgba(14,165,233,0.08);border:1px solid rgba(14,165,233,0.25);border-radius:14px;padding:28px 20px;text-align:center;">
+        <div style="font-size:36px;margin-bottom:12px;">🖥️</div>
+        <div style="font-size:13px;font-family:'JetBrains Mono',monospace;color:var(--blue);margin-bottom:8px;">TODAY</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px;">亲自体验系统</div>
+        <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">用 Leo 或 Henry 的账号登录<br>三个演示客户全部就绪</div>
+      </div>
+      <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:14px;padding:28px 20px;text-align:center;">
+        <div style="font-size:36px;margin-bottom:12px;">👥</div>
+        <div style="font-size:13px;font-family:'JetBrains Mono',monospace;color:var(--gold);margin-bottom:8px;">THIS WEEK</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px;">安排团队培训</div>
+        <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">AD + SAM + SA 三个角色<br>各1小时上手培训</div>
+      </div>
+      <div style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:14px;padding:28px 20px;text-align:center;">
+        <div style="font-size:36px;margin-bottom:12px;">🚀</div>
+        <div style="font-size:13px;font-family:'JetBrains Mono',monospace;color:var(--green);margin-bottom:8px;">Q4 TARGET</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px;">全团队上线</div>
+        <div style="font-size:12px;color:var(--text-dim);line-height:1.6;">T100 战略客户全部进入<br>Command 管理体系</div>
+      </div>
+    </div>
+    <div style="margin-top:36px;" class="anim anim-d3">
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">联系方式</div>
+      <div style="display:inline-flex;align-items:center;gap:10px;padding:12px 28px;background:rgba(14,165,233,0.1);border:1px solid rgba(14,165,233,0.3);border-radius:30px;">
+        <span style="font-size:16px;">📧</span>
+        <span style="font-size:14px;font-weight:600;color:var(--blue);">leo.he@aistorm.com</span>
+      </div>
     </div>
   </div>
 </div>
@@ -1508,7 +1564,7 @@ function showSlide(idx) {
   current = idx;
   elapsed = 0;
 
-  counter.textContent = `${String(idx+1).padStart(2,'0')} / ${slides.length}`;
+  counter.textContent = `${String(idx+1).padStart(2,'0')} / 16`;
 
   // notes
   const note = slides[idx].dataset.notes || '';
@@ -1642,7 +1698,10 @@ const narrations = [
   'Command 给团队带来三个核心改变。第一，销售不再靠感觉判断 Champion 真实性——三维评分加上非正式接触次数，系统自动标记风险，数据说话。第二，AD Review 不再靠 SAM 口头汇报——实时数据面板加辅导工单，AD 主动发现问题，下发可追踪的指令。第三，赢了和输了都知道原因——每个商机的 MEDDPICC 历史完整记录，可以复盘，可以复制，优秀的销售方法可以被传承。让优秀可以被定义、被测量、被传承——这是 Command 最核心的价值主张。',
 
   // Slide 15 - Closing
-  '感谢大家今天参与这场演示。AIStorm Command 的演示系统已经就绪，三个客户的数据已经完整内置。如果需要体验真实系统，账号请联系 Leo。方法论的力量，乘以 AI 的速度——这就是 AIStorm Command。'
+  '感谢大家今天参与这场演示。AIStorm Command——方法论的力量，乘以 AI 的速度。',
+
+  // Slide 16 - CTA
+  '最后，今天你可以做三件事。第一，今天就亲自体验系统，用 Leo 或 Henry 的账号登录，三个演示场景全部就绪，实际感受 Command 和传统 CRM 的区别。第二，本周内安排 AD、SAM、SA 三个角色各一小时的上手培训，让核心团队快速掌握。第三，Q4 目标：T100 战略客户全部进入 Command 管理体系。如果你今天就想开始，联系 Leo，邮件是 leo.he at aistorm.com。谢谢大家。'
 ];
 
 let speechEnabled = true;
