@@ -744,6 +744,7 @@ export const emailUsers = mysqlTable("email_users", {
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  lastLoginAt: timestamp("lastLoginAt"),
 });
 export type EmailUser = typeof emailUsers.$inferSelect;
 export type InsertEmailUser = typeof emailUsers.$inferInsert;

@@ -185,6 +185,20 @@ export default function TeamManagement() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  // ── Bulk Reassign ─────────────────────────────────────────────────────────
+  const [showBulkReassign, setShowBulkReassign] = useState(false);
+  const [bulkFromId, setBulkFromId] = useState<string>("");
+  const [bulkToId, setBulkToId] = useState<string>("");
+  const bulkReassignMut = (trpc.admin as any).bulkReassignClients.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(`已将 ${data.affected} 个客户重新分配`);
+      utils.clients.list.invalidate();
+      setShowBulkReassign(false);
+      setBulkFromId(""); setBulkToId("");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const otherMembers = members.filter(m => m.id !== deleteTarget?.id);
   const reassignTarget = reassignToId ? members.find(m => m.id === parseInt(reassignToId)) : null;
 
@@ -199,6 +213,10 @@ export default function TeamManagement() {
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">管理 SAM / RSM / SA / AD 成员，支持增删改停用及客户归属重分配</p>
         </div>
+        <Button size="sm" variant="outline" onClick={() => setShowBulkReassign(true)} className="gap-1.5 mr-2">
+          <RefreshCw className="w-4 h-4" />
+          批量重新分配
+        </Button>
         <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5 bg-[#00A8D6] hover:bg-[#0090b8] text-white">
           <UserPlus className="w-4 h-4" />
           新增成员
@@ -235,6 +253,7 @@ export default function TeamManagement() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">角色</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">状态</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">加入时间</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">最后登录</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">操作</th>
               </tr>
             </thead>
@@ -272,7 +291,12 @@ export default function TeamManagement() {
                     </button>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
-                    {new Date(m.createdAt).toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" })}
+                  {new Date(m.createdAt).toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" })}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">
+                    {(m as any).lastLoginAt
+                      ? new Date((m as any).lastLoginAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      : <span className="text-muted-foreground/40">未登录</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
@@ -389,6 +413,65 @@ export default function TeamManagement() {
           })()}
         </div>
       )}
+
+      {/* Bulk Reassign Dialog */}
+      <Dialog open={showBulkReassign} onOpenChange={setShowBulkReassign}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-cyan-400" />
+              批量重新分配客户
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-400">
+              ⚠️ 此操作将把某 SAM 名下的所有客户（SAM 身份）批量转移给另一位成员，不可撤销。
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">从（源 SAM）</label>
+              <Select value={bulkFromId} onValueChange={setBulkFromId}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="选择源 SAM" /></SelectTrigger>
+                <SelectContent>
+                  {members.map((m: any) => (
+                    <SelectItem key={m.id} value={String(m.id)}>{m.name} ({m.podRole})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {bulkFromId && (() => {
+                const count = allClients.filter((c: any) => c.assignedSamId === parseInt(bulkFromId)).length;
+                return <div className="text-[10px] text-muted-foreground mt-1">该成员目前负责 {count} 个客户（SAM 身份）</div>;
+              })()}
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">转给（目标 SAM）</label>
+              <Select value={bulkToId} onValueChange={setBulkToId}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="选择目标 SAM" /></SelectTrigger>
+                <SelectContent>
+                  {members.filter((m: any) => String(m.id) !== bulkFromId).map((m: any) => (
+                    <SelectItem key={m.id} value={String(m.id)}>{m.name} ({m.podRole})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowBulkReassign(false)}>取消</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!bulkFromId || !bulkToId) { toast.error("请选择源 SAM 和目标 SAM"); return; }
+                const toMember = members.find((m: any) => m.id === parseInt(bulkToId));
+                if (!toMember) return;
+                bulkReassignMut.mutate({ fromUserId: parseInt(bulkFromId), toUserId: parseInt(bulkToId), toUserName: toMember.name });
+              }}
+              disabled={bulkReassignMut.isPending}
+            >
+              {bulkReassignMut.isPending ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null}
+              确认批量转移
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>

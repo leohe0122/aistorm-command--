@@ -139,46 +139,16 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
             style={{ background: "rgba(13,26,50,0.7)", border: "1px solid rgba(0,168,214,0.15)", backdropFilter: "blur(12px)" }}>
           {/* Title */}
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-white mb-1">
-              {tab === "login" ? "欢迎回来" : "创建账号"}
-            </h1>
-            <p className="text-sm text-white/40">
-              {tab === "login" ? "使用公司邮箱登录 AIStorm Command" : "使用 @aistorm.com 邮箱注册"}
-            </p>
-          </div>
+          <h1 className="text-2xl font-bold text-white mb-1">
+            欢迎回来
+          </h1>
+          <p className="text-sm text-white/40">
+            使用公司邮箱登录 AIStorm Command
+          </p>
+        </div>
 
-          {/* Tab switcher */}
-          <div className="flex gap-1 p-1 rounded-xl mb-6"
-            style={{ background: "oklch(0.14 0.022 240)" }}>
-            <button
-              onClick={() => setTab("login")}
-              className={cn(
-                "flex-1 py-2 text-sm font-semibold rounded-lg transition-all",
-                tab === "login"
-                  ? "text-white shadow-sm"
-                  : "text-white/40 hover:text-white/70"
-              )}
-              style={tab === "login" ? { background: "linear-gradient(135deg, #1B6FBF, #00A8D6)" } : undefined}
-            >
-              登录
-            </button>
-            <button
-              onClick={() => setTab("register")}
-              className={cn(
-                "flex-1 py-2 text-sm font-semibold rounded-lg transition-all",
-                tab === "register"
-                  ? "text-white shadow-sm"
-                  : "text-white/40 hover:text-white/70"
-              )}
-              style={tab === "register" ? { background: "linear-gradient(135deg, #1B6FBF, #00A8D6)" } : undefined}
-            >
-              注册账号
-            </button>
-          </div>
-
-          {/* Form */}
-          {tab === "login" ? (
-            <form onSubmit={handleLogin} className="space-y-4">
+          {/* Login Form */}
+          <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="text-xs text-white/50 mb-1.5 block font-medium">公司邮箱</label>
                 <div className="relative">
@@ -221,74 +191,12 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
                 style={{ background: "linear-gradient(135deg, #1B6FBF 0%, #00A8D6 100%)" }}
               >
                 <LogIn className="w-4 h-4" />
-                {loading ? "登录中..." : "登录"}
+            {loading ? "登录中..." : "登录"}
               </button>
-            </form>
-          ) : (
-            <form onSubmit={handleRegister} className="space-y-4">
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block font-medium">姓名</label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                  <Input
-                    type="text"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder="请输入真实姓名"
-                    className="pl-9 h-11 text-sm bg-white/5 border-white/10 text-white placeholder:text-white/25 focus:border-cyan-500/50"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block font-medium">公司邮箱</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="yourname@aistorm.com"
-                    className="pl-9 h-11 text-sm bg-white/5 border-white/10 text-white placeholder:text-white/25 focus:border-cyan-500/50"
-                    autoComplete="email"
-                  />
-                </div>
-                <p className="text-[10px] text-white/25 mt-1">仅接受 @aistorm.com 邮箱注册</p>
-              </div>
-              <div>
-                <label className="text-xs text-white/50 mb-1.5 block font-medium">设置密码</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                  <Input
-                    type={showPwd ? "text" : "password"}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="至少 8 个字符"
-                    className="pl-9 pr-9 h-11 text-sm bg-white/5 border-white/10 text-white placeholder:text-white/25 focus:border-cyan-500/50"
-                    autoComplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPwd(s => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors"
-                  >
-                    {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full h-11 rounded-lg text-sm font-semibold text-white flex items-center justify-center gap-2 mt-2 transition-opacity disabled:opacity-60"
-                style={{ background: "linear-gradient(135deg, #1B6FBF 0%, #00A8D6 100%)" }}
-              >
-                <User className="w-4 h-4" />
-                {loading ? "注册中..." : "创建账号"}
-              </button>
-            </form>
-          )}
+          </form>
 
           <p className="text-center text-[11px] text-white/25 mt-6">
-            仅限 AIStorm 内部团队使用 · 如有问题请联系系统管理员
+            账号由管理员统一开通 · 如需申请请联系 Leo
           </p>
           </div>{/* /form card */}
         </div>

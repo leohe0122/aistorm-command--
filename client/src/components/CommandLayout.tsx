@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, Fragment } from "react";
 import { Link, useLocation } from "wouter";
 import AIStormLogo from "@/components/AIStormLogo";
 import { cn } from "@/lib/utils";
@@ -6,7 +6,10 @@ import {
   Map, Radio, Zap, FileText, Shield, Users, MessageSquare, TrendingUp,
   ChevronRight, Database, Bell, Crosshair, LogOut, LayoutDashboard, Settings, Plus
 } from "lucide-react";
-import { UserCog } from "lucide-react";
+import { UserCog, KeyRound } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useEmailAuth } from "@/App";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -51,8 +54,22 @@ function EmailUserFooter() {
       window.location.reload();
     },
   });
+  const [showChangePwd, setShowChangePwd] = useState(false);
+  const [curPwd, setCurPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [newPwd2, setNewPwd2] = useState("");
+  const changePwdMut = trpc.emailAuth.changePassword.useMutation({
+    onSuccess: () => {
+      toast.success("密码已修改，请重新登录");
+      setShowChangePwd(false);
+      setCurPwd(""); setNewPwd(""); setNewPwd2("");
+      setTimeout(() => { logoutMut.mutate(); }, 1500);
+    },
+    onError: (e) => toast.error(e.message),
+  });
   if (!emailUser) return null;
   return (
+    <Fragment>
     <div className="flex items-center gap-2 px-2 py-2 rounded-lg bg-white/5 border border-white/8">
       <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white"
         style={{ background: "linear-gradient(135deg, #1B6FBF 0%, #00A8D6 100%)" }}>
@@ -63,6 +80,13 @@ function EmailUserFooter() {
         <div className="text-[10px] text-muted-foreground truncate">{emailUser.email}</div>
       </div>
       <button
+        onClick={() => setShowChangePwd(true)}
+        className="p-1 rounded hover:bg-purple-500/20 hover:text-purple-400 text-muted-foreground transition-colors flex-shrink-0"
+        title="修改密码"
+      >
+        <KeyRound className="w-3.5 h-3.5" />
+      </button>
+      <button
         onClick={() => logoutMut.mutate()}
         className="p-1 rounded hover:bg-red-500/20 hover:text-red-400 text-muted-foreground transition-colors flex-shrink-0"
         title="退出登录"
@@ -70,6 +94,45 @@ function EmailUserFooter() {
         <LogOut className="w-3.5 h-3.5" />
       </button>
     </div>
+    <Dialog open={showChangePwd} onOpenChange={setShowChangePwd}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-purple-400" /> 修改密码
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">当前密码</label>
+            <Input type="password" value={curPwd} onChange={e => setCurPwd(e.target.value)} placeholder="输入当前密码" className="h-9 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">新密码（至少8位）</label>
+            <Input type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} placeholder="新密码" className="h-9 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">确认新密码</label>
+            <Input type="password" value={newPwd2} onChange={e => setNewPwd2(e.target.value)} placeholder="再次输入新密码" className="h-9 text-sm" />
+            {newPwd && newPwd2 && newPwd !== newPwd2 && <div className="text-[10px] text-red-400 mt-1">两次密码不一致</div>}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setShowChangePwd(false)}>取消</Button>
+          <Button
+            onClick={() => {
+              if (!curPwd || !newPwd) { toast.error("请填写完整"); return; }
+              if (newPwd !== newPwd2) { toast.error("两次密码不一致"); return; }
+              if (newPwd.length < 8) { toast.error("新密码至少8位"); return; }
+              changePwdMut.mutate({ currentPassword: curPwd, newPassword: newPwd });
+            }}
+            disabled={changePwdMut.isPending}
+          >
+            {changePwdMut.isPending ? "修改中..." : "确认修改"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </Fragment>
   );
 }
 

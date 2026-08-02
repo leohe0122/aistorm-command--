@@ -4437,6 +4437,8 @@ ${context}
         const token = crypto.randomBytes(32).toString('hex');
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         await db.insert(emailSessions).values({ token, userId: user.id, expiresAt });
+        // Record last login time
+        await db.update(emailUsers).set({ lastLoginAt: new Date() }).where(eq(emailUsers.id, user.id));
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie('email_session', token, { ...cookieOptions, maxAge: 30 * 24 * 60 * 60 * 1000 });
         return { success: true, user: { id: user.id, email: user.email, name: user.name, role: user.role, podRole: user.podRole } };
@@ -5347,6 +5349,7 @@ ${input.aiSuggestion}
         podRole: emailUsers.podRole,
         isActive: emailUsers.isActive,
         createdAt: emailUsers.createdAt,
+        lastLoginAt: emailUsers.lastLoginAt,
       }).from(emailUsers).orderBy(emailUsers.createdAt);
       return rows;
     }),
@@ -5491,6 +5494,22 @@ ${input.aiSuggestion}
       const { clients } = await import('../drizzle/schema');
       const { eq } = await import('drizzle-orm');
       return db.select({ id: clients.id, name: clients.name, priority: clients.priority, stage: clients.stage }).from(clients).where(eq(clients.assignedSamId, input.userId));
+    }),
+
+    // 批量重新分配客户（将 fromUserId 的所有客户转给 toUserId）
+    bulkReassignClients: adminProcedure.input(z.object({
+      fromUserId: z.number(),
+      toUserId: z.number(),
+      toUserName: z.string(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database unavailable' });
+      const { clients } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const result = await db.update(clients)
+        .set({ assignedSamId: input.toUserId, assignedSamName: input.toUserName })
+        .where(eq(clients.assignedSamId, input.fromUserId));
+      return { success: true, affected: (result as any)[0]?.affectedRows ?? 0 };
     }),
 
     // 修改团队成员邮箱/密码
