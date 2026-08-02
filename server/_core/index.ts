@@ -12,6 +12,8 @@ import { dailyBriefingHandler } from "../scheduled/dailyBriefing";
 import { visitReminderHandler } from "../scheduled/visitReminder";
 import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
+import path from "path";
+import fs from "fs";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -83,6 +85,15 @@ async function startServer() {
   app.post("/api/scheduled/visit-reminder", visitReminderHandler);
   // 飞书机器人 Webhook（接收消息事件 + 卡片回调）
   app.post("/api/feishu/webhook", feishuWebhookHandler);
+  // Serve demo.html directly from client/public (bypasses SPA routing)
+  app.get("/demo.html", (_req, res) => {
+    const demoPath = path.resolve(import.meta.dirname, "../../client/public/demo.html");
+    if (fs.existsSync(demoPath)) {
+      res.sendFile(demoPath);
+    } else {
+      res.status(404).send("demo.html not found");
+    }
+  });
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
