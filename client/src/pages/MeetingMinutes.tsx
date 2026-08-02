@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -105,6 +105,38 @@ const dimToScoreField: Record<string, string> = {
 
 export default function MeetingMinutes() {
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  // Voice auto-trigger from ?voice=1 URL param
+  const autoVoice = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('voice') === '1';
+  useEffect(() => {
+    if (!autoVoice) return;
+    window.history.replaceState({}, '', '/meeting-minutes');
+    const timer = setTimeout(() => {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        toast.error('当前浏览器不支持语音录入，请使用 Chrome 或 Safari');
+        return;
+      }
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'zh-CN';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setKeyPoints(transcript);
+        toast.success('🎙️ 语音识别完成，内容已填入关键信息框');
+      };
+      recognition.onerror = (event: any) => {
+        if (event.error === 'not-allowed') {
+          toast.error('请允许浏览器访问麦克风');
+        } else {
+          toast.error('语音识别失败，请手动输入');
+        }
+      };
+      recognition.start();
+      toast('🎙️ 正在录音，请说出拜访要点...', { duration: 5000 });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [autoVoice]);
   const [meetingDate, setMeetingDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [visitType, setVisitType] = useState("首次拜访");
   const [attendees, setAttendees] = useState("");

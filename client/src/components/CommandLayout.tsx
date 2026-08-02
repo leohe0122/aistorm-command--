@@ -87,6 +87,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
     setShowReviewTip(false);
     try { localStorage.setItem('aistorm_review_tip_dismissed', '1'); } catch {}
   };
+  const [showQuickEntry, setShowQuickEntry] = useState(false);
 
   // Role-based visibility: AD sees everything, others see restricted items
   const isAD = !emailUser || emailUser.podRole === 'AD';
@@ -300,11 +301,38 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
         {/* Page content */}
-        <div className="flex-1 pb-16 md:pb-0">
+        <div className="flex-1 pb-16 md:pb-0 animate-in fade-in duration-200">
           {children}
         </div>
       </main>
       {/* Mobile bottom navigation */}
+      {/* Quick entry menu */}
+      {showQuickEntry && (
+        <>
+          <div className="md:hidden fixed inset-0 z-40" onClick={() => setShowQuickEntry(false)} />
+          <div className="md:hidden fixed bottom-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-3 items-center">
+            <button
+              type="button"
+              onClick={() => {
+                setShowQuickEntry(false);
+                window.location.href = '/meeting-minutes?voice=1';
+              }}
+              className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-card border border-border shadow-xl text-sm font-medium text-foreground w-44 justify-center"
+            >
+              <span className="text-xl">🎙️</span>
+              语音录入
+            </button>
+            <a
+              href="/meeting-minutes"
+              onClick={() => setShowQuickEntry(false)}
+              className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-card border border-border shadow-xl text-sm font-medium text-foreground w-44 justify-center"
+            >
+              <span className="text-xl">✏️</span>
+              文本录入
+            </a>
+          </div>
+        </>
+      )}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-sidebar border-t border-border flex items-center justify-around px-1 py-1.5">
         {[
           { path: "/battle-map", icon: Map, label: "战场" },
@@ -313,22 +341,27 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           const isActive = location === path;
           return (
             <Link key={path} href={path}>
-              <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", isActive ? "text-[#00A8D6]" : "text-muted-foreground")}>
-                <Icon className="w-5 h-5" />
+              <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-all duration-200", isActive ? "text-[#00A8D6]" : "text-muted-foreground")}>
+                <Icon className={cn("w-5 h-5 transition-transform duration-200", isActive ? "scale-110" : "scale-100")} />
                 <span className="text-[9px] font-medium">{label}</span>
+                {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#00A8D6] mt-0.5" />}
               </div>
             </Link>
           );
         })}
         {/* 中心录入按钮 */}
-        <Link href="/meeting-minutes">
-          <div className="flex flex-col items-center gap-0.5 px-1 py-0.5 -mt-3">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg" style={{ background: "linear-gradient(135deg, #00A8D6 0%, #1B6FBF 100%)" }}>
-              <Plus className="w-6 h-6 text-white" />
+          <div
+            className="flex flex-col items-center gap-0.5 px-1 py-0.5 -mt-3 cursor-pointer"
+            onClick={() => setShowQuickEntry(o => !o)}
+          >
+            <div className={cn(
+              "w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-transform duration-200",
+              showQuickEntry ? "scale-90" : "scale-100"
+            )} style={{ background: "linear-gradient(135deg, #00A8D6 0%, #1B6FBF 100%)" }}>
+              <Plus className={cn("w-6 h-6 text-white transition-transform duration-200", showQuickEntry ? "rotate-45" : "rotate-0")} />
             </div>
-            <span className="text-[9px] font-medium text-[#00A8D6]">录入</span>
+            <span className="text-[9px] font-medium text-[#00A8D6]">{showQuickEntry ? "关闭" : "录入"}</span>
           </div>
-        </Link>
         {[
           { path: "/intel-radar", icon: Radio, label: "情报" },
           { path: "/action-command", icon: Zap, label: "指令台" },
@@ -337,9 +370,10 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           const isActive = location === path || (location === "/" && path === "/dashboard");
           return (
             <Link key={path} href={path}>
-              <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors", isActive ? "text-[#00A8D6]" : "text-muted-foreground")}>
-                <Icon className="w-5 h-5" />
+              <div className={cn("flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-all duration-200", isActive ? "text-[#00A8D6]" : "text-muted-foreground")}>
+                <Icon className={cn("w-5 h-5 transition-transform duration-200", isActive ? "scale-110" : "scale-100")} />
                 <span className="text-[9px] font-medium">{label}</span>
+                {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#00A8D6] mt-0.5" />}
               </div>
             </Link>
           );
