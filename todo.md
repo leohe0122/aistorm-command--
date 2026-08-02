@@ -639,3 +639,13 @@
 - [x] P2 每日简报个人推送：每日简报页面新增「立即生成并推送」按钮，AI 生成后同时推送到个人通知
 - [x] P2 每日简报个人推送：后端 dailyBriefing.ts 在飞书推送成功后自动调用 notifyOwner 推送个人通知
 - [x] P2 后端新增 insights.triggerDailyBriefing 接口（手动触发，生成简报并推送个人通知）
+
+## Demo 保护与分发系统（Round 65）
+- [x] 数据库新增 demo_tokens 表（token/recipientName/recipientEmail/note/isActive/expiresAt/accessCount/lastAccessAt/lastAccessIp/createdAt）
+- [x] 后端 demoAccess tRPC router（listTokens/createToken/revokeToken/deleteToken，均为 adminProcedure）
+- [x] Express GET /demo.html 路由升级为 token 验证（无 token→403，无效→403，过期→403，有效→注入水印信息并记录访问）
+- [x] demo.html canvas 动态水印（读取 window.__DEMO_VIEWER__ 显示查看者姓名+邮箱+时间戳，半透明斜排）
+- [x] DemoAccess.tsx 页面（AD 专用，生成/撤销/删除 token，查看访问次数和最后访问时间/IP）
+- [x] App.tsx 注册 /demo-access 路由
+- [x] CommandLayout.tsx 设置区新增「Demo 分发管理」导航入口（仅 admin 可见）
+- [x] demo.html 精确截图替换（25 张 Mulerun 精确截图 base64 嵌入，覆盖 slide-01/04-27）

@@ -44,6 +44,8 @@ import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient
 import { saveAiReview, getLatestReviewsByClient, getLatestReviewByType } from "./db";
 import { getClientMetrics, upsertClientMetrics } from "./db";
 import { getAllCaseStudies, getCaseStudiesByIndustry, insertCaseStudy, updateCaseStudy, deleteCaseStudy } from "./db";
+import { demoTokens } from "../drizzle/schema";
+import { eq } from "drizzle-orm";
 
 export const appRouter = router({
   system: systemRouter,
@@ -5844,6 +5846,63 @@ ${input.extractedText.slice(0, 4000)}
         return { title: input.filename?.replace(/\.[^.]+$/, '') || '', clientAlias: '', industry: '', clientSize: '大型企业', region: '', painPoint: '', solution: '', quantifiedResult: '', roiHighlight: '', isConfidential: false, needsVerification: false };
       }
     }),
+  }),
+
+  // ─── Demo Access Token Management ──────────────────────────────────
+  demoAccess: router({
+    // List all tokens (admin only)
+    listTokens: adminProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+      const tokens = await db.select().from(demoTokens).orderBy(demoTokens.createdAt);
+      return tokens;
+    }),
+
+    // Create a new token (admin only)
+    createToken: adminProcedure
+      .input(z.object({
+        recipientName: z.string().min(1),
+        recipientEmail: z.string().email().optional(),
+        note: z.string().optional(),
+        expiresInDays: z.number().optional(), // undefined = never expires
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const token = crypto.randomBytes(24).toString('hex');
+        const expiresAt = input.expiresInDays
+          ? new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000)
+          : null;
+        await db.insert(demoTokens).values({
+          token,
+          recipientName: input.recipientName,
+          recipientEmail: input.recipientEmail,
+          note: input.note,
+          createdBy: ctx.user.name || ctx.user.openId,
+          expiresAt: expiresAt || undefined,
+        });
+        return { token, url: `https://command.aistorm.com/demo.html?token=${token}` };
+      }),
+
+    // Revoke a token (admin only)
+    revokeToken: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        await db.update(demoTokens).set({ isActive: 0 }).where(eq(demoTokens.id, input.id));
+        return { success: true };
+      }),
+
+    // Delete a token (admin only)
+    deleteToken: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        await db.delete(demoTokens).where(eq(demoTokens.id, input.id));
+        return { success: true };
+      }),
   }),
 
 });

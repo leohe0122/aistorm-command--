@@ -23,6 +23,7 @@ import EmailLogin from "./pages/EmailLogin";
 import UserManagement from "./pages/UserManagement";
 import SystemSettings from "./pages/SystemSettings";
 import TeamManagement from "./pages/TeamManagement";
+import DemoAccess from "./pages/DemoAccess";
 import { trpc } from "@/lib/trpc";
 import { useState, createContext, useContext, useEffect } from "react";
 import { Spinner } from "@/components/ui/spinner";
@@ -142,6 +143,7 @@ function Router() {
         <Route path="/arsenal" component={Arsenal} />
         <Route path="/admin/users" component={UserManagement} />
         <Route path="/team" component={TeamManagement} />
+        <Route path="/demo-access" component={DemoAccess} />
         <Route component={NotFound} />
       </Switch>
     </CommandLayout>

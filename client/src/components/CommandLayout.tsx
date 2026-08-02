@@ -29,6 +29,7 @@ const navItems = [
 const settingsNavItems = [
   { path: "/settings", label: "系统设置", icon: Settings, desc: "RSS · 飞书 · CRM" },
   { path: "/team", label: "团队成员管理", icon: UserCog, desc: "增删改 SAM/RSM/SA/AD" },
+  { path: "/demo-access", label: "Demo 分发管理", icon: Shield, desc: "生成演示链接 · 追踪访问" },
 ];
 
 const roleColors: Record<string, string> = {

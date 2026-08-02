@@ -14,6 +14,9 @@ import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
 import path from "path";
 import fs from "fs";
+import { getDb } from "../db";
+import { demoTokens } from "../../drizzle/schema";
+import { eq } from "drizzle-orm";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -85,18 +88,62 @@ async function startServer() {
   app.post("/api/scheduled/visit-reminder", visitReminderHandler);
   // 飞书机器人 Webhook（接收消息事件 + 卡片回调）
   app.post("/api/feishu/webhook", feishuWebhookHandler);
-  // Serve demo.html directly from client/public (bypasses SPA routing)
-  app.get("/demo.html", (_req, res) => {
-    // Use same distPath logic as serveStatic in vite.ts
+  // Serve demo.html with token-based access control
+  app.get("/demo.html", async (req, res) => {
+    const token = req.query.token as string | undefined;
     const distDir =
       process.env.NODE_ENV === "development"
         ? path.resolve(import.meta.dirname, "../..", "dist", "public")
         : path.resolve(import.meta.dirname, "public");
     const demoPath = path.resolve(distDir, "demo.html");
-    if (fs.existsSync(demoPath)) {
-      res.sendFile(demoPath);
-    } else {
-      res.status(404).send(`demo.html not found (tried: ${demoPath})`);
+
+    if (!fs.existsSync(demoPath)) {
+      res.status(404).send(`demo.html not found`);
+      return;
+    }
+
+    // If no token provided, show access denied page
+    if (!token) {
+      res.status(403).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>访问受限</title><style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0d1117;color:#e6edf3}div{text-align:center}h2{color:#f85149}p{color:#8b949e}a{color:#58a6ff}</style></head><body><div><h2>🔒 访问受限</h2><p>此演示需要有效的访问链接。</p><p>请联系 <a href="mailto:leo.he@aistorm.com">leo.he@aistorm.com</a> 获取访问权限。</p></div></body></html>`);
+      return;
+    }
+
+    try {
+      const db = await getDb();
+      if (!db) { res.sendFile(demoPath); return; } // fallback if DB unavailable
+
+      const [record] = await db.select().from(demoTokens).where(eq(demoTokens.token, token)).limit(1);
+
+      if (!record || !record.isActive) {
+        res.status(403).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>链接无效</title><style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0d1117;color:#e6edf3}div{text-align:center}h2{color:#f85149}p{color:#8b949e}a{color:#58a6ff}</style></head><body><div><h2>🔒 链接无效或已失效</h2><p>此访问链接已被撤销或不存在。</p><p>请联系 <a href="mailto:leo.he@aistorm.com">leo.he@aistorm.com</a> 获取新的访问链接。</p></div></body></html>`);
+        return;
+      }
+
+      // Check expiry
+      if (record.expiresAt && new Date(record.expiresAt) < new Date()) {
+        res.status(403).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>链接已过期</title><style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0d1117;color:#e6edf3}div{text-align:center}h2{color:#f0883e}p{color:#8b949e}a{color:#58a6ff}</style></head><body><div><h2>⏰ 访问链接已过期</h2><p>此链接已于 ${new Date(record.expiresAt).toLocaleDateString('zh-CN')} 过期。</p><p>请联系 <a href="mailto:leo.he@aistorm.com">leo.he@aistorm.com</a> 获取新的访问链接。</p></div></body></html>`);
+        return;
+      }
+
+      // Record access
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '';
+      await db.update(demoTokens).set({
+        accessCount: (record.accessCount || 0) + 1,
+        lastAccessAt: new Date(),
+        lastAccessIp: clientIp,
+      }).where(eq(demoTokens.id, record.id));
+
+      // Inject watermark info into demo.html
+      let html = fs.readFileSync(demoPath, 'utf-8');
+      const watermarkScript = `<script>
+window.__DEMO_VIEWER__ = ${JSON.stringify({ name: record.recipientName, email: record.recipientEmail || '', token: token.slice(0, 8) + '...' })};
+</script>`;
+      html = html.replace('</head>', watermarkScript + '</head>');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(html);
+    } catch (err) {
+      console.error('[demo.html] token validation error:', err);
+      res.sendFile(demoPath); // fallback on error
     }
   });
   // development mode uses Vite, production mode uses static files
