@@ -199,6 +199,94 @@ async function deletePendingRecord(pendingId: string): Promise<void> {
 
 // ── 主 Webhook Handler ────────────────────────────────────────────────────────
 
+// ── 发送欢迎消息给新成员 ──────────────────────────────────────────────────────
+export async function sendFeishuWelcomeMessage(params: {
+  email: string;
+  name: string;
+  podRole: string;
+  password: string;
+  loginUrl: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!ENV.feishuAppId || !ENV.feishuAppSecret) {
+      return { success: false, error: '飞书 App ID/Secret 未配置' };
+    }
+    const token = await getFeishuToken();
+    if (!token) return { success: false, error: '获取飞书 Token 失败' };
+
+    // Step 1: 通过邮箱查询飞书 open_id
+    const lookupRes = await fetch(
+      `https://open.feishu.cn/open-apis/contact/v3/users/batch_get_id?user_id_type=open_id`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ emails: [params.email] }),
+      }
+    );
+    const lookupData = await lookupRes.json() as any;
+    const openId = lookupData?.data?.user_list?.[0]?.user_id;
+    if (!openId) {
+      return { success: false, error: `未找到邮箱 ${params.email} 对应的飞书账号` };
+    }
+
+    // Step 2: 发送欢迎卡片消息
+    const roleLabels: Record<string, string> = {
+      AD: "Account Director · 客户总监",
+      SAM: "SAM · 战略客户经理",
+      SA: "SA · 解决方案架构师",
+      RSM: "RSM · 属地销售",
+    };
+    const card = {
+      config: { wide_screen_mode: true },
+      header: {
+        title: { tag: "plain_text", content: "🎉 欢迎加入 AIStorm Command！" },
+        template: "blue",
+      },
+      elements: [
+        {
+          tag: "div",
+          text: { tag: "lark_md", content: `**${params.name}** 你好！\n\n你的 AIStorm Command 账号已创建，以下是你的登录信息：` },
+        },
+        { tag: "hr" },
+        {
+          tag: "div",
+          fields: [
+            { is_short: true, text: { tag: "lark_md", content: `**角色**\n${roleLabels[params.podRole] || params.podRole}` } },
+            { is_short: true, text: { tag: "lark_md", content: `**登录邮箱**\n${params.email}` } },
+          ],
+        },
+        {
+          tag: "div",
+          text: { tag: "lark_md", content: `**初始密码**\n\`${params.password}\`` },
+        },
+        { tag: "hr" },
+        {
+          tag: "action",
+          actions: [
+            {
+              tag: "button",
+              text: { tag: "plain_text", content: "🚀 立即登录 AIStorm Command" },
+              type: "primary",
+              url: params.loginUrl,
+            },
+          ],
+        },
+        {
+          tag: "note",
+          elements: [
+            { tag: "plain_text", content: "登录后请在侧边栏底部点击 🔑 按钮修改密码。如有问题请联系 Leo。" },
+          ],
+        },
+      ],
+    };
+
+    await sendFeishuCard(openId, card);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
 export async function feishuWebhookHandler(req: Request, res: Response) {
   try {
     const body = req.body;

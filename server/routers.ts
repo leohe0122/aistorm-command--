@@ -5420,7 +5420,23 @@ ${input.aiSuggestion}
         name: input.name,
         podRole: input.podRole,
       });
-      return { id: (result as any).insertId, name: input.name };
+      const newId = (result as any).insertId;
+      // 异步发送飞书欢迎消息（不阻塞返回）
+      const plainPassword = input.password || 'Aistorm2024!';
+      import('./feishuBot').then(({ sendFeishuWelcomeMessage }) => {
+        const loginUrl = 'https://command.aistorm.com';
+        sendFeishuWelcomeMessage({
+          email: input.email.toLowerCase(),
+          name: input.name,
+          podRole: input.podRole,
+          password: plainPassword,
+          loginUrl,
+        }).then((r: { success: boolean; error?: string }) => {
+          if (!r.success) console.warn('[createMember] 飞书欢迎消息发送失败:', r.error);
+          else console.log('[createMember] 飞书欢迎消息已发送至', input.email);
+        });
+      }).catch(e => console.warn('[createMember] 飞书模块加载失败:', e.message));
+      return { id: newId, name: input.name };
     }),
 
     // 更新团队成员信息（改名/改角色）
