@@ -174,7 +174,7 @@ body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFo
 // Early-load: startDemo must be available before AUDIO_SRCS finishes parsing
 window.demoStarted = false;
 window.startDemo = function() {
-  document.getElementById('welcome-overlay').classList.add('hidden');
+  var ov=document.getElementById('welcome-overlay');if(ov){ov.style.display='none';ov.style.visibility='hidden';ov.style.opacity='0';ov.style.pointerEvents='none';}
   window.demoStarted = true;
   if (typeof speak === 'function') { speak(0); }
   else { window.__pendingStart = true; }
