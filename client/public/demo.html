@@ -368,11 +368,13 @@ const NARRATIONS = ["AIStorm Command——AI 驱动的大客户作战指挥系�
 "系统设置支持四项集成能力，每一项都有明确的业务原因。第一，RSS 情报信息源：因为 SAM 不可能每天手动搜索 9 个客户的新闻，系统接入 Google News 和各国数据保护机构的 RSS 源，自动抓取并推送给客户情报雷达。第二，飞书每日战情简报：因为 AD 需要在早会前就知道昨天发生了什么，系统每天早 8 点 30 分自动推送 Portfolio 健康度、高风险预警、待拜访客户提醒到飞书群，不需要人工整理。第三，CRM 销售易集成：因为公司可能同时在用销售易管理商机，系统支持双向同步——Command 里的商机和联系人数据可以推送到销售易，销售易的数据也可以拉回来对比。第四，AI 模型配置：因为不同任务需要不同模型，系统支持 OpenAI、Claude、智谱 GLM 多模型路由，管理员可以配置 API Key，系统根据任务类型自动选择最合适的模型。这四项配置全部无需 IT 介入，AD 自己就能完成。",
 "Command 的核心价值是把三件事合在一起：MEDDPICC 方法论、流程管控系统、AI 洞察引擎。方法论告诉你应该做什么，系统强制你做到位，AI 帮你做得更好。这三层缺一不可，合在一起才是可复制的大客户打法。下一步有三个选项：本周试用，你的 SAM 团队可以立刻开始录入真实客户数据；全员 Onboarding，我们提供 2 小时的系统培训和方法论工作坊；方法论工作坊，深入讲解 MEDDPICC 和 0→1、1→N 的实战应用。联系 leo.he@aistorm.com。"
 ];
+// Debug helper — shows status in page
+function _dbg(msg){var el=document.getElementById('_dbg');if(el){el.textContent=new Date().toLocaleTimeString()+' '+msg;}}
 let current=0,autoPlay=true,muted=false,speaking=false,timer=null;
 // Single reusable audio element — created on first user gesture to satisfy autoplay policy
 let audioEl=null;
 function _getAudioEl(){
-  if(!audioEl){audioEl=new Audio();audioEl.onended=()=>{speaking=false;if(autoPlay)timer=setTimeout(()=>{if(!speaking&&autoPlay)next();},800);};audioEl.onerror=()=>{speaking=false;};}
+  if(!audioEl){audioEl=new Audio();audioEl.onended=()=>{speaking=false;_dbg('ENDED slide'+(current+1));if(autoPlay)timer=setTimeout(()=>{if(!speaking&&autoPlay)next();},800);};audioEl.onerror=()=>{speaking=false;_dbg('ONERROR code='+(audioEl&&audioEl.error?audioEl.error.code:'?'));};}
   return audioEl;
 }
 // startDemo is defined early above; this syncs state after AUDIO_SRCS loads
@@ -389,7 +391,9 @@ function speak(idx){
   el.src=src;
   el.load();
   speaking=true;
-  el.play().catch(function(){speaking=false;});
+  var shortSrc=src.split('/').pop();
+  _dbg('PLAY '+shortSrc);
+  el.play().then(function(){_dbg('OK '+shortSrc);}).catch(function(e){speaking=false;_dbg('ERR:'+e.message.substring(0,50));});
 }
 function stopAudio(){if(audioEl){audioEl.pause();audioEl.src="";}speaking=false;clearTimeout(timer);}
 function showSlide(n){
@@ -422,6 +426,11 @@ document.addEventListener('keydown',e=>{
 });
 document.getElementById('notes-text').textContent=NARRATIONS[0]||'';
 document.getElementById('speaker-bar').textContent=NARRATIONS[0]?NARRATIONS[0].substring(0,80)+'...':'';
+var _dbgEl=document.createElement('div');
+_dbgEl.id='_dbg';
+_dbgEl.style.cssText='position:fixed;top:4px;right:8px;background:rgba(0,0,0,0.85);color:#0f0;font-size:11px;padding:3px 8px;border-radius:4px;z-index:9999;font-family:monospace;max-width:420px;word-break:break-all;';
+_dbgEl.textContent='debug ready';
+document.body.appendChild(_dbgEl);
 _syncDemoStart();
 </script>
 
