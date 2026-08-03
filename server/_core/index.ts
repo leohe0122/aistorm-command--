@@ -138,10 +138,10 @@ async function startServer() {
   // Serve demo.html with token-based access control
   app.get("/demo.html", async (req, res) => {
     const token = req.query.token as string | undefined;
-    const distDir =
-      process.env.NODE_ENV === "development"
-        ? path.resolve(import.meta.dirname, "../..", "dist", "public")
-        : path.resolve(import.meta.dirname, "public");
+   const distDir =
+     process.env.NODE_ENV === "development"
+        ? path.resolve(import.meta.dirname, "../..", "client", "public")
+       : path.resolve(import.meta.dirname, "public");
     const demoPath = path.resolve(distDir, "demo.html");
 
     if (!fs.existsSync(demoPath)) {
