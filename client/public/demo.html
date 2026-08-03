@@ -57,14 +57,13 @@ body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFo
 </div>
 <script>
 // Early-load: startDemo must be available before AUDIO_SRCS finishes parsing
-var demoStarted = false;
-function startDemo() {
+window.demoStarted = false;
+window.startDemo = function() {
   document.getElementById('welcome-overlay').classList.add('hidden');
-  demoStarted = true;
-  // speak(0) will be called once the main script is ready
-  if (typeof speak === 'function') speak(0);
-  else window.__pendingStart = true;
-}
+  window.demoStarted = true;
+  if (typeof speak === 'function') { speak(0); }
+  else { window.__pendingStart = true; }
+};
 </script>
 <div class="slide-wrap">
 <div class="slide active" id="slide-1">
@@ -291,7 +290,7 @@ function _syncDemoStart(){
   }
 }
 function speak(idx){
-  stopAudio();if(muted||!demoStarted)return;
+  stopAudio();if(muted||!window.demoStarted)return;
   const src=AUDIO_SRCS[idx+1];if(!src)return;
   audioEl=new Audio(src);
   audioEl.onended=()=>{speaking=false;if(autoPlay)timer=setTimeout(()=>{if(!speaking)next();},1000);};
@@ -316,7 +315,7 @@ function toggleAuto(){
   autoPlay=!autoPlay;
   const b=document.getElementById('btn-auto');
   b.textContent=autoPlay?'⏸ 暂停':'▶ 自动';b.classList.toggle('active',autoPlay);
-  if(!autoPlay){clearTimeout(timer);stopAudio();}else if(!speaking)speak(current);
+  if(!autoPlay){clearTimeout(timer);stopAudio();}else if(!speaking&&window.demoStarted)speak(current);
 }
 // toggleMute removed - audio always on
 function toggleNotes(){document.getElementById('notes-overlay').classList.toggle('show');}
