@@ -180,12 +180,8 @@ async function startServer() {
         lastAccessIp: clientIp,
       }).where(eq(demoTokens.id, record.id));
 
-      // Inject watermark info into demo.html
-      let html = fs.readFileSync(demoPath, 'utf-8');
-      const watermarkScript = `<script>
-window.__DEMO_VIEWER__ = ${JSON.stringify({ name: record.recipientName, email: record.recipientEmail || '', token: token.slice(0, 8) + '...' })};
-</script>`;
-      html = html.replace('</head>', watermarkScript + '</head>');
+     // Inject watermark info into demo.html
+     let html = fs.readFileSync(demoPath, 'utf-8');
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(html);
     } catch (err) {
