@@ -176,6 +176,14 @@ window.demoStarted = false;
 window.startDemo = function() {
   var ov=document.getElementById('welcome-overlay');if(ov){ov.style.display='none';ov.style.visibility='hidden';ov.style.opacity='0';ov.style.pointerEvents='none';}
   window.demoStarted = true;
+  // Unlock AudioContext on user gesture so all subsequent audio can autoplay
+  try {
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      window._audioCtx = new AudioCtx();
+      if (window._audioCtx.state === 'suspended') { window._audioCtx.resume(); }
+    }
+  } catch(e) {}
   if (typeof speak === 'function') { speak(0); }
   else { window.__pendingStart = true; }
 };
@@ -408,9 +416,20 @@ function speak(idx){
   stopAudio();if(muted||!window.demoStarted)return;
   const src=AUDIO_SRCS[idx+1];if(!src)return;
   audioEl=new Audio(src);
-  audioEl.onended=()=>{speaking=false;if(autoPlay)timer=setTimeout(()=>{if(!speaking)next();},1000);};
+  audioEl.onended=()=>{speaking=false;if(autoPlay)timer=setTimeout(()=>{if(!speaking&&autoPlay)next();},800);};
   audioEl.onerror=()=>{speaking=false;};
-  speaking=true;audioEl.play().catch(()=>{speaking=false;});
+  speaking=true;
+  // Resume AudioContext if suspended (Chrome autoplay policy)
+  var playPromise = audioEl.play();
+  if (playPromise !== undefined) {
+    playPromise.catch(function(err) {
+      speaking=false;
+      // If blocked by autoplay policy, try to resume via AudioContext
+      if (window._audioCtx && window._audioCtx.state === 'suspended') {
+        window._audioCtx.resume().then(function() { audioEl && audioEl.play().catch(function(){}); });
+      }
+    });
+  }
 }
 function stopAudio(){if(audioEl){audioEl.pause();audioEl.src="";audioEl=null;}speaking=false;clearTimeout(timer);}
 function showSlide(n){
