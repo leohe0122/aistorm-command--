@@ -409,8 +409,8 @@ function showSlide(n){
   document.getElementById('slide-'+(current+1)).classList.add('active');
   document.getElementById('cur').textContent=current+1;
   const narr=NARRATIONS[current]||'';
-  document.getElementById('speaker-bar').textContent=narr?narr.substring(0,80)+'...':'（无演讲稿）';
-  document.getElementById('notes-text').textContent=narr||'（无演讲稿）';
+  var _sb2=document.getElementById('speaker-bar');if(_sb2)_sb2.textContent=narr?narr.substring(0,80)+'...':'（无演讲稿）';
+  var _nt2=document.getElementById('notes-text');if(_nt2)_nt2.textContent=narr||'（无演讲稿）';
   if(autoPlay&&!muted)speak(current);
 }
 function next(){stopAudio();showSlide(current+1);}
@@ -430,8 +430,8 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='m'||e.key==='M')toggleMute();
   else if(e.key==='a'||e.key==='A')toggleAuto();
 });
-document.getElementById('notes-text').textContent=NARRATIONS[0]||'';
-document.getElementById('speaker-bar').textContent=NARRATIONS[0]?NARRATIONS[0].substring(0,80)+'...':'';
+var _nt=document.getElementById('notes-text');if(_nt)_nt.textContent=NARRATIONS[0]||'';
+var _sb=document.getElementById('speaker-bar');if(_sb)_sb.textContent=NARRATIONS[0]?NARRATIONS[0].substring(0,80)+'...':'';
 var _dbgEl=document.createElement('div');
 _dbgEl.id='_dbg';
 _dbgEl.style.cssText='position:fixed;top:4px;right:8px;background:rgba(0,0,0,0.85);color:#0f0;font-size:11px;padding:3px 8px;border-radius:4px;z-index:9999;font-family:monospace;max-width:420px;word-break:break-all;';
@@ -441,5 +441,5 @@ _syncDemoStart();
 </script>
 
 
-</body>
+<div class="notes-overlay" id="notes-overlay"><div style="background:#1e293b;border-radius:12px;padding:32px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;position:relative;"><button onclick="toggleNotes()" style="position:absolute;top:12px;right:16px;background:none;border:none;color:#94a3b8;font-size:20px;cursor:pointer;">✕</button><h3 style="color:#e2e8f0;margin:0 0 16px 0;font-size:16px;">演讲稿</h3><p id="notes-text" style="color:#cbd5e1;font-size:14px;line-height:1.8;margin:0;white-space:pre-wrap;"></p></div></div></body>
 </html>
