@@ -102,8 +102,8 @@ body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFo
   ];
   // Single source of truth for all 29 slide audio files
   var audioUrls = [
-    "/manus-storage/slide_01_final_b451022e.mp3",
-    "/manus-storage/slide_02_final_3e9b8f35.mp3",
+    "/manus-storage/slide_01_v2_ba8d97ac.mp3",
+    "/manus-storage/slide_02_v2_e6fcd65f.mp3",
     "/manus-storage/slide_03_7methods_da7cd112.mp3",
     "/manus-storage/slide_04_95363ed9.mp3",
     "/manus-storage/slide_05_513ad42f.mp3",
@@ -338,8 +338,8 @@ window.startDemo = function() {
 <script>
 // Single source of truth: use window._AUDIO_URLS set by preload script
 const AUDIO_SRCS = window._AUDIO_URLS;
-const NARRATIONS = ["AIStorm Command——AI 驱动的大客户作战指挥系统，整合战场地图、情报雷达、AI 洞察辅助、POD 协同与 Champion 培养，让每一次拜访都精准高效。它的设计初衷是解决一个根本性的管理困境：大客户销售的核心资产——客户关系、商机判断、作战知识——全部锁在销售个人的脑子里，管理层无法触达，公司无法沉淀。",
-"这导致三个连锁问题：第一，管理层被迫相信销售的自我汇报。没有独立验证机制，乐观偏见无法被识别，风险在暴露前无从察觉。第二，方法论停留在培训层面，无法落地到日常行为。销售培训完了回去还是靠直觉跑客户，框架没有嵌入实际工作流。第三，客户知识不可复制。关键销售离职，客户从零重建，公司为同一个客户重复支付探索成本。",
+const NARRATIONS = ["欢迎来到 AIStorm Command——AI 驱动的大客户作战指挥系统。它整合了战场地图、情报雷达、AI 洞察辅助、POD 协同与 Champion 培养，让每一次拜访都精准高效。在介绍具体功能之前，我们先来看看 Command 要解决的根本问题。",
+"大客户销售面临三个根本性的管理困境。第一，管理层被迫相信销售的自我汇报——没有独立验证机制，乐观偏见无法被识别，风险在暴露前无从察觉。第二，方法论停留在培训层面，无法落地到日常行为——销售培训完了回去还是靠直觉跑客户，框架没有嵌入实际工作流。第三，客户知识不可复制——关键销售离职带走关键信息，公司为同一个客户重复支付新销售探索成本。这三个问题，Command 逐一解决。",
 "在展示具体功能之前，先介绍 Command 背后的七大方法论。核心评估框架有四个：MEDDPICC，商机健康度评估，八个维度分别是可量化价值、经济决策人、决策标准、决策流程、合同流程、痛点识别、Champion 培养、竞品分析；Buying Group，决策群体覆盖，识别经济决策人、技术评估人、Champion 和阻碍者；Blue Sheet，商机作战蓝图，记录客户目标、我方价值主张和竞争态势；Win Strategy，赢单策略制定，明确我方差异化优势和关键行动。AI 赋能工具有三个：SPIN 提问，结构化拜访对话框架；Kill Sheets，竞品阻击包，AI 自动匹配竞品并实时生成话术；Command of Message，Champion 弹药库，为内部推动者提供价值主张和差异化证明点。这七个框架是 Command 的核心理论依据——通过预置好的 AI Prompt 工程，把它们串联起来，嵌入到战场地图每一个客户的日常操作里。在这个过程中，所有围绕客户的有效营销经营数据，都会在 AI 激活方法论的辅助下，变成有价值的数字资产留存在 Command 系统里——包括 SAM 整个赢单的过程逻辑和每一个关键动作。这是 Command 与普通 CRM 最本质的区别：它不只是记录数据，而是把数据变成可传承、可复制的组织知识。",
 "0→1 阶段分五步：建图→进门→定痛→找人→进入商机。此时 MEDDPICC 衡量的是关系热度——我们有没有接触到经济决策人、有没有确认真实痛点、有没有找到内部推动者。分数代表的是进入商机对话的就绪度，而不是商机本身的质量。这张图是建图阶段：阶段目标是摸清客户地图，交付物是组织架构和关键人初步识别，常见陷阱是把公开信息当作真实决策链。",
 "进门阶段的目标是找到敲门砖——一个让客户愿意见面的切入话题，而不是直接推产品。关键行动是研究客户近期的战略动向、找到与我方能力的交叉点，并通过 Champion 候选人或中间人建立初次接触。交付物是完成首次正式会议，并确认客户有初步的安全投入意愿。",
