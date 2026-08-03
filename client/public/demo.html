@@ -387,15 +387,19 @@ function _syncDemoStart(){
 function speak(idx){
   stopAudio();if(muted||!window.demoStarted)return;
   const src=AUDIO_SRCS[idx];if(!src)return;
-  var el=_getAudioEl();
+  // Fresh Audio element each call avoids src="" stale state and Chrome autoplay rejection on reused elements
+  if(audioEl){audioEl.onended=null;audioEl.onerror=null;}
+  audioEl=new Audio();
+  var el=audioEl;
+  el.onended=function(){speaking=false;_dbg('ENDED slide'+(current+1));if(autoPlay)timer=setTimeout(function(){if(!speaking&&autoPlay)next();},800);};
+  el.onerror=function(){speaking=false;_dbg('ONERROR code='+(el.error?el.error.code:'?'));};
   el.src=src;
-  el.load();
   speaking=true;
   var shortSrc=src.split('/').pop();
   _dbg('PLAY '+shortSrc);
   el.play().then(function(){_dbg('OK '+shortSrc);}).catch(function(e){speaking=false;_dbg('ERR:'+e.message.substring(0,50));});
 }
-function stopAudio(){if(audioEl){audioEl.pause();audioEl.src="";}speaking=false;clearTimeout(timer);}
+function stopAudio(){if(audioEl){audioEl.pause();audioEl.onended=null;audioEl.onerror=null;audioEl.src='';}speaking=false;clearTimeout(timer);}
 function showSlide(n){
   if(n<0||n>=29)return;stopAudio();
   document.getElementById('slide-'+(current+1)).classList.remove('active');
