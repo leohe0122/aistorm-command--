@@ -6,9 +6,9 @@
 <title>AIStorm Command — 全员培训</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column}
-.slide-wrap{flex:1;overflow:hidden;position:relative}
-.slide{position:absolute;inset:0;display:none;overflow-y:auto;padding:16px 32px 64px}
+body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;height:100vh;overflow:hidden}
+.slide-wrap{position:fixed;inset:0;overflow:hidden}
+.slide{position:absolute;inset:0;display:none;overflow-y:auto;padding:16px 32px 100px}
 .slide.active{display:block}
 .part-badge{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.5px;padding:4px 10px;border-radius:20px;margin-bottom:10px}
 .slide-title{font-size:21px;font-weight:700;color:#fff;margin-bottom:16px}
@@ -24,12 +24,12 @@ body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFo
 .card ul{padding-left:16px}
 .warn-box{background:rgba(217,119,6,.08);border:1px solid rgba(217,119,6,.3);border-radius:8px;padding:12px 16px;margin:10px 0;font-size:13px;color:#fbbf24;line-height:1.7}
 .info-box{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:8px;padding:12px 16px;margin:10px 0;font-size:13px;color:#a5b4fc;line-height:1.7}
-.controls{height:50px;background:#161b27;border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:8px;padding:0 14px;flex-shrink:0}
-.btn{background:#1e2533;border:1px solid rgba(255,255,255,.08);color:#e2e8f0;padding:5px 13px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap}
+.controls{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:rgba(15,17,23,0.88);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.12);border-radius:40px;display:flex;align-items:center;gap:6px;padding:8px 16px;z-index:200;box-shadow:0 4px 24px rgba(0,0,0,.5)}
+.btn{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#e2e8f0;padding:6px 16px;border-radius:20px;font-size:13px;cursor:pointer;white-space:nowrap;transition:background .15s}
 .btn:hover{background:rgba(255,255,255,.06)}
 .btn.active{background:#6366f1;border-color:#6366f1;color:#fff}
-.slide-counter{font-size:12px;color:#64748b;margin:0 4px}
-.speaker-bar{font-size:12px;color:#64748b;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(255,255,255,.04);padding:5px 12px;border-radius:6px;cursor:pointer}
+.slide-counter{font-size:13px;color:#94a3b8;margin:0 8px;min-width:52px;text-align:center}
+.speaker-bar{font-size:12px;color:#64748b;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(255,255,255,.04);padding:5px 12px;border-radius:20px;cursor:pointer}
 .notes-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;align-items:center;justify-content:center}
 .notes-overlay.show{display:flex}
 .notes-box{background:#161b27;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:28px;max-width:900px;width:90%;max-height:80vh;overflow-y:auto}
@@ -43,11 +43,126 @@ body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFo
 .welcome-box p{font-size:15px;color:#94a3b8;line-height:1.7;margin-bottom:28px}
 .welcome-btn{background:linear-gradient(135deg,#6366f1,#4f46e5);border:none;color:#fff;padding:14px 40px;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;letter-spacing:.3px;transition:opacity .2s}
 .welcome-btn:hover{opacity:.9}
+
+.loading-overlay{position:fixed;inset:0;background:rgba(10,12,20,0.97);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px}
+.loading-overlay.hidden{display:none}
+.loading-box{text-align:center;max-width:400px;padding:0 24px}
+.loading-box h3{font-size:18px;font-weight:600;color:#fff;margin-bottom:8px}
+.loading-box p{font-size:13px;color:#64748b;margin-bottom:20px}
+.progress-bar-wrap{width:300px;height:4px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden}
+.progress-bar-fill{height:100%;background:linear-gradient(90deg,#6366f1,#818cf8);border-radius:4px;transition:width .3s ease;width:0%}
+.progress-text{font-size:12px;color:#64748b;margin-top:8px}
 </style>
 </head>
 <body>
 
-<div class="welcome-overlay" id="welcome-overlay">
+<div class="loading-overlay" id="loading-overlay">
+  <div class="loading-box">
+    <div style="font-size:36px;margin-bottom:12px">⚡</div>
+    <h3>AIStorm Command</h3>
+    <p>正在加载演示资源...</p>
+    <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progress-fill"></div></div>
+    <div class="progress-text" id="progress-text">0 / 58</div>
+  </div>
+</div>
+
+<script>
+// Preload all assets and show progress
+(function() {
+  var imgUrls = [
+    "/manus-storage/slide_img_01_3e50f6db.png",
+    "/manus-storage/slide_img_02_c3c8785e.png",
+    "/manus-storage/slide_img_03_0abc0578.png",
+    "/manus-storage/slide_img_04_b35ad572.png",
+    "/manus-storage/slide_img_05_c41971ec.png",
+    "/manus-storage/slide_img_06_414a8561.png",
+    "/manus-storage/slide_img_07_0bc1bd10.png",
+    "/manus-storage/slide_img_08_fd86f5af.png",
+    "/manus-storage/slide_img_09_ed76c884.png",
+    "/manus-storage/slide_img_10_b795f83b.png",
+    "/manus-storage/slide_img_11_26ec2a21.png",
+    "/manus-storage/slide_img_12_6162e292.png",
+    "/manus-storage/slide_img_13_7247a535.png",
+    "/manus-storage/slide_img_14_90e88839.png",
+    "/manus-storage/slide_img_15_32ed9e9b.png",
+    "/manus-storage/slide_img_16_ba652529.png",
+    "/manus-storage/slide_img_17_1431924b.png",
+    "/manus-storage/slide_img_18_09e36807.png",
+    "/manus-storage/slide_img_19_4785fa94.png",
+    "/manus-storage/slide_img_20_f798444f.png",
+    "/manus-storage/slide_img_21_d122c39b.png",
+    "/manus-storage/slide_img_22_c0c55d98.png",
+    "/manus-storage/slide_img_23_704f9b5b.png",
+    "/manus-storage/slide_img_24_6489a110.png",
+    "/manus-storage/slide_img_25_d6b2d971.png",
+    "/manus-storage/slide_img_26_38842748.png",
+    "/manus-storage/slide_img_27_e2f92c15.png",
+    "/manus-storage/slide_img_28_0092db45.png",
+    "/manus-storage/slide_img_29_93e99ce3.png"
+  ];
+  var audioUrls = [
+    "/manus-storage/slide_01_final_b451022e.mp3",
+    "/manus-storage/slide_02_final_3e9b8f35.mp3",
+    "/manus-storage/slide_03_862ec265.mp3",
+    "/manus-storage/slide_04_95363ed9.mp3",
+    "/manus-storage/slide_05_513ad42f.mp3",
+    "/manus-storage/slide_06_ee322933.mp3",
+    "/manus-storage/slide_07_f076f111.mp3",
+    "/manus-storage/slide_08_090bbfcc.mp3",
+    "/manus-storage/slide_09_316be65b.mp3",
+    "/manus-storage/slide_10_27dd8848.mp3",
+    "/manus-storage/slide_11_0e4fddb1.mp3",
+    "/manus-storage/slide_12_a35f759d.mp3",
+    "/manus-storage/slide_13_894d2c84.mp3",
+    "/manus-storage/slide_14_a79dec45.mp3",
+    "/manus-storage/slide_15_c91b015d.mp3",
+    "/manus-storage/slide_16_fa94b355.mp3",
+    "/manus-storage/slide_17_b345aea6.mp3",
+    "/manus-storage/slide_18_b9dd496c.mp3",
+    "/manus-storage/slide_19_f99b5b99.mp3",
+    "/manus-storage/slide_20_7a05a794.mp3",
+    "/manus-storage/slide_21_1aad463e.mp3",
+    "/manus-storage/slide_22_3680cc49.mp3",
+    "/manus-storage/slide_23_b73938a4.mp3",
+    "/manus-storage/slide_24_92a2e94b.mp3",
+    "/manus-storage/slide_25_15c1a727.mp3",
+    "/manus-storage/slide_26_eda834fa.mp3",
+    "/manus-storage/slide_27_b4321720.mp3",
+    "/manus-storage/slide_28_1339dad0.mp3",
+    "/manus-storage/slide_29_527c37c7.mp3"
+  ];
+  var total = imgUrls.length + audioUrls.length;
+  var loaded = 0;
+  function onLoad() {
+    loaded++;
+    var pct = Math.round(loaded / total * 100);
+    var fill = document.getElementById('progress-fill');
+    var txt = document.getElementById('progress-text');
+    if (fill) fill.style.width = pct + '%';
+    if (txt) txt.textContent = loaded + ' / ' + total;
+    if (loaded >= total) {
+      setTimeout(function() {
+        document.getElementById('loading-overlay').classList.add('hidden');
+        document.getElementById('welcome-overlay').style.display = 'flex';
+      }, 300);
+    }
+  }
+  // Preload images
+  imgUrls.forEach(function(url) {
+    var img = new Image();
+    img.onload = img.onerror = onLoad;
+    img.src = url;
+  });
+  // Preload audio (just fetch headers to confirm availability)
+  audioUrls.forEach(function(url) {
+    var a = new Audio();
+    a.oncanplaythrough = a.onerror = onLoad;
+    a.preload = 'auto';
+    a.src = url;
+  });
+})();
+</script>
+<div class="welcome-overlay" id="welcome-overlay" style="display:none">
   <div class="welcome-box">
     <div style="font-size:42px;margin-bottom:16px">🎯</div>
     <h2>AIStorm Command 演示</h2>
