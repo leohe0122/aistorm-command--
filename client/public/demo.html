@@ -419,17 +419,15 @@ function speak(idx){
   audioEl.onended=()=>{speaking=false;if(autoPlay)timer=setTimeout(()=>{if(!speaking&&autoPlay)next();},800);};
   audioEl.onerror=()=>{speaking=false;};
   speaking=true;
-  // Resume AudioContext if suspended (Chrome autoplay policy)
-  var playPromise = audioEl.play();
-  if (playPromise !== undefined) {
-    playPromise.catch(function(err) {
-      speaking=false;
-      // If blocked by autoplay policy, try to resume via AudioContext
-      if (window._audioCtx && window._audioCtx.state === 'suspended') {
-        window._audioCtx.resume().then(function() { audioEl && audioEl.play().catch(function(){}); });
-      }
-    });
+  // Use AudioContext to bypass Chrome autoplay policy
+  if (window._audioCtx) {
+    var source = window._audioCtx.createMediaElementSource(audioEl);
+    source.connect(window._audioCtx.destination);
   }
+  audioEl.play().catch(function(err) {
+    speaking = false;
+    console.warn('[speak] play rejected:', err.message);
+  });
 }
 function stopAudio(){if(audioEl){audioEl.pause();audioEl.src="";audioEl=null;}speaking=false;clearTimeout(timer);}
 function showSlide(n){
