@@ -78,7 +78,7 @@ body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFo
     "/manus-storage/slide_img_06_414a8561.png",
     "/manus-storage/slide_img_07_0bc1bd10.png",
     "/manus-storage/slide_08_2e8b5ede.jpg",
-    "/manus-storage/slide_09_46a2325a.jpg",
+    "/manus-storage/slide09_meddpicc_dual_layer_b9061913.webp",
     "/manus-storage/slide_10_7dc7733f.jpg",
     "/manus-storage/slide_11_add4dba8.jpg",
     "/manus-storage/slide_12_3b8bf74f.jpg",
@@ -110,7 +110,7 @@ body{background:#0f1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFo
     "/manus-storage/slide_06_ee322933.mp3",
     "/manus-storage/slide_07_f076f111.mp3",
     "/manus-storage/slide_08_090bbfcc.mp3",
-    "/manus-storage/slide_09_316be65b.mp3",
+    "/manus-storage/slide_09_v2_13b74459.mp3",
     "/manus-storage/slide_10_27dd8848.mp3",
     "/manus-storage/slide_11_0e4fddb1.mp3",
     "/manus-storage/slide_12_a35f759d.mp3",
@@ -226,7 +226,7 @@ window.startDemo = function() {
 <div class="slide" id="slide-9">
 <span class="part-label">PART 3 | 1→N 商机期</span>
 <h1>多条并行战线 — MEDDPICC 汇总矩阵</h1>
-<div class="slide-screenshot" style="margin-top:16px"><img src="/manus-storage/slide_09_46a2325a.jpg" style="width:100%;height:auto;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.5);" alt="多条并行战线 — MEDDPICC 汇总矩阵"></div>
+<div class="slide-screenshot" style="margin-top:16px"><img src="/manus-storage/slide09_meddpicc_dual_layer_b9061913.webp" style="width:100%;height:auto;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.5);" alt="多条并行战线 — MEDDPICC 汇总矩阵"></div>
 </div>
 <div class="slide" id="slide-10">
 <span class="part-label">PART 3 | 1→N 商机期</span>
@@ -346,7 +346,7 @@ const NARRATIONS = ["欢迎来到 AIStorm Command——AI 驱动的大客户作�
 "定痛阶段的目标是挖掘并量化客户的核心安全痛点，让客户亲口承认痛点的严重性和紧迫性。关键行动是用开放式问题引导客户描述现有安全挑战，并将痛点量化：损失多少钱、影响多少业务、面临什么合规压力。阶段交付物是客户认可的量化痛点描述，且 MEDDPICC I 维度得分不低于 50 分。常见陷阱：痛点必须由客户自己说出来，SAM 说的不算。",
 "找人阶段的目标是找到并培养内部 Champion，同时接触到有预算决策权的 Economic Buyer。Champion 不等于联系人——必须是有影响力、认可我们价值、有动机推动的人。关键行动是识别 Champion 候选人、为他提供弹药（ROI 测算、竞品对比、合规风险报告），并通过 Champion 了解内部决策流程和预算节奏。",
 "进入商机是 0→1 的终点，也是 1→N 的起点。在这之前，每个阶段都有强制门控：建图阶段要求关键人图谱不少于 3 人、敲门砖话题已填写，才能推进到进门；进门阶段要求至少 1 次拜访记录、经济决策人有初始评分；定痛阶段要求 M 维度和 I 维度评分都达到 2 分以上，且有客户能力认可信号；找人阶段要求 Champion 评分达到 3 分以上、Champion 姓名已录入。这些条件都是系统硬性拦截——关键条件未满足，推进按钮不会放行。进入商机后，评估框架自动切换：不再问关系够不够热，而是问这条商机赢单的概率有多高。",
-"进入 1→N 之后，一个客户可以同时有多条并行商机战线。这是香港电讯的视图——6 条活跃战线，每条战线都有独立的 MEDDPICC 评分，代表这条商机的赢单概率。这里有一个重要设计：客户卡片上显示的那个总分，不是 SAM 手填的，而是系统自动聚合所有商机的 8 个维度评分取均值计算出来的。以香港电讯为例，6 条战线各自打分，系统把每个维度跨所有战线取均值，最后汇总成客户级总分。这个设计解决了一个管理难题：AD 不需要逐条翻看每条商机，一眼就能判断这个客户整体的商机健康度，同时还可以下钻到具体哪条战线、哪个维度最薄弱，精准定位需要介入的地方。",
+"进入 1→N 之后，Command 有两层 MEDDPICC，解决两个不同的问题。第一层是商机级 MEDDPICC，0 到 4 分制，SAM 手动选择。每个维度有 5 个行为证据标准——不是凭感觉打分，而是必须选择对应的行为事实：比如 M 维度，痛点口头确认是 1 分，痛点已量化是 2 分，ROI 方案已提交是 3 分，客户认可并引用是 4 分。这个设计防止数据撒谎——分数必须有行为记录支撑。第二层是客户级 MEDDPICC，100 分制，系统自动聚合。以香港电讯为例，6 条商机战线各自打分，系统把每个维度跨所有战线取均值并转换为 100 分制，汇总成客户总分 48 分。客户级分数回答的是：这个客户整体的关系热度和商机健康度如何，AD 一眼就能判断是否需要介入，不需要逐条翻看每条战线。战线、哪个维度最薄弱，精准定位需要介入的地方。",
 "每条商机都有一张 Blue Sheet。这是 AI Pentest 战线的蓝图：客户业务目标是建立 AI 驱动的渗透测试能力，我方价值主张是效率提升 10 倍，Champion 是 Ryan Lam，竞争对手是传统渗透测试服务商，赢单策略是演示 AI Pentest 与传统方式的效率差距，以年度合规审计为切入点。这不是填表，而是强迫 SAM 在拜访前想清楚：我们凭什么赢。",
 "MEDDPICC 的分数不是 SAM 自我报告的，每个维度都有具体的选项和对应分值。你可以看到 M 维度——可量化价值：未识别痛点 0 分，痛点口头确认 25 分，痛点已量化 50 分，ROI 方案已提交 75 分，客户认可并引用 100 分。SAM 必须选择对应的行为证据，系统才会记录分数。这就是防止数据撒谎的核心机制：分数必须有行为记录支撑。",
 "这是 AI 给香港电讯 Darktrace 替代方案战线生成的 1→N 商机赢单 Review。1→N 的 Review 问的是：这条商机会不会赢，MEDDPICC 哪个维度是最大风险，Buying Group 覆盖是否足够，竞品动作有没有威胁。结论是赢单概率 20%，七个维度全红——M 无量化价值确认，E 未识别经济购买者，Champion 尚未识别。AI 给出的建议是通过两个未知角色的非正式接触，尝试发掘 Champion，安排咖啡会或午餐。",
