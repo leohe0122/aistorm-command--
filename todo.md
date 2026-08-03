@@ -8,28 +8,28 @@
 - [x] Slide 5：进门阶段 ✅（用户确认）
 - [x] Slide 6：定痛阶段 ✅（用户确认）
 - [x] Slide 7：找人阶段 ✅（用户确认）
-- [ ] Slide 8：进入商机（框架切换）— 需替换为 03.19.20.png
-- [ ] Slide 9：多条并行战线 MEDDPICC 矩阵 — 需替换为 03.22.16.png
-- [ ] Slide 10：Blue Sheet 作战蓝图 — 需替换为 03.25.42.png 或 03.26.16.png
-- [ ] Slide 11：MEDDPICC 维度细节 — 需替换为 03.23.54.png
-- [ ] Slide 12：1→N AI Review — 需替换为 03.28.08.png 或 03.28.43.png
-- [ ] Slide 13：SPIN 提问框架 — 需替换为 03.32.01.png 或 03.32.18.png
-- [ ] Slide 14：拜访作战日志 — 需替换为拜访日志目录截图
-- [ ] Slide 15：AI 分析结果 — 需替换为拜访日志 AI 分析截图
-- [ ] Slide 16：AI 洞察简报 — 需替换为 AI洞察报告目录截图
-- [ ] Slide 17：快速 Review — 需替换为快速Review目录截图
-- [ ] Slide 18：AI 行动指令台 — 需替换为 AI行动指令台目录截图
-- [ ] Slide 19：客户情报雷达 — 需替换为客户情报雷达目录截图
-- [ ] Slide 20：武器库 Arsenal — 需替换为武器库目录截图
-- [ ] Slide 21：效能基线 — 待确认截图来源
-- [ ] Slide 22：AD 指挥台全局视图 — 需替换为 AD指挥台/全局视图截图
-- [ ] Slide 23：全局 Review — 需替换为 AD指挥台/全局Review功能截图
-- [ ] Slide 24：SAM 教练 Review（数据） — 需替换为 AD指挥台/SAM教练Review功能截图
-- [ ] Slide 25：SAM 教练 Review（AI 建议） — 需替换为 AD指挥台/TDH教练Review截图
-- [ ] Slide 26：POD 协同中枢 — 需替换为 POD协同中枢目录截图
-- [ ] Slide 27：四种角色 — 待确认截图来源
-- [ ] Slide 28：系统设置 — 需替换为系统设置目录截图
-- [ ] Slide 29：总结页 — 待确认截图来源
+- [x] Slide 8：进入商机（框架切换）✅ + 阶段门控逻辑旁白
+- [x] Slide 9：多条并行战线 MEDDPICC 矩阵 ✅ + 客户级汇总分聚合逻辑旁白
+- [x] Slide 10：Blue Sheet 作战蓝图 ✅
+- [x] Slide 11：MEDDPICC 维度细节 ✅
+- [x] Slide 12：1→N AI Review ✅
+- [x] Slide 13：SPIN 提问框架 ✅ + 解决问题和数据来源旁白
+- [x] Slide 14：拜访作战日志 ✅
+- [x] Slide 15：AI 分析结果 ✅
+- [x] Slide 16：AI 洞察简报 ✅
+- [x] Slide 17：快速 Review ✅
+- [x] Slide 18：AI 行动指令台 ✅
+- [x] Slide 19：客户情报雷达 ✅
+- [x] Slide 20：武器库 Arsenal ✅
+- [x] Slide 21：效能基线 ✅ + 解决问题和数据来源旁白
+- [x] Slide 22：AD 指挥台全局视图 ✅
+- [x] Slide 23：全局 Review ✅
+- [x] Slide 24：SAM 教练 Review（数据）✅
+- [x] Slide 25：SAM 教练 Review（AI 建议）✅
+- [x] Slide 26：POD 协同中枢 ✅
+- [x] Slide 27：四种角色（团队成员管理页）✅ + 权限隔离价值旁白
+- [x] Slide 28：系统设置四图拼接 ✅ + 四项能力业务原因旁白
+- [x] Slide 29：总结页 ✅
 
 ## 数据库 & 后端
 - [x] 设计并创建数据库 schema（clients, meddpicc, signals, actions, meetings, champions, pod_tasks, deal_reviews）
