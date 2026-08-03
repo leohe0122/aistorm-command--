@@ -176,14 +176,6 @@ window.demoStarted = false;
 window.startDemo = function() {
   var ov=document.getElementById('welcome-overlay');if(ov){ov.style.display='none';ov.style.visibility='hidden';ov.style.opacity='0';ov.style.pointerEvents='none';}
   window.demoStarted = true;
-  // Unlock AudioContext on user gesture so all subsequent audio can autoplay
-  try {
-    var AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (AudioCtx) {
-      window._audioCtx = new AudioCtx();
-      if (window._audioCtx.state === 'suspended') { window._audioCtx.resume(); }
-    }
-  } catch(e) {}
   if (typeof speak === 'function') { speak(0); }
   else { window.__pendingStart = true; }
 };
@@ -419,15 +411,7 @@ function speak(idx){
   audioEl.onended=()=>{speaking=false;if(autoPlay)timer=setTimeout(()=>{if(!speaking&&autoPlay)next();},800);};
   audioEl.onerror=()=>{speaking=false;};
   speaking=true;
-  // Use AudioContext to bypass Chrome autoplay policy
-  if (window._audioCtx) {
-    var source = window._audioCtx.createMediaElementSource(audioEl);
-    source.connect(window._audioCtx.destination);
-  }
-  audioEl.play().catch(function(err) {
-    speaking = false;
-    console.warn('[speak] play rejected:', err.message);
-  });
+  audioEl.play().catch(function(){speaking=false;});
 }
 function stopAudio(){if(audioEl){audioEl.pause();audioEl.src="";audioEl=null;}speaking=false;clearTimeout(timer);}
 function showSlide(n){
