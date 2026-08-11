@@ -538,16 +538,17 @@ function ActiveFrontsPanel({ clientId, focusOppId }: { clientId: number; focusOp
   const createOpp = trpc.opportunities.create.useMutation({
     onSuccess: () => {
       utils.opportunities.listByClient.invalidate({ clientId });
+      utils.products.clientCoverage.invalidate({ clientId });
       toast.success("商机已添加");
       setShowAdd(false);
       setNewOpp({ name: "", stage: "建图", status: "活跃", competitorName: "", contactName: "", estimatedValue: "", expectedCloseDate: "", notes: "", productId: null });
     },
   });
   const updateOpp = trpc.opportunities.update.useMutation({
-    onSuccess: () => { utils.opportunities.listByClient.invalidate({ clientId }); toast.success("商机已更新"); setEditingId(null); },
+    onSuccess: () => { utils.opportunities.listByClient.invalidate({ clientId }); utils.products.clientCoverage.invalidate({ clientId }); toast.success("商机已更新"); setEditingId(null); },
   });
   const deleteOpp = trpc.opportunities.delete.useMutation({
-    onSuccess: () => { utils.opportunities.listByClient.invalidate({ clientId }); toast.success("已删除"); },
+    onSuccess: () => { utils.opportunities.listByClient.invalidate({ clientId }); utils.products.clientCoverage.invalidate({ clientId }); toast.success("已删除"); },
   });
 
   if (isLoading) return <div className="text-xs text-muted-foreground py-2">加载中...</div>;
