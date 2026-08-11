@@ -8,7 +8,8 @@ import {
   CheckCircle2, XCircle, ExternalLink, Eye, EyeOff, RefreshCw, Send,
   Info, Upload, User, Briefcase, ArrowDownToLine, Download, Webhook, Clock, Save
 } from "lucide-react";
-import { Cpu, KeyRound, Zap, Shield } from "lucide-react";
+import { Cpu, KeyRound, Zap, Shield, Package, Pencil } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -567,12 +568,109 @@ function LLMConfigTab() {
   );
 }
 
+// ── Products Tab ─────────────────────────────────────────────────────────────
+function ProductsTab() {
+  const { data: products, refetch } = trpc.products.list.useQuery();
+  const createMutation = trpc.products.create.useMutation({
+    onSuccess: () => { refetch(); setShowForm(false); setForm({ name: "", nameEn: "", shortCode: "", description: "", sortOrder: 0 }); toast.success("产品已添加"); }
+  });
+  const updateMutation = trpc.products.update.useMutation({
+    onSuccess: () => { refetch(); setEditId(null); toast.success("已保存"); }
+  });
+  const deleteMutation = trpc.products.delete.useMutation({
+    onSuccess: () => { refetch(); toast.success("已删除"); }
+  });
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState<{ name: string; nameEn: string; shortCode: string; description: string; sortOrder: number }>({ name: "", nameEn: "", shortCode: "", description: "", sortOrder: 0 });
+  const [editForm, setEditForm] = useState<{ name: string; nameEn: string; shortCode: string; description: string; sortOrder: number }>({ name: "", nameEn: "", shortCode: "", description: "", sortOrder: 0 });
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h3 className="text-base font-semibold text-foreground">产品覆盖度配置</h3>
+        <p className="text-sm text-muted-foreground mt-1">
+          配置 AIStorm 产品列表。客户详情页会自动根据商机关联产品显示覆盖状态。
+        </p>
+      </div>
+      <div className="space-y-2">
+        {(products ?? []).map(p => (
+          <div key={p.id} className="flex items-center gap-3 px-4 py-3 rounded-lg bg-white/5 border border-border">
+            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", p.isActive ? "bg-cyan-400" : "bg-muted-foreground/30")} />
+            <div className="flex-1 min-w-0">
+              {editId === p.id ? (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input value={editForm.name} onChange={e => setEditForm((f: typeof editForm) => ({ ...f, name: e.target.value }))} placeholder="中文名" className="h-7 text-sm" />
+                    <Input value={editForm.nameEn} onChange={e => setEditForm((f: typeof editForm) => ({ ...f, nameEn: e.target.value }))} placeholder="英文名" className="h-7 text-sm" />
+                    <Input value={editForm.shortCode} onChange={e => setEditForm((f: typeof editForm) => ({ ...f, shortCode: e.target.value }))} placeholder="缩写" className="h-7 text-sm w-20" />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="h-7 text-xs" onClick={() => updateMutation.mutate({ id: p.id, ...editForm })}>保存</Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditId(null)}>取消</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">{p.name}</span>
+                  {p.nameEn && <span className="text-xs text-muted-foreground">{p.nameEn}</span>}
+                  {p.shortCode && <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">{p.shortCode}</span>}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={() => updateMutation.mutate({ id: p.id, isActive: p.isActive ? 0 : 1 })}
+                className="p-1.5 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+                title={p.isActive ? "停用" : "启用"}
+              >
+                {p.isActive ? <ToggleRight className="w-4 h-4 text-cyan-400" /> : <ToggleLeft className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={() => { setEditId(p.id); setEditForm({ name: p.name, nameEn: p.nameEn ?? "", shortCode: p.shortCode ?? "", description: p.description ?? "", sortOrder: p.sortOrder }); }}
+                className="p-1.5 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => { if (confirm(`确认删除「${p.name}」？`)) deleteMutation.mutate({ id: p.id }); }}
+                className="p-1.5 rounded hover:bg-red-500/20 text-muted-foreground hover:text-red-400 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {showForm ? (
+        <div className="p-4 rounded-lg border border-border bg-white/5 space-y-3">
+          <div className="text-sm font-medium text-foreground">新增产品</div>
+          <div className="grid grid-cols-3 gap-2">
+            <Input value={form.name} onChange={e => setForm((f: typeof form) => ({ ...f, name: e.target.value }))} placeholder="中文名 *" className="h-8 text-sm" />
+            <Input value={form.nameEn} onChange={e => setForm((f: typeof form) => ({ ...f, nameEn: e.target.value }))} placeholder="英文名" className="h-8 text-sm" />
+            <Input value={form.shortCode} onChange={e => setForm((f: typeof form) => ({ ...f, shortCode: e.target.value }))} placeholder="缩写（如 TI）" className="h-8 text-sm" />
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => { if (!form.name.trim()) { toast.error("请填写中文名"); return; } createMutation.mutate(form); }}>添加</Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>取消</Button>
+          </div>
+        </div>
+      ) : (
+        <Button size="sm" variant="outline" onClick={() => setShowForm(true)} className="gap-2">
+          <Plus className="w-4 h-4" /> 添加产品
+        </Button>
+      )}
+    </div>
+  );
+}
+
 // ── Main Settings Page ──────────────────────────────────────────────────────
 const TABS = [
   { id: "rss", label: "RSS 信息源", icon: Rss, desc: "自定义第三方情报 RSS" },
   { id: "feishu", label: "飞书推送", icon: Bell, desc: "每日战情简报" },
   { id: "crm", label: "CRM 集成", icon: Database, desc: "销售易数据同步" },
   { id: "llm", label: "AI 模型配置", icon: Cpu, desc: "多模型 Key 与路由" },
+  { id: "products", label: "产品管理", icon: Package, desc: "产品覆盖度看板配置" },
 ];
 
 export default function SystemSettings() {
@@ -630,6 +728,7 @@ export default function SystemSettings() {
           {activeTab === "feishu" && <FeishuBriefingTab />}
           {activeTab === "crm" && <CrmIntegrationTab />}
           {activeTab === "llm" && <LLMConfigTab />}
+          {activeTab === "products" && <ProductsTab />}
         </div>
       </div>
     </div>

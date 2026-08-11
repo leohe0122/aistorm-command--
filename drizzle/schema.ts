@@ -646,6 +646,7 @@ export const opportunities = mysqlTable("opportunities", {
   id: int("id").autoincrement().primaryKey(),
   clientId: int("clientId").notNull(),
   name: varchar("name", { length: 200 }).notNull(),          // 商机名称，如 "EDR 端点检测"
+  productId: int("productId"),                               // 关联产品配置表（可选）
   stage: mysqlEnum("stage", ["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"]).default("初步需求").notNull(),
   status: mysqlEnum("status", ["活跃", "暂停", "赢单", "丢单"]).default("活跃").notNull(),
   competitorName: varchar("competitorName", { length: 200 }), // 主要竞品，如 "QAX"
@@ -855,3 +856,19 @@ export const demoTokens = mysqlTable("demo_tokens", {
 });
 export type DemoToken = typeof demoTokens.$inferSelect;
 export type InsertDemoToken = typeof demoTokens.$inferInsert;
+
+/**
+ * 产品配置表 — 可配置的产品列表，用于产品覆盖度看板
+ */
+export const products = mysqlTable("products", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),        // 中文名，如 "威胁情报"
+  nameEn: varchar("nameEn", { length: 100 }),              // 英文名，如 "Threat Intelligence"
+  shortCode: varchar("shortCode", { length: 20 }),         // 缩写，如 "TI"
+  description: text("description"),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  isActive: tinyint("isActive").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type Product = typeof products.$inferSelect;
+export type InsertProduct = typeof products.$inferInsert;

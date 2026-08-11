@@ -681,6 +681,15 @@
 - [x] CommandLayout.tsx 设置区新增「Demo 分发管理」导航入口（仅 admin 可见）
 - [x] demo.html 精确截图替换（25 张 Mulerun 精确截图 base64 嵌入，覆盖 slide-01/04-27）
 
+## 产品覆盖度看板（Round 67）
+- [x] 数据库：新增 products 配置表 + opportunities.productId 外键字段
+- [x] 后端：products CRUD router（list/listActive/create/update/delete）
+- [x] 后端：products.clientCoverage 查询接口（按客户聚合商机产品覆盖状态）
+- [x] 系统设置：新增「产品管理」标签页（增删改启停 8 个产品）
+- [x] 客户详情页：expanded 面板顶部加产品覆盖状态栏（已签约/跟进中/未覆盖三色标签）
+- [x] 商机编辑/新增表单：加「关联产品」下拉框
+- [x] 初始化 8 个产品数据（TrustOne/CloudGuard/ThreatTrace/PhishShield/ThreatShield/AI XDR/威胁情报/智能体身份安全）
+
 ## 培训包动态水印下载（Round 66）
 - [x] 后端 GET /api/download-pdf/:type 接口（cards/manual，验证 admin session，用 pdf-lib 动态叠加斜排半透明水印）
 - [x] 原始 PDF 上传到 webdev 静态存储（cards: main_fa5b30eb.pdf，manual: main_732bfb87.pdf）

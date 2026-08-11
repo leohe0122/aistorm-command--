@@ -3247,6 +3247,7 @@ ${contactList}
       estimatedValue: z.string().optional(),
       expectedCloseDate: z.string().optional(),
       notes: z.string().optional(),
+      productId: z.number().nullable().optional(),
     })).mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('Database unavailable');
@@ -3264,6 +3265,7 @@ ${contactList}
       estimatedValue: z.string().optional(),
       expectedCloseDate: z.string().optional(),
       notes: z.string().optional(),
+      productId: z.number().nullable().optional(),
     })).mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error('Database unavailable');
@@ -5901,6 +5903,110 @@ ${input.extractedText.slice(0, 4000)}
         const db = await getDb();
         if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
         await db.delete(demoTokens).where(eq(demoTokens.id, input.id));
+        return { success: true };
+      }),
+  }),
+
+  // ─── Products 产品配置管理 ───────────────────────────────────────────────
+  products: router({
+    list: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+      const { products } = await import('../drizzle/schema.js');
+      return db.select().from(products).orderBy(products.sortOrder, products.id);
+    }),
+    listActive: protectedProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+      const { products } = await import('../drizzle/schema.js');
+      return db.select().from(products).where(eq(products.isActive, 1)).orderBy(products.sortOrder, products.id);
+    }),
+    create: adminProcedure
+      .input(z.object({
+        name: z.string().min(1).max(100),
+        nameEn: z.string().max(100).optional(),
+        shortCode: z.string().max(20).optional(),
+        description: z.string().optional(),
+        sortOrder: z.number().default(0),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { products } = await import('../drizzle/schema.js');
+        const [result] = await db.insert(products).values(input as any);
+        return { id: (result as any).insertId };
+      }),
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).max(100).optional(),
+        nameEn: z.string().max(100).optional(),
+        shortCode: z.string().max(20).optional(),
+        description: z.string().optional(),
+        sortOrder: z.number().optional(),
+        isActive: z.number().min(0).max(1).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { products } = await import('../drizzle/schema.js');
+        const { id, ...data } = input;
+        await db.update(products).set(data as any).where(eq(products.id, id));
+        return { success: true };
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { products } = await import('../drizzle/schema.js');
+        await db.delete(products).where(eq(products.id, input.id));
+        return { success: true };
+      }),
+    // 查询某客户的产品覆盖度（从商机 productId 自动聚合）
+    clientCoverage: protectedProcedure
+      .input(z.object({ clientId: z.number() }))
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { products, opportunities } = await import('../drizzle/schema.js');
+        const allProducts = await db.select().from(products)
+          .where(eq(products.isActive, 1))
+          .orderBy(products.sortOrder, products.id);
+        const coveredOpps = await db.select({
+          productId: opportunities.productId,
+          status: opportunities.status,
+        }).from(opportunities)
+          .where(eq(opportunities.clientId, input.clientId));
+        const coveredProductIds = new Set(
+          coveredOpps
+            .filter(o => o.productId != null && (o.status === '活跃' || o.status === '赢单'))
+            .map(o => o.productId!)
+        );
+        const wonProductIds = new Set(
+          coveredOpps
+            .filter(o => o.productId != null && o.status === '赢单')
+            .map(o => o.productId!)
+        );
+        return allProducts.map(p => ({
+          ...p,
+          covered: coveredProductIds.has(p.id),
+          won: wonProductIds.has(p.id),
+        }));
+      }),
+    // 更新商机的关联产品
+    setOpportunityProduct: protectedProcedure
+      .input(z.object({
+        opportunityId: z.number(),
+        productId: z.number().nullable(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
+        const { opportunities } = await import('../drizzle/schema.js');
+        await db.update(opportunities)
+          .set({ productId: input.productId } as any)
+          .where(eq(opportunities.id, input.opportunityId));
         return { success: true };
       }),
   }),

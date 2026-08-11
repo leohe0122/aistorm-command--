@@ -528,18 +528,19 @@ function ActiveFrontsPanel({ clientId, focusOppId }: { clientId: number; focusOp
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [expandedOppId, setExpandedOppId] = useState<number | null>(null);
-  const [newOpp, setNewOpp] = useState({ name: "", stage: "建图" as string, status: "活跃" as string, competitorName: "", contactName: "", estimatedValue: "", expectedCloseDate: "", notes: "" });
+  const [newOpp, setNewOpp] = useState({ name: "", stage: "建图" as string, status: "活跃" as string, competitorName: "", contactName: "", estimatedValue: "", expectedCloseDate: "", notes: "", productId: null as number | null });
   const [editData, setEditData] = useState<any>({});
 
   const utils = trpc.useUtils();
   const { data: opps = [], isLoading } = trpc.opportunities.listByClient.useQuery({ clientId });
+  const { data: productList = [] } = trpc.products.listActive.useQuery();
 
   const createOpp = trpc.opportunities.create.useMutation({
     onSuccess: () => {
       utils.opportunities.listByClient.invalidate({ clientId });
       toast.success("商机已添加");
       setShowAdd(false);
-      setNewOpp({ name: "", stage: "建图", status: "活跃", competitorName: "", contactName: "", estimatedValue: "", expectedCloseDate: "", notes: "" });
+      setNewOpp({ name: "", stage: "建图", status: "活跃", competitorName: "", contactName: "", estimatedValue: "", expectedCloseDate: "", notes: "", productId: null });
     },
   });
   const updateOpp = trpc.opportunities.update.useMutation({
@@ -653,6 +654,18 @@ function ActiveFrontsPanel({ clientId, focusOppId }: { clientId: number; focusOp
                   <Input className="h-7 text-xs" placeholder="QAX / Palo Alto..." defaultValue={opp.competitorName || ""} onChange={(e) => setEditData({ ...editData, competitorName: e.target.value })} />
                 </div>
               </div>
+              {productList.length > 0 && (
+                <div>
+                  <label className="text-[10px] text-muted-foreground mb-0.5 block">关联产品（可选）</label>
+                  <Select value={(editData.productId ?? opp.productId)?.toString() ?? "none"} onValueChange={(v) => setEditData({ ...editData, productId: v === "none" ? null : parseInt(v) })}>
+                    <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="选择关联产品" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">不关联产品</SelectItem>
+                      {productList.map((p: any) => <SelectItem key={p.id} value={p.id.toString()}>{p.name}{p.nameEn ? ` (${p.nameEn})` : ""}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] text-muted-foreground mb-0.5 block">阶段</label>
@@ -757,6 +770,18 @@ function ActiveFrontsPanel({ clientId, focusOppId }: { clientId: number; focusOp
               <Input className="h-7 text-xs" placeholder="QAX / Palo Alto..." value={newOpp.competitorName} onChange={(e) => setNewOpp({ ...newOpp, competitorName: e.target.value })} />
             </div>
           </div>
+          {productList.length > 0 && (
+            <div>
+              <label className="text-[10px] text-muted-foreground mb-0.5 block">关联产品（可选）</label>
+              <Select value={newOpp.productId?.toString() ?? "none"} onValueChange={(v) => setNewOpp({ ...newOpp, productId: v === "none" ? null : parseInt(v) })}>
+                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="选择关联产品" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">不关联产品</SelectItem>
+                  {productList.map((p: any) => <SelectItem key={p.id} value={p.id.toString()}>{p.name}{p.nameEn ? ` (${p.nameEn})` : ""}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-[10px] text-muted-foreground mb-0.5 block">阶段</label>
@@ -1367,6 +1392,39 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── 产品覆盖度状态栏 ──────────────────────────────────────────────────────────
+function ProductCoverageBar({ clientId }: { clientId: number }) {
+  const { data: coverage } = trpc.products.clientCoverage.useQuery({ clientId });
+  if (!coverage || coverage.length === 0) return null;
+  return (
+    <div className="px-4 py-2 border-b border-border/50 bg-muted/5">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] text-muted-foreground/60 mr-1 flex-shrink-0">产品覆盖</span>
+        {coverage.map(p => (
+          <span
+            key={p.id}
+            title={p.nameEn ? `${p.name} (${p.nameEn})` : p.name}
+            className={cn(
+              "text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors",
+              p.won
+                ? "bg-green-500/15 text-green-400 border-green-500/30"
+                : p.covered
+                  ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                  : "bg-muted/20 text-muted-foreground/40 border-border/30"
+            )}
+          >
+            {p.shortCode || p.name}
+            {p.won && " ✓"}
+          </span>
+        ))}
+        <span className="text-[10px] text-muted-foreground/40 ml-1">
+          {coverage.filter(p => p.won).length} 已签约 · {coverage.filter(p => p.covered && !p.won).length} 跟进中
+        </span>
+      </div>
     </div>
   );
 }
@@ -2314,6 +2372,8 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
       {/* Expanded Detail Panel with tabs */}
       {expanded && (
         <div className="border-t border-border">
+          {/* 产品覆盖度状态栏 */}
+          <ProductCoverageBar clientId={client.id} />
           {/* AI 提示气泡（跳转后自动显示，3秒后消失） */}
           {highlightBubble && (
             <div className="mx-3 mt-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-300 animate-pulse">
