@@ -37,6 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import { AICommandCenter } from "./AICommandCenter";
 
 const STAGE_ORDER = ["建图", "进门", "定痛", "找人", "进入商机"];
 
@@ -430,7 +431,7 @@ function RiskClientCard({ c, navigate, isExpanded, onToggle, onExpand }: {
   );
 }
 
-export default function ADDashboard() {
+function LegacyADDashboard() {
   const [, navigate] = useLocation();
   const [activeRiskClientId, setActiveRiskClientId] = useState<number | null>(null);
   const { data, isLoading } = trpc.dashboard.summary.useQuery();
@@ -1800,4 +1801,8 @@ function DataHealthPanel() {
       )}
     </div>
   );
+}
+
+export default function ADDashboard() {
+  return <AICommandCenter />;
 }

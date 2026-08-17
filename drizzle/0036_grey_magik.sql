@@ -1,0 +1,23 @@
+CREATE TABLE `ad_command_recommendations` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`clientId` int,
+	`opportunityId` int,
+	`kind` enum('today_action','anomaly','pending_approval','sam_coaching') NOT NULL,
+	`priority` enum('P0','P1','P2') NOT NULL DEFAULT 'P1',
+	`title` varchar(240) NOT NULL,
+	`aiConclusion` text NOT NULL,
+	`facts` json NOT NULL,
+	`methodology` varchar(160) NOT NULL,
+	`suggestedAction` text NOT NULL,
+	`assignedRole` enum('AD','SAM','SA','RSM') NOT NULL DEFAULT 'AD',
+	`dueDate` timestamp,
+	`fingerprint` varchar(255) NOT NULL,
+	`status` enum('pending','confirmed','skipped','completed') NOT NULL DEFAULT 'pending',
+	`confirmedBy` varchar(100),
+	`confirmedAt` timestamp,
+	`skipReason` text,
+	`podTaskId` int,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `ad_command_recommendations_id` PRIMARY KEY(`id`)
+);

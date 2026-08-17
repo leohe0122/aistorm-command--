@@ -346,6 +346,35 @@ export type PodTask = typeof podTasks.$inferSelect;
 export type InsertPodTask = typeof podTasks.$inferInsert;
 
 /**
+ * AD 指挥台 AI 作战建议。
+ * 每条建议以已入库事实、方法论判断和建议行动组成；AD 必须明确确认或跳过，状态跨页面持久化。
+ */
+export const adCommandRecommendations = mysqlTable("ad_command_recommendations", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId"),
+  opportunityId: int("opportunityId"),
+  kind: mysqlEnum("kind", ["today_action", "anomaly", "pending_approval", "sam_coaching"]).notNull(),
+  priority: mysqlEnum("priority", ["P0", "P1", "P2"]).default("P1").notNull(),
+  title: varchar("title", { length: 240 }).notNull(),
+  aiConclusion: text("aiConclusion").notNull(),
+  facts: json("facts").$type<Array<{ label: string; value: string }>>().notNull(),
+  methodology: varchar("methodology", { length: 160 }).notNull(),
+  suggestedAction: text("suggestedAction").notNull(),
+  assignedRole: mysqlEnum("assignedRole", ["AD", "SAM", "SA", "RSM"]).default("AD").notNull(),
+  dueDate: timestamp("dueDate"),
+  fingerprint: varchar("fingerprint", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["pending", "confirmed", "skipped", "completed"]).default("pending").notNull(),
+  confirmedBy: varchar("confirmedBy", { length: 100 }),
+  confirmedAt: timestamp("confirmedAt"),
+  skipReason: text("skipReason"),
+  podTaskId: int("podTaskId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdCommandRecommendation = typeof adCommandRecommendations.$inferSelect;
+export type InsertAdCommandRecommendation = typeof adCommandRecommendations.$inferInsert;
+
+/**
  * MEDDPICC 作战日志（追加式时间轴，不覆盖）
  */
 export const meddpiccLogs = mysqlTable("meddpicc_logs", {

@@ -5283,6 +5283,113 @@ ${input.aiSuggestion}
       return { actions: (parsed.actions ?? []) as Array<{ title: string; description: string; role: string; dueDays: number }> };
     }),
   }),
+  // ── AI 原生 AD 指挥中心：事实驱动建议、AD 确认与任务闭环 ──────────────────
+  adCommand: router({
+    refresh: publicProcedure.mutation(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const { clients, meetingMinutes, meddpicc, opportunities, opportunityMeddpicc, adCommandRecommendations } = await import('../drizzle/schema');
+      const { buildAdCommandRecommendations } = await import('../shared/adCommand');
+      const { desc } = await import('drizzle-orm');
+
+      const [allClients, allMeetings, clientMeddpicc, allOpportunities, oppMeddpicc, existing] = await Promise.all([
+        db.select().from(clients),
+        db.select({ clientId: meetingMinutes.clientId, meetingDate: meetingMinutes.meetingDate }).from(meetingMinutes),
+        db.select().from(meddpicc),
+        db.select().from(opportunities),
+        db.select().from(opportunityMeddpicc),
+        db.select().from(adCommandRecommendations).orderBy(desc(adCommandRecommendations.createdAt)),
+      ]);
+
+      const latestMeeting = new Map<number, Date>();
+      for (const meeting of allMeetings) {
+        const previous = latestMeeting.get(meeting.clientId);
+        if (!previous || meeting.meetingDate > previous) latestMeeting.set(meeting.clientId, meeting.meetingDate);
+      }
+      const clientScore = new Map(clientMeddpicc.map(item => [item.clientId, item]));
+      const oppScore = new Map(oppMeddpicc.map(item => [item.opportunityId, item]));
+      const dimensionLabels: Array<[string, string]> = [
+        ['metricsScore', '价值量化'], ['economicBuyerScore', '经济决策人'], ['decisionCriteriaScore', '决策标准'], ['decisionProcessScore', '决策流程'],
+        ['paperProcessScore', '采购流程'], ['implicatePainScore', '痛点牵连'], ['championScore', 'Champion'], ['competitionScore', '竞争态势'],
+      ];
+      const oppInputs = allOpportunities.map(opp => {
+        const score = oppScore.get(opp.id);
+        const ordered = dimensionLabels.map(([key, label]) => ({ label, score: Number((score as any)?.[key] ?? 0) })).sort((a, b) => a.score - b.score);
+        const client = allClients.find(item => item.id === opp.clientId);
+        return {
+          id: opp.id, clientId: opp.clientId, clientName: client?.name ?? `客户#${opp.clientId}`, name: opp.name,
+          stage: opp.stage, status: opp.status, stageChangedAt: opp.stageChangedAt,
+          weakestDimension: ordered[0]?.label, weakestScore: ordered[0]?.score,
+        };
+      });
+      const generated = buildAdCommandRecommendations(
+        allClients.map(client => ({
+          id: client.id, name: client.name, stage: client.stage, priority: client.priority,
+          stageChangedAt: client.stageChangedAt, lastMeetingAt: latestMeeting.get(client.id) ?? null,
+          championScore: clientScore.get(client.id)?.championScore ?? 0, assignedSamName: client.assignedSamName,
+        })),
+        oppInputs,
+      );
+      const knownFingerprints = new Set(existing.map(item => item.fingerprint));
+      const inserts = generated.filter(item => !knownFingerprints.has(item.fingerprint)).map(item => ({
+        ...item,
+        clientId: item.clientId ?? undefined,
+        opportunityId: item.opportunityId ?? undefined,
+        dueDate: new Date(Date.now() + (item.priority === 'P0' ? 2 : 7) * 86_400_000),
+      }));
+      if (inserts.length) await db.insert(adCommandRecommendations).values(inserts as any);
+      return db.select().from(adCommandRecommendations).orderBy(desc(adCommandRecommendations.createdAt));
+    }),
+    list: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const { adCommandRecommendations, podTasks } = await import('../drizzle/schema');
+      const { desc, eq } = await import('drizzle-orm');
+      const recommendations = await db.select().from(adCommandRecommendations).orderBy(desc(adCommandRecommendations.createdAt));
+      const taskIds = recommendations.flatMap(item => item.podTaskId ? [item.podTaskId] : []);
+      if (taskIds.length) {
+        const tasks = await db.select({ id: podTasks.id, isCompleted: podTasks.isCompleted }).from(podTasks);
+        const completed = new Set(tasks.filter(task => task.isCompleted).map(task => task.id));
+        for (const item of recommendations) {
+          if (item.status === 'confirmed' && item.podTaskId && completed.has(item.podTaskId)) {
+            await db.update(adCommandRecommendations).set({ status: 'completed' }).where(eq(adCommandRecommendations.id, item.id));
+            item.status = 'completed';
+          }
+        }
+      }
+      return recommendations;
+    }),
+    confirm: publicProcedure.input(z.object({ id: z.number(), confirmedBy: z.string().min(1) })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { adCommandRecommendations, podTasks } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const [recommendation] = await db.select().from(adCommandRecommendations).where(eq(adCommandRecommendations.id, input.id)).limit(1);
+      if (!recommendation) throw new TRPCError({ code: 'NOT_FOUND', message: '未找到 AI 指挥建议' });
+      if (recommendation.status !== 'pending') return recommendation;
+      if (!recommendation.clientId) throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '该建议缺少关联客户，无法安排任务' });
+      const inserted = await db.insert(podTasks).values({
+        clientId: recommendation.clientId,
+        opportunityId: recommendation.opportunityId ?? undefined,
+        assignedRole: recommendation.assignedRole,
+        title: `[AI指挥] ${recommendation.title}`,
+        description: `${recommendation.aiConclusion}\n\n方法论判断：${recommendation.methodology}\n\n建议行动：${recommendation.suggestedAction}`,
+        priority: recommendation.priority === 'P0' ? '高' : recommendation.priority === 'P1' ? '中' : '低',
+        dueDate: recommendation.dueDate ?? new Date(Date.now() + 7 * 86_400_000),
+      } as any);
+      const podTaskId = Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId);
+      await db.update(adCommandRecommendations).set({ status: 'confirmed', confirmedBy: input.confirmedBy, confirmedAt: new Date(), podTaskId: Number.isFinite(podTaskId) ? podTaskId : null }).where(eq(adCommandRecommendations.id, input.id));
+      return { id: input.id, podTaskId };
+    }),
+    skip: publicProcedure.input(z.object({ id: z.number(), reason: z.string().max(500).optional() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { adCommandRecommendations } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      await db.update(adCommandRecommendations).set({ status: 'skipped', skipReason: input.reason || 'AD 当前不采纳' }).where(eq(adCommandRecommendations.id, input.id));
+      return { id: input.id };
+    }),
+  }),
   // ── AD 指挥台聚合接口 ─────────────────────────────────────────────────────
   dashboard: router({
     summary: publicProcedure.query(async () => {
