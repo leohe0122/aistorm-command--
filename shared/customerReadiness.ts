@@ -13,6 +13,8 @@ export type PurchaseSignal = {
   id: number;
   signalType: PurchaseSignalType;
   subjectName: string;
+  /** 决策链信号必须关联已入库关键人，避免以姓名字符串匹配角色。 */
+  subjectContactId?: number | null;
   occurredAt: Date | string;
   statement: string;
   sourceType: string;
@@ -63,7 +65,9 @@ export function evaluateCustomerReadiness(input: {
   const intentSignal = latestSignal(signals, "intent_subject");
   const decisionSignal = latestSignal(signals, "decision_chain");
   const triggerSignal = latestSignal(signals, "trigger_event");
-  const decisionContact = decisionSignal && contacts.find(contact => contact.name === decisionSignal.subjectName);
+  const decisionContact = decisionSignal?.subjectContactId == null
+    ? undefined
+    : contacts.find(contact => contact.id === decisionSignal.subjectContactId);
   const decisionRoleValid = Boolean(decisionContact && ["经济决策人", "技术决策人", "用户影响者"].includes(decisionContact.buyingRole || ""));
 
   const checks: GateCheck[] = [
@@ -85,8 +89,8 @@ export function evaluateCustomerReadiness(input: {
         ? "尚未记录已接触的决策链人员事实。"
         : decisionRoleValid
           ? describeSignal(decisionSignal)
-          : `${describeSignal(decisionSignal)}；该人员尚未在关键人图谱中标注为经济决策人、技术决策人或用户影响者。`,
-      objective: "必须指向已入库关键人图谱中具有预算影响力、技术决策权或用户影响力的客户人员，并记录接触事实。",
+          : `${describeSignal(decisionSignal)}；请从关键人图谱关联具有经济、技术或用户影响角色的联系人，不能仅手填姓名。`,
+      objective: "必须关联已入库关键人图谱中具有预算影响力、技术决策权或用户影响力的客户人员，并记录接触事实。",
       signal: decisionSignal,
     },
     {

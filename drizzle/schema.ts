@@ -369,6 +369,8 @@ export const customerPurchaseSignals = mysqlTable("customer_purchase_signals", {
   clientId: int("clientId").notNull(),
   signalType: mysqlEnum("signalType", ["intent_subject", "decision_chain", "trigger_event"]).notNull(),
   subjectName: varchar("subjectName", { length: 150 }).notNull(),
+  /** 决策链信号关联到关键人图谱，服务端以此校验角色，避免姓名文本匹配。 */
+  subjectContactId: int("subjectContactId"),
   occurredAt: timestamp("occurredAt").notNull(),
   statement: text("statement").notNull(),
   sourceType: mysqlEnum("sourceType", ["meeting", "customer_message", "customer_email", "intelligence", "other_evidence"]).notNull(),
@@ -703,8 +705,23 @@ export const opportunities = mysqlTable("opportunities", {
     approvedAt: string;
     customerStage: string;
     gateChecks: Array<{ id: string; label: string; evidence: string; passed: boolean }>;
-    championName?: string;
-    latestMeetingDate?: string;
+    purchaseSignals: Array<{
+      type: string;
+      label: string;
+      subjectName: string;
+      subjectContactId: number | null;
+      occurredAt: string;
+      statement: string;
+      sourceType: string;
+      sourceReference: string;
+    }>;
+    approval: {
+      mode: "purchase_signals" | "exec_meeting";
+      approvedBy?: { id: number; name: string; podRole: string };
+      confirmation?: string;
+      executiveContact?: { id: number; name: string; buyingRole: string | null };
+      meetingEvidence?: Array<{ id: number; meetingDate: string; attendees: string | null }>;
+    };
   }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

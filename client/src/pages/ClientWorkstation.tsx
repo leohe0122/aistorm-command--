@@ -167,30 +167,31 @@ function EvidenceCard({ label, prompt, evidence, status }: { label: string; prom
   );
 }
 
-function PurchaseSignalWorkbench({ readiness, clientId }: { readiness: any; clientId: number }) {
+function PurchaseSignalWorkbench({ readiness, clientId, contacts }: { readiness: any; clientId: number; contacts: any[] }) {
   const utils = trpc.useUtils();
   const { data: signals = [] } = trpc.purchaseSignals.listByClient.useQuery({ clientId });
   const [signalType, setSignalType] = useState<"intent_subject" | "decision_chain" | "trigger_event">("intent_subject");
   const [subjectName, setSubjectName] = useState("");
+  const [subjectContactId, setSubjectContactId] = useState("");
   const [occurredDate, setOccurredDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [statement, setStatement] = useState("");
   const [sourceType, setSourceType] = useState<"meeting" | "customer_message" | "customer_email" | "intelligence" | "other_evidence">("meeting");
   const [sourceReference, setSourceReference] = useState("");
-  const createSignal = trpc.purchaseSignals.create.useMutation({ onSuccess: () => { utils.purchaseSignals.listByClient.invalidate({ clientId }); utils.opportunities.customerReadiness.invalidate({ clientId }); setSubjectName(""); setStatement(""); setSourceReference(""); } });
+  const createSignal = trpc.purchaseSignals.create.useMutation({ onSuccess: () => { utils.purchaseSignals.listByClient.invalidate({ clientId }); utils.opportunities.customerReadiness.invalidate({ clientId }); setSubjectName(""); setSubjectContactId(""); setStatement(""); setSourceReference(""); } });
   const signalMeta = {
     intent_subject: { label: "意向主体已出现", subjectLabel: "客户侧表达者", prompt: "谁明确表达过“需要解决 X”或“正在评估此类方案”？请原样记录客户表述。" },
-    decision_chain: { label: "决策链已触达", subjectLabel: "已接触的客户人员", prompt: "哪位已接触人员具有预算影响力、技术决策权或用户影响力？先确保他/她已在关键人图谱中标注角色。" },
+    decision_chain: { label: "决策链已触达", subjectLabel: "从关键人图谱选择人员", prompt: "选择已接触且具有预算影响力、技术决策权或用户影响力的关键人，并记录本次直接接触事实。" },
     trigger_event: { label: "明确触发事件存在", subjectLabel: "触发事件名称", prompt: "是什么让客户必须现在行动？例如合规截止日、安全事件、业务扩张、预算周期或高层指令。" },
   }[signalType];
   const submit = () => {
-    if (!subjectName.trim() || statement.trim().length < 8) return;
-    createSignal.mutate({ clientId, signalType, subjectName: subjectName.trim(), occurredAt: new Date(`${occurredDate}T12:00:00`).toISOString(), statement: statement.trim(), sourceType, sourceReference: sourceReference.trim() || undefined });
+    if (!subjectName.trim() || statement.trim().length < 8 || (signalType === "decision_chain" && !subjectContactId)) return;
+    createSignal.mutate({ clientId, signalType, subjectName: subjectName.trim(), subjectContactId: signalType === "decision_chain" ? Number(subjectContactId) : null, occurredAt: new Date(`${occurredDate}T12:00:00`).toISOString(), statement: statement.trim(), sourceType, sourceReference: sourceReference.trim() || undefined });
   };
   return (
     <section className="rounded-2xl border border-slate-700/70 bg-slate-950/55 p-4 shadow-[0_12px_35px_rgba(0,0,0,0.12)] lg:p-5">
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2 text-sm font-semibold text-slate-100"><ShieldCheck className="h-4 w-4 text-emerald-300" />客户购买信号</div><p className="mt-1 text-xs leading-5 text-slate-500">这是申请开商机的唯一门控：记录客户端发生了什么，不记录销售做了什么。每项都要有主体、时间、原话或事件及来源。</p></div><span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-400">产品无关门控</span></div>
       <div className="grid gap-3 md:grid-cols-3">{(readiness.checks || []).map((check: any) => <EvidenceCard key={check.id} label={check.label} prompt={check.prompt} status={check.passed ? "verified" : "missing"} evidence={check.evidence} />)}</div>
-      <div className="mt-4 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.045] p-3"><div className="mb-3 text-xs font-semibold text-cyan-100">录入一条客户购买信号</div><div className="grid gap-2 md:grid-cols-2"><select value={signalType} onChange={event => setSignalType(event.target.value as typeof signalType)} className="h-9 rounded-md border border-input bg-slate-900/60 px-3 text-xs text-slate-100"><option value="intent_subject">意向主体已出现</option><option value="decision_chain">决策链已触达</option><option value="trigger_event">明确触发事件存在</option></select><Input value={subjectName} onChange={event => setSubjectName(event.target.value)} placeholder={signalMeta.subjectLabel} className="h-9 bg-slate-900/60 text-xs" /><Input type="date" value={occurredDate} onChange={event => setOccurredDate(event.target.value)} className="h-9 bg-slate-900/60 text-xs" /><select value={sourceType} onChange={event => setSourceType(event.target.value as typeof sourceType)} className="h-9 rounded-md border border-input bg-slate-900/60 px-3 text-xs text-slate-100"><option value="meeting">客户会议</option><option value="customer_message">客户消息</option><option value="customer_email">客户邮件</option><option value="intelligence">外部情报</option><option value="other_evidence">其他可追溯证据</option></select><div className="md:col-span-2"><Textarea value={statement} onChange={event => setStatement(event.target.value)} placeholder={signalMeta.prompt} className="min-h-[76px] resize-none bg-slate-900/60 text-xs" /></div><div className="md:col-span-2"><Input value={sourceReference} onChange={event => setSourceReference(event.target.value)} placeholder="来源说明（会议主题、邮件主题、情报链接或记录编号；可选）" className="h-9 bg-slate-900/60 text-xs" /></div></div><Button type="button" size="sm" className="mt-3 h-8 gap-1.5 text-xs" onClick={submit} disabled={!subjectName.trim() || statement.trim().length < 8 || createSignal.isPending}><Plus className="h-3.5 w-3.5" />{createSignal.isPending ? "正在写入事实…" : "记录购买信号"}</Button></div>
+      <div className="mt-4 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.045] p-3"><div className="mb-3 text-xs font-semibold text-cyan-100">录入一条客户购买信号</div><div className="grid gap-2 md:grid-cols-2"><select value={signalType} onChange={event => { setSignalType(event.target.value as typeof signalType); setSubjectName(""); setSubjectContactId(""); }} className="h-9 rounded-md border border-input bg-slate-900/60 px-3 text-xs text-slate-100"><option value="intent_subject">意向主体已出现</option><option value="decision_chain">决策链已触达</option><option value="trigger_event">明确触发事件存在</option></select>{signalType === "decision_chain" ? <select value={subjectContactId} onChange={event => { const contact = contacts.find(item => item.id === Number(event.target.value)); setSubjectContactId(event.target.value); setSubjectName(contact?.name || ""); }} className="h-9 rounded-md border border-input bg-slate-900/60 px-3 text-xs text-slate-100"><option value="">选择已入库关键人</option>{contacts.map(contact => <option key={contact.id} value={contact.id}>{contact.name} {contact.buyingRole ? `· ${contact.buyingRole}` : "· 未标注角色"}</option>)}</select> : <Input value={subjectName} onChange={event => setSubjectName(event.target.value)} placeholder={signalMeta.subjectLabel} className="h-9 bg-slate-900/60 text-xs" />}<Input type="date" value={occurredDate} onChange={event => setOccurredDate(event.target.value)} className="h-9 bg-slate-900/60 text-xs" /><select value={sourceType} onChange={event => setSourceType(event.target.value as typeof sourceType)} className="h-9 rounded-md border border-input bg-slate-900/60 px-3 text-xs text-slate-100"><option value="meeting">客户会议</option><option value="customer_message">客户消息</option><option value="customer_email">客户邮件</option><option value="intelligence">外部情报</option><option value="other_evidence">其他可追溯证据</option></select><div className="md:col-span-2"><Textarea value={statement} onChange={event => setStatement(event.target.value)} placeholder={signalMeta.prompt} className="min-h-[76px] resize-none bg-slate-900/60 text-xs" /></div><div className="md:col-span-2"><Input value={sourceReference} onChange={event => setSourceReference(event.target.value)} placeholder="来源说明（会议主题、邮件主题、情报链接或记录编号；可选）" className="h-9 bg-slate-900/60 text-xs" /></div></div><Button type="button" size="sm" className="mt-3 h-8 gap-1.5 text-xs" onClick={submit} disabled={!subjectName.trim() || statement.trim().length < 8 || (signalType === "decision_chain" && !subjectContactId) || createSignal.isPending}><Plus className="h-3.5 w-3.5" />{createSignal.isPending ? "正在写入事实…" : "记录购买信号"}</Button></div>
       {signals.length > 0 && <div className="mt-3 border-t border-slate-700/60 pt-3"><p className="mb-2 text-[10px] font-medium text-slate-500">已入库购买信号（最新优先）</p><div className="space-y-2">{signals.slice(0, 5).map((signal: any) => <div key={signal.id} className="rounded-lg border border-slate-700/60 bg-slate-950/45 px-3 py-2"><p className="text-[11px] font-medium text-slate-200">{signal.subjectName} · {formatDate(signal.occurredAt)}</p><p className="mt-1 text-[10px] leading-4 text-slate-400">{signal.statement}</p></div>)}</div></div>}
     </section>
   );
@@ -248,6 +249,23 @@ function OpportunityApplicationPanel({ readiness, client, products, onSubmit, su
   );
 }
 
+function ExecutiveOpportunityPanel({ client, contacts, meetings, isAd, onSubmit, submitting }: { client: any; contacts: any[]; meetings: any[]; isAd: boolean; onSubmit: (payload: any) => void; submitting: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(`${client.name} — 高层直入商机`);
+  const [executiveContactId, setExecutiveContactId] = useState("");
+  const [meetingIds, setMeetingIds] = useState<number[]>([]);
+  const [confirmation, setConfirmation] = useState("");
+  if (client.stage === "进入商机") return null;
+  const executives = contacts.filter(contact => contact.buyingRole === "经济决策人");
+  const selectedExecutive = executives.find(contact => contact.id === Number(executiveContactId));
+  const toggleMeeting = (id: number) => setMeetingIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+
+  return <section className="rounded-2xl border border-violet-400/20 bg-violet-400/[0.035] p-4 shadow-[0_12px_35px_rgba(0,0,0,0.12)] lg:p-5">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="text-sm font-semibold text-violet-100">高层直接建立商机信号</h2><p className="mt-1 text-xs leading-5 text-slate-500">这是受控例外：高层直接释放明确信号时，可不等待三项常规信号齐备；但必须由 AD 确认，并引用至少两次经济决策人直接对话的拜访事实。</p></div><Button type="button" size="sm" variant="outline" className="border-violet-400/30 bg-violet-400/10 text-violet-100 hover:bg-violet-400/20" onClick={() => setOpen(value => !value)}>{open ? "收起" : "展开入口"}</Button></div>
+    {open && <div className="mt-4 space-y-3 border-t border-violet-400/15 pt-4">{!isAd && <div className="rounded-lg border border-amber-400/20 bg-amber-400/[0.05] px-3 py-2 text-[11px] leading-5 text-amber-100">仅 AD 或系统管理员可提交高层直入确认；其他角色可查看条件但不能放行。</div>}<div className="grid gap-3 md:grid-cols-2"><div className="space-y-1.5"><label className="text-[11px] font-medium text-slate-300">商机名称</label><Input value={name} onChange={event => setName(event.target.value)} className="h-9 bg-slate-900/60 text-xs" /></div><div className="space-y-1.5"><label className="text-[11px] font-medium text-slate-300">经济决策人</label><select value={executiveContactId} onChange={event => setExecutiveContactId(event.target.value)} className="h-9 w-full rounded-md border border-input bg-slate-900/60 px-3 text-xs text-slate-100"><option value="">从关键人图谱选择</option>{executives.map(contact => <option key={contact.id} value={contact.id}>{contact.name} · 经济决策人</option>)}</select></div></div><div><p className="mb-2 text-[11px] font-medium text-slate-300">引用至少两次该高层参与或直接对话的拜访记录</p>{meetings.length === 0 ? <p className="rounded-lg border border-dashed border-slate-700 px-3 py-4 text-xs text-slate-500">暂无可引用拜访记录。</p> : <div className="grid gap-2 md:grid-cols-2">{meetings.map((meeting: any) => <label key={meeting.id} className={cn("flex cursor-pointer gap-2 rounded-lg border px-3 py-2 text-xs", meetingIds.includes(meeting.id) ? "border-violet-400/45 bg-violet-400/[0.08] text-violet-100" : "border-slate-700/60 bg-slate-950/35 text-slate-400")}><input type="checkbox" checked={meetingIds.includes(meeting.id)} onChange={() => toggleMeeting(meeting.id)} className="mt-0.5 accent-violet-400" /><span><strong className="font-medium text-slate-200">{formatDate(meeting.meetingDate)}</strong><br />{meeting.attendees || meeting.keyPoints?.slice(0, 80) || "拜访记录"}</span></label>)}</div>}</div><div className="space-y-1.5"><label className="text-[11px] font-medium text-slate-300">AD 确认说明</label><Textarea value={confirmation} onChange={event => setConfirmation(event.target.value)} placeholder="说明高层释放的具体商机信号、为何可直接进入商机，以及引用的两次对话事实。" className="min-h-[84px] resize-none bg-slate-900/60 text-xs" /></div><Button type="button" className="h-9 w-full gap-1.5 bg-violet-500 text-white hover:bg-violet-400" disabled={!isAd || !name.trim() || !selectedExecutive || meetingIds.length < 2 || confirmation.trim().length < 12 || submitting} onClick={() => onSubmit({ name: name.trim(), bypassReason: "exec_meeting", executiveContactId: selectedExecutive.id, executiveMeetingIds: meetingIds, adConfirmation: confirmation.trim(), contactName: selectedExecutive.name })}><ShieldCheck className="h-3.5 w-3.5" />{submitting ? "正在核验拜访事实…" : "AD 确认并建立商机"}</Button></div>}
+  </section>;
+}
+
 export default function ClientWorkstation() {
   const [, params] = useRoute("/clients/:clientId");
   const [, setLocation] = useLocation();
@@ -263,6 +281,7 @@ export default function ClientWorkstation() {
   const { data: readiness, isLoading: readinessLoading } = trpc.opportunities.customerReadiness.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: customTasks = [] } = trpc.pod.listByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: products = [] } = trpc.products.listActive.useQuery();
+  const { data: emailUser } = trpc.emailAuth.me.useQuery();
 
   const addTask = trpc.pod.addTask.useMutation({
     onSuccess: () => utils.pod.listByClient.invalidate({ clientId }),
@@ -315,9 +334,10 @@ export default function ClientWorkstation() {
         <StageTaskCenter readiness={readiness} customTasks={customClientTasks} taskSubmitting={addTask.isPending} onAddTask={(title, description) => addTask.mutate({ clientId, assignedRole: "SAM", title, description: description || undefined })} onToggleTask={(task) => updateTask.mutate({ id: task.id, taskStatus: task.isCompleted || task.taskStatus === "done" ? "pending" : "done" })} />
 
         <OpportunityApplicationPanel readiness={readiness} client={client} products={products as any[]} submitting={applyForOpportunity.isPending} onSubmit={(payload) => applyForOpportunity.mutate({ clientId, ...payload })} />
+        <ExecutiveOpportunityPanel client={client} contacts={contacts as any[]} meetings={meetings as any[]} isAd={emailUser?.podRole === "AD" || emailUser?.role === "admin"} submitting={applyForOpportunity.isPending} onSubmit={(payload) => applyForOpportunity.mutate({ clientId, ...payload })} />
 
         {client.stage !== "进入商机" && <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(340px,0.85fr)]">
-          <PurchaseSignalWorkbench readiness={readiness} clientId={clientId} />
+          <PurchaseSignalWorkbench readiness={readiness} clientId={clientId} contacts={contacts as any[]} />
           <CustomerDiscoverySpin readiness={readiness} />
         </div>}
 

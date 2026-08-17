@@ -246,6 +246,13 @@
       "when": 1786977876154,
       "tag": "0034_dark_spot",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1786983592751,
+      "tag": "0035_special_shiver_man",
+      "breakpoints": true
     }
   ]
 }

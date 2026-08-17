@@ -1,0 +1,1 @@
+ALTER TABLE `customer_purchase_signals` ADD `subjectContactId` int;

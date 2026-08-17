@@ -68,6 +68,25 @@ async function loadCustomerReadiness(clientId: number) {
   return { client, contacts, meetings, signals, readiness };
 }
 
+/** 高层直入仅允许由邮箱会话中的 AD 或系统管理员确认。 */
+async function getEmailSessionActor(ctx: any) {
+  const token = (() => {
+    const cookie = ctx.req.headers?.cookie as string | undefined;
+    return cookie?.match(/(?:^|;\s*)email_session=([^;]+)/)?.[1];
+  })();
+  if (!token) return null;
+  const db = await getDb();
+  if (!db) return null;
+  const { emailUsers, emailSessions } = await import("../drizzle/schema.js");
+  const { and, eq, gt } = await import("drizzle-orm");
+  const [session] = await db.select().from(emailSessions).where(
+    and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
+  ).limit(1);
+  if (!session) return null;
+  const [user] = await db.select().from(emailUsers).where(eq(emailUsers.id, session.userId)).limit(1);
+  return user?.isActive ? user : null;
+}
+
 const customerStageOrder: CustomerStage[] = ["建图", "进门", "定痛", "找人", "进入商机"];
 
 async function advanceCustomerStageByEvidence(clientId: number, requestedStage: CustomerStage) {
@@ -490,6 +509,7 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
       clientId: z.number(),
       signalType: z.enum(["intent_subject", "decision_chain", "trigger_event"]),
       subjectName: z.string().trim().min(1).max(150),
+      subjectContactId: z.number().nullable().optional(),
       occurredAt: z.string().datetime(),
       statement: z.string().trim().min(8).max(5000),
       sourceType: z.enum(["meeting", "customer_message", "customer_email", "intelligence", "other_evidence"]),
@@ -498,9 +518,25 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
     })).mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
-      const { customerPurchaseSignals } = await import("../drizzle/schema.js");
+      const { customerPurchaseSignals, keyContacts } = await import("../drizzle/schema.js");
+      const { and, eq } = await import("drizzle-orm");
+      let subjectName = input.subjectName;
+      if (input.signalType === "decision_chain") {
+        if (!input.subjectContactId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "决策链信号必须从关键人图谱选择已入库联系人。" });
+        }
+        const [contact] = await db.select().from(keyContacts).where(and(
+          eq(keyContacts.id, input.subjectContactId),
+          eq(keyContacts.clientId, input.clientId),
+        )).limit(1);
+        if (!contact) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "所选关键人不属于该客户。" });
+        }
+        subjectName = contact.name;
+      }
       const [result] = await db.insert(customerPurchaseSignals).values({
         ...input,
+        subjectName,
         occurredAt: new Date(input.occurredAt),
         createdBy: ctx.user.name || ctx.user.email || "已登录用户",
       });
@@ -3370,9 +3406,48 @@ ${contactList}
       expectedCloseDate: z.string().trim().max(50).optional(),
       customerObjective: z.string().trim().max(2000).optional(),
       contactName: z.string().trim().max(100).optional(),
-    })).mutation(async ({ input }) => {
-      const { client, readiness } = await loadCustomerReadiness(input.clientId);
-      if (!readiness.canApplyForOpportunity) {
+      bypassReason: z.literal("exec_meeting").optional(),
+      executiveContactId: z.number().optional(),
+      executiveMeetingIds: z.array(z.number()).min(2).max(10).optional(),
+      adConfirmation: z.string().trim().min(12).max(2000).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { client, readiness, contacts, meetings } = await loadCustomerReadiness(input.clientId);
+      const isExecutiveBypass = input.bypassReason === "exec_meeting";
+      let approval: any = { mode: "purchase_signals" };
+
+      if (isExecutiveBypass) {
+        const actor = await getEmailSessionActor(ctx);
+        if (!actor || (actor.podRole !== "AD" && actor.role !== "admin")) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "高层直入必须由 AD 或系统管理员在登录态下确认。" });
+        }
+        if (!input.executiveContactId || !input.executiveMeetingIds || !input.adConfirmation) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "高层直入必须选择经济决策人、引用至少两次拜访记录并填写 AD 确认说明。" });
+        }
+        const executive = contacts.find((contact: any) => contact.id === input.executiveContactId);
+        if (!executive || executive.buyingRole !== "经济决策人") {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "高层直入仅适用于关键人图谱中标注为经济决策人的客户联系人。" });
+        }
+        const selectedIds = Array.from(new Set(input.executiveMeetingIds));
+        const selectedMeetings = meetings.filter((meeting: any) => selectedIds.includes(meeting.id));
+        const executiveMeetings = selectedMeetings.filter((meeting: any) =>
+          [meeting.attendees, meeting.keyPoints, meeting.transcriptText, meeting.aiMinutes]
+            .filter(Boolean).some((content: string) => content.includes(executive.name))
+        );
+        if (executiveMeetings.length < 2) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "高层直入需要至少两次明确记录该经济决策人参与或直接对话的拜访事实。" });
+        }
+        approval = {
+          mode: "exec_meeting",
+          approvedBy: { id: actor.id, name: actor.name, podRole: actor.podRole },
+          confirmation: input.adConfirmation,
+          executiveContact: { id: executive.id, name: executive.name, buyingRole: executive.buyingRole },
+          meetingEvidence: executiveMeetings.map((meeting: any) => ({
+            id: meeting.id,
+            meetingDate: new Date(meeting.meetingDate).toISOString(),
+            attendees: meeting.attendees,
+          })),
+        };
+      } else if (!readiness.canApplyForOpportunity) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: `尚不满足申请开商机的客观门控：${readiness.blockers.map(item => item.label).join("；")}`,
@@ -3396,13 +3471,18 @@ ${contactList}
           type: check.id,
           label: check.label,
           subjectName: check.signal?.subjectName || "",
+          subjectContactId: check.signal?.subjectContactId ?? null,
           occurredAt: check.signal ? new Date(check.signal.occurredAt).toISOString() : "",
           statement: check.signal?.statement || "",
           sourceType: check.signal?.sourceType || "",
           sourceReference: check.signal?.sourceReference || "",
         })),
+        approval,
       };
-      const notes = `${input.customerObjective ? `补充说明：${input.customerObjective}\n\n` : ""}本商机由客户作战台三项购买信号门控申请创建；意向主体、决策链触达与触发事件的事实快照已固化。后续产品方案与赢单判断请在独立商机作战室维护。`;
+      const gateNarrative = isExecutiveBypass
+        ? "本商机由 AD 确认的高层直入路径创建：两次经济决策人拜访事实与确认说明已固化。"
+        : "本商机由客户作战台三项购买信号门控申请创建；意向主体、决策链触达与触发事件的事实快照已固化。";
+      const notes = `${input.customerObjective ? `补充说明：${input.customerObjective}\n\n` : ""}${gateNarrative} 后续产品方案与赢单判断请在独立商机作战室维护。`;
       const [result] = await db.insert(opportunities).values({
         clientId: input.clientId,
         name: input.name,
@@ -3411,7 +3491,7 @@ ${contactList}
         productId: input.productId ?? null,
         estimatedValue: input.estimatedValue || null,
         expectedCloseDate: input.expectedCloseDate || null,
-        contactName: input.contactName || null,
+        contactName: input.contactName || approval.executiveContact?.name || null,
         notes,
         entryEvidenceSnapshot: snapshot,
       } as any);
