@@ -728,13 +728,19 @@
 - [ ] 写入内部汇报、竞争结果、年度金额与关键人意见
 - [ ] 记录 Felix 异议及 Marcos—Felix 关系风险，更新 Buying Group 与赢单行动
 - [ ] 验证 HKT 商机数据和下一步行动在 Command 中可见
+- [ ] 更新 EDR、Virtual Patch 的 MEDDPICC 行为证据与决策风险说明
 
 ## HKT 关键人图谱补全
 - [x] 逐项核对 Marcos、Ronald、Benny、Adrian、Ryan、Ray 与现有图谱
 - [x] 新增 Felix（CISO）与 Susanna（CEO）并建立汇报关系
 - [x] 补足关键人角色、立场、组织关系与 Marcos—Felix 风险说明
-- [ ] 确认 Tracy 的正式职位、两个最终用户部门代表姓名，以及 Ryan Lam LH 与 AI Pentest 对接人是否为同一人
-- [ ] 验证 HKT 关键人图谱完整性与汇报链路展示
+- [x] Tracy、Ray 与最终用户部门代表不作为 7 人关键人图谱节点；Ryan Lam LH 作为唯一 Ryan 节点
+- [x] 验证 HKT 关键人图谱完整性与汇报链路展示
+
+## HKT 关键人图谱七人纠正
+- [x] 移除误建的 Ray 与 Tracy 独立关键人节点
+- [x] 保留 Susanna、Marcos、Felix、Ronald、Benny、Adrian、Ryan 共 7 个节点
+- [x] 验证商机经营信息仍保留 Ray 与 Tracy 提供的推进事实
 
 ## 武器库知识文档工作流
 - [x] 核对现有单文件上传、产品文档和 AI 摘要实现
