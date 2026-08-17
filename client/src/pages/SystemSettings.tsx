@@ -539,7 +539,7 @@ function LLMConfigTab() {
                 onChange={e => tier.id === "primary" ? setPrimaryProvider(e.target.value) : setFastProvider(e.target.value)}
                 className="bg-muted border border-border rounded-lg px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/50"
               >
-                <option value="auto">自动（按优先级）</option>
+                <option value="auto">自动（按事实与时限）</option>
                 <option value="openai">OpenAI</option>
                 <option value="claude">Anthropic Claude</option>
                 <option value="glm">智谱 GLM</option>

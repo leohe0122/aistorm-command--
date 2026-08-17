@@ -31,7 +31,6 @@ const MEDDPICC_ITEMS = [
 ] as const;
 
 const STAGES = ["建图", "进门", "定痛", "找人", "进入商机"];
-const PRIORITIES = ["P0", "P1", "P2"];
 const INFLUENCE_OPTIONS = ["决策者", "影响者", "Champion候选", "技术评估者", "内部线人"];
 const BUYING_ROLE_OPTIONS = ["经济决策人", "技术决策人", "用户影响者", "阻碍者", "Champion", "内部线人", "未知"];
 const buyingRoleColor: Record<string, string> = {
@@ -1536,7 +1535,7 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
   });
 
   const suggestMutation = trpc.clients.suggestHookAndAngle.useMutation();
-  // P1a/P1b: AI Review
+  // AI Review 状态
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewContent, setReviewContent] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -1849,11 +1848,6 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className={cn("text-xs font-bold px-1.5 py-0.5 rounded border",
-                client.priority === "P0" ? "bg-red-500/20 text-red-400 border-red-500/30" :
-                  client.priority === "P1" ? "bg-orange-500/20 text-orange-400 border-orange-500/30" :
-                    "bg-muted text-muted-foreground border-border"
-              )}>{client.priority}</span>
               <h3 className="font-semibold text-foreground">{client.name}</h3>
               <span className="text-xs text-muted-foreground">{client.nameEn}</span>
               {client.isTest && (
@@ -2313,19 +2307,12 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
       {/* Quick Edit Panel */}
       {editing && (
         <div className="border-t border-border p-4 bg-muted/10">
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-1 gap-3 mb-3">
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">销售阶段</label>
               <Select value={editData.stage || client.stage} onValueChange={(v) => setEditData({ ...editData, stage: v })}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>{STAGES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">优先级</label>
-              <Select value={editData.priority || client.priority} onValueChange={(v) => setEditData({ ...editData, priority: v as any })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>{PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
