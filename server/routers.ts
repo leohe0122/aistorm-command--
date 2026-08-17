@@ -9,6 +9,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
+import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -3429,12 +3430,12 @@ ${contactList}
         }
         const selectedIds = Array.from(new Set(input.executiveMeetingIds));
         const selectedMeetings = meetings.filter((meeting: any) => selectedIds.includes(meeting.id));
-        const executiveMeetings = selectedMeetings.filter((meeting: any) =>
-          [meeting.attendees, meeting.keyPoints, meeting.transcriptText, meeting.aiMinutes]
-            .filter(Boolean).some((content: string) => content.includes(executive.name))
-        );
+        const inspectedMeetings = classifyExecutiveMeetings(selectedMeetings, executive.name);
+        const executiveMeetings = inspectedMeetings.filter(meeting => meeting.executiveDetected);
         if (executiveMeetings.length < 2) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "高层直入需要至少两次明确记录该经济决策人参与或直接对话的拜访事实。" });
+          const matched = executiveMeetings.map(meeting => `#${meeting.id}`).join("、") || "无";
+          const unmatched = inspectedMeetings.filter(meeting => !meeting.executiveDetected).map(meeting => `#${meeting.id}`).join("、") || "无";
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: `高层直入需至少两次明确记录“${executive.name}”参与或直接对话的拜访事实。已检测到：${matched}；未检测到该姓名：${unmatched}。请核对拜访记录中的与会人或纪要写法。` });
         }
         approval = {
           mode: "exec_meeting",
