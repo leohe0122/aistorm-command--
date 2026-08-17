@@ -830,7 +830,7 @@ function ActiveFrontsPanel({ clientId, focusOppId }: { clientId: number; focusOp
   );
 }
 
-function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientName: string }) {
+export function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientName: string }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [chainAnalysis, setChainAnalysis] = useState<{ reportingChain: string; tips: any[] } | null>(null);
@@ -1398,7 +1398,7 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
 }
 
 // ── 产品覆盖度状态栏 ──────────────────────────────────────────────────────────
-function ProductCoverageBar({ clientId }: { clientId: number }) {
+export function ProductCoverageBar({ clientId }: { clientId: number }) {
   const { data: coverage } = trpc.products.clientCoverage.useQuery({ clientId });
   if (!coverage || coverage.length === 0) return null;
   return (
@@ -1437,6 +1437,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
   initialTab?: "meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin";
   focusOppId?: number | null;
 }) {
+  const [, setLocation] = useLocation();
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin" | "metrics">(initialTab ?? "meddpicc");
   const [editing, setEditing] = useState(false);
@@ -2253,13 +2254,22 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
               {expanded ? "收起详情" : "展开详情"}
             </button>
           )}
-          <button
-            onClick={() => { setEditing(!editing); setEditData({}); }}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-          >
-            <Edit2 className="w-3 h-3" />
-            快速编辑
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setLocation(`/clients/${client.id}`)}
+              className="flex items-center gap-1 text-xs font-medium text-cyan-400 hover:text-cyan-300 transition-colors"
+            >
+              <Target className="w-3 h-3" />
+              进入作战台
+            </button>
+            <button
+              onClick={() => { setEditing(!editing); setEditData({}); }}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+            >
+              <Edit2 className="w-3 h-3" />
+              快速编辑
+            </button>
+          </div>
         </div>
       </div>
 

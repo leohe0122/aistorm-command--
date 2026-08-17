@@ -24,6 +24,7 @@ import UserManagement from "./pages/UserManagement";
 import SystemSettings from "./pages/SystemSettings";
 import TeamManagement from "./pages/TeamManagement";
 import DemoAccess from "./pages/DemoAccess";
+import ClientWorkstation from "./pages/ClientWorkstation";
 import { trpc } from "@/lib/trpc";
 import { useState, createContext, useContext, useEffect } from "react";
 import { Spinner } from "@/components/ui/spinner";
@@ -129,6 +130,7 @@ function Router() {
         <Route path="/" component={ADDashboard} />
         <Route path="/dashboard" component={ADDashboard} />
         <Route path="/battle-map" component={BattleMap} />
+        <Route path="/clients/:clientId" component={ClientWorkstation} />
         <Route path="/intel-radar" component={IntelRadar} />
         <Route path="/quick-review" component={QuickReview} />
         <Route path="/action-command" component={ActionCommand} />
