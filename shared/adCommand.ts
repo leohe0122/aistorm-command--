@@ -37,6 +37,18 @@ type OpportunityInput = {
   weakestScore?: number | null;
 };
 
+type ActionInput = {
+  id: number;
+  clientId: number;
+  opportunityId?: number | null;
+  clientName: string;
+  title: string;
+  objective?: string | null;
+  priority: string;
+  timeframe: string;
+  responsibleRole: string;
+};
+
 function daysSince(value?: Date | string | null, now = new Date()) {
   if (!value) return null;
   const date = new Date(value);
@@ -51,13 +63,34 @@ export function buildAdCommandRecommendations(
   clients: ClientInput[],
   opportunities: OpportunityInput[],
   now = new Date(),
+  actionItems: ActionInput[] = [],
 ): GeneratedCommandRecommendation[] {
   const result: GeneratedCommandRecommendation[] = [];
+
+  // 已确认的经营行动优先进入指挥台。它们来自真实经营纪要或已审核 AI 指令，
+  // 不依赖客户是否有完整的历史数据基线。
+  for (const action of actionItems) {
+    if (action.responsibleRole !== "AD") continue;
+    result.push({
+      clientId: action.clientId, opportunityId: action.opportunityId ?? null, kind: "today_action",
+      priority: action.priority === "高" ? "P0" : action.priority === "中" ? "P1" : "P2",
+      title: action.title,
+      aiConclusion: `存在已确认但尚未完成的 ${action.timeframe} AD 行动`,
+      facts: [
+        { label: "已确认行动", value: action.title },
+        { label: "责任角色", value: action.responsibleRole },
+        { label: "要求时限", value: action.timeframe },
+      ],
+      methodology: "已确认经营纪要 · AD 作战督导",
+      suggestedAction: action.objective || "由 AD 确认安排、明确推进节奏，并在完成后关闭任务。",
+      assignedRole: "AD", fingerprint: `ad-action-${action.id}`,
+    });
+  }
 
   for (const client of clients) {
     if (client.stage === "进入商机") continue;
     const days = daysSince(client.lastMeetingAt, now);
-    if (client.priority === "P0" && (days === null || days > 30)) {
+    if (client.priority === "P0" && days !== null && days > 30) {
       result.push({
         clientId: client.id, opportunityId: null, kind: "today_action", priority: "P0",
         title: `介入 ${client.name} 的客户对话恢复`,
@@ -69,10 +102,10 @@ export function buildAdCommandRecommendations(
         ],
         methodology: "0→1 作战节奏 · 购买信号验证",
         suggestedAction: "由 AD 确认一次高价值客户接触或升级路径，并指定 SAM 在会后回填购买信号事实。",
-        assignedRole: "AD", fingerprint: `p0-contact-${client.id}-${days ?? "none"}`,
+        assignedRole: "AD", fingerprint: `p0-contact-${client.id}`,
       });
     }
-    if ((client.championScore ?? 0) <= 1) {
+    if (days !== null && (client.championScore ?? 0) <= 1) {
       result.push({
         clientId: client.id, opportunityId: null, kind: "sam_coaching", priority: "P1",
         title: `辅导 ${client.name} 的内部推动者识别`,
@@ -106,7 +139,7 @@ export function buildAdCommandRecommendations(
         ],
         methodology: "1→N · MEDDPICC 证据与阶段推进",
         suggestedAction: `由 AD 审阅 ${dim} 缺口，确认需要高层介入、资源协调或退回 SAM 补证。`,
-        assignedRole: "AD", fingerprint: `opp-stagnant-${opp.id}-${opp.stage}-${days}-${dim}-${score}`,
+        assignedRole: "AD", fingerprint: `opp-stagnant-${opp.id}-${opp.stage}-${dim}-${score}`,
       });
     }
   }

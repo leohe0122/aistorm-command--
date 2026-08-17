@@ -5288,16 +5288,17 @@ ${input.aiSuggestion}
     refresh: publicProcedure.mutation(async () => {
       const db = await getDb();
       if (!db) return [];
-      const { clients, meetingMinutes, meddpicc, opportunities, opportunityMeddpicc, adCommandRecommendations } = await import('../drizzle/schema');
+      const { clients, meetingMinutes, meddpicc, opportunities, opportunityMeddpicc, actionItems, adCommandRecommendations } = await import('../drizzle/schema');
       const { buildAdCommandRecommendations } = await import('../shared/adCommand');
       const { desc } = await import('drizzle-orm');
 
-      const [allClients, allMeetings, clientMeddpicc, allOpportunities, oppMeddpicc, existing] = await Promise.all([
+      const [allClients, allMeetings, clientMeddpicc, allOpportunities, oppMeddpicc, pendingActions, existing] = await Promise.all([
         db.select().from(clients),
         db.select({ clientId: meetingMinutes.clientId, meetingDate: meetingMinutes.meetingDate }).from(meetingMinutes),
         db.select().from(meddpicc),
         db.select().from(opportunities),
         db.select().from(opportunityMeddpicc),
+        db.select().from(actionItems),
         db.select().from(adCommandRecommendations).orderBy(desc(adCommandRecommendations.createdAt)),
       ]);
 
@@ -5329,6 +5330,11 @@ ${input.aiSuggestion}
           championScore: clientScore.get(client.id)?.championScore ?? 0, assignedSamName: client.assignedSamName,
         })),
         oppInputs,
+        new Date(),
+        pendingActions.filter(action => !action.isCompleted).map(action => ({
+          id: action.id, clientId: action.clientId, opportunityId: action.opportunityId, clientName: allClients.find(client => client.id === action.clientId)?.name ?? `客户#${action.clientId}`,
+          title: action.title, objective: action.objective, priority: action.priority, timeframe: action.timeframe, responsibleRole: action.responsibleRole,
+        })),
       );
       const knownFingerprints = new Set(existing.map(item => item.fingerprint));
       const inserts = generated.filter(item => !knownFingerprints.has(item.fingerprint)).map(item => ({
@@ -5338,6 +5344,14 @@ ${input.aiSuggestion}
         dueDate: new Date(Date.now() + (item.priority === 'P0' ? 2 : 7) * 86_400_000),
       }));
       if (inserts.length) await db.insert(adCommandRecommendations).values(inserts as any);
+      const currentFingerprints = new Set(generated.map(item => item.fingerprint));
+      const derivedTypes = new Set(['p0-contact', 'champion-gap', 'opp-stagnant']);
+      for (const item of existing) {
+        const isDerived = Array.from(derivedTypes).some(prefix => item.fingerprint.startsWith(prefix));
+        if (item.status === 'pending' && isDerived && !currentFingerprints.has(item.fingerprint)) {
+          await db.update(adCommandRecommendations).set({ status: 'skipped', skipReason: '数据不足，自动撤回该 AI 判断' }).where(eq(adCommandRecommendations.id, item.id));
+        }
+      }
       return db.select().from(adCommandRecommendations).orderBy(desc(adCommandRecommendations.createdAt));
     }),
     list: publicProcedure.query(async () => {
