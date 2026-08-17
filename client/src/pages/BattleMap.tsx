@@ -1430,6 +1430,68 @@ export function ProductCoverageBar({ clientId }: { clientId: number }) {
   );
 }
 
+/** 战场地图只负责发现与分流；客户经营细节统一进入客户作战台。 */
+function ClientDiscoveryCard({ client }: { client: any }) {
+  const [, setLocation] = useLocation();
+  const daysSinceLastVisit = client.daysSinceLastVisit as number | null | undefined;
+  const visitCount = Number(client.visitCount ?? 0);
+  const contactCount = Number(client.contactCount ?? 0);
+  const lastTouchLabel = daysSinceLastVisit == null
+    ? "未记录触达"
+    : daysSinceLastVisit === 0
+      ? "今天已触达"
+      : `${daysSinceLastVisit} 天前触达`;
+  const risk = visitCount === 0
+    ? "待完成首次有效触达"
+    : daysSinceLastVisit != null && daysSinceLastVisit >= 30
+      ? `已 ${daysSinceLastVisit} 天未触达`
+      : contactCount === 0
+        ? "关键人图谱待补"
+        : null;
+
+  return (
+    <article className="rounded-2xl border border-cyan-500/15 bg-card p-5 shadow-sm transition-colors hover:border-cyan-400/45">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="rounded-md border border-cyan-400/25 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold text-cyan-200">{client.priority ?? "P2"}</span>
+            <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{client.stage ?? "建图"}</span>
+          </div>
+          <h3 className="mt-3 truncate text-lg font-semibold text-foreground">{client.name}</h3>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{client.englishName || client.industry || "客户档案待完善"}</p>
+        </div>
+        <Target className="mt-1 h-5 w-5 shrink-0 text-cyan-300" />
+      </div>
+
+      <dl className="mt-5 space-y-2 text-xs">
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-muted-foreground">负责人</dt>
+          <dd className="truncate text-right text-foreground">{client.assignedSamName || "待分配"}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-muted-foreground">最近触达</dt>
+          <dd className="text-right text-foreground">{lastTouchLabel}</dd>
+        </div>
+      </dl>
+
+      {risk && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-400/15 bg-amber-400/5 px-3 py-2 text-xs text-amber-200">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>{risk}</span>
+        </div>
+      )}
+
+      <button
+        onClick={() => setLocation(`/clients/${client.id}`)}
+        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-3 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-300"
+      >
+        进入客户作战台
+        <Target className="h-4 w-4" />
+      </button>
+    </article>
+  );
+}
+
 function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
   client: any;
   defaultExpanded?: boolean;
@@ -3849,7 +3911,7 @@ export default function BattleMap() {
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredClients.map(client => (
             <div key={client.id} id={`client-card-${client.id}`} className="relative group">
-              <ClientCard client={client} />
+              <ClientDiscoveryCard client={client} />
               {/* Hover action buttons */}
               <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                 <button
