@@ -149,6 +149,7 @@ export function AICommandCenter() {
     }
     return Array.from(grouped.entries()).map(([name, value]) => ({ name, ...value }));
   }, [dashboard]);
+  const samWarningByName = useMemo(() => new Map(samWarnings.map(item => [item.name, item])), [samWarnings]);
 
   if (dashboardLoading) return <div className="space-y-4 p-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-52 rounded-xl" /><Skeleton className="h-52 rounded-xl" /></div>;
 
@@ -193,7 +194,7 @@ export function AICommandCenter() {
       </>}
 
       {view === "boards" && <div className="grid gap-5 xl:grid-cols-2">
-        <section className="rounded-2xl border bg-card p-4"><div className="mb-4 flex items-center gap-2"><Target className="h-4 w-4 text-cyan-300" /><div><p className="text-sm font-semibold">0→1 客户看板</p><p className="text-xs text-muted-foreground">AI 单句结论与 SAM 能力预警。</p></div></div><div className="space-y-2">{zeroToOne.map((client: any) => { const rec = recommendationForClient(client.id); const fallback = client.isStagnant ? `阶段停留 ${client.stageDwellDays} 天，需恢复购买信号验证` : client.anomalies?.[0] || "购买信号仍待验证"; return <CompactCard key={client.id} label={client.name} badge={`${client.stage} · ${client.assignedSamName || "SAM待分配"}`} conclusion={rec?.aiConclusion || fallback} onClick={() => navigate(`/clients/${client.id}`)} />; })}</div></section>
+        <section className="rounded-2xl border bg-card p-4"><div className="mb-4 flex items-center gap-2"><Target className="h-4 w-4 text-cyan-300" /><div><p className="text-sm font-semibold">0→1 客户看板</p><p className="text-xs text-muted-foreground">AI 单句结论与 SAM 能力预警。</p></div></div><div className="space-y-2">{zeroToOne.map((client: any) => { const rec = recommendationForClient(client.id); const fallback = !client.dataSufficient ? "数据不足，暂不判断。请先完成一条客户对话或购买信号录入。" : client.isStagnant ? `阶段停留 ${client.stageDwellDays} 天，需恢复购买信号验证` : client.anomalies?.[0] || "购买信号仍待验证"; const warning = samWarningByName.get(client.assignedSamName || "未分配 SAM"); const samTag = warning && warning.gaps > 0 ? `${client.assignedSamName} · Champion缺口 ${warning.gaps}` : client.assignedSamName || "SAM待分配"; const badge = !client.dataSufficient ? `${client.stage} · 数据不足` : `${client.stage} · ${samTag}`; return <CompactCard key={client.id} label={client.name} badge={badge} conclusion={rec?.aiConclusion || fallback} onClick={() => navigate(`/clients/${client.id}`)} />; })}</div></section>
         <section className="rounded-2xl border bg-card p-4"><div className="mb-4 flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-orange-300" /><div><p className="text-sm font-semibold">1→N 商机看板</p><p className="text-xs text-muted-foreground">最大风险与停滞战线。</p></div></div><div className="space-y-2">{oneToN.map((opp: any) => { const rec = recommendationForOpp(opp.id); const fallback = opp.isStagnant ? `停滞 ${opp.stageDwellDays} 天，${opp.weakDims?.[0] || "关键证据"}待补` : opp.oppAnomalies?.[0] || "商机证据持续经营中"; return <CompactCard key={opp.id} label={`${opp.clientName} · ${opp.name}`} badge={opp.stage} conclusion={rec?.aiConclusion || fallback} onClick={() => navigate(`/clients/${opp.clientId}/opportunities/${opp.id}`)} />; })}</div></section>
       </div>}
 

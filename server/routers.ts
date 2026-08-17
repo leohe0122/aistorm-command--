@@ -5711,44 +5711,43 @@ ${input.aiSuggestion}
           // Champion评分
           const championScore = mDetails?.championScore ?? 0;
 
+          // 仅有客户档案或关键人建图，不足以构成经营判断基线。
+          // 至少要有一条真实拜访/对话记录，AI 才能把事实升级为异常判断。
+          const dataSufficient = visitCount > 0;
+
           // ── 0→1 业务异常检测 ──────────────────────────────────────────────
           const anomalies: string[] = [];
-          // 1. 无Champion且已在"定痛"阶段超过7天
-          if (c.stage === '定痛' && championScore === 0 && stageDwellDays > 7) {
-            anomalies.push('定痛阶段无Champion');
-          }
-          // 1b. 定痛阶段无能力认可信号（I维度达标但无支持态度且无正面拜访记录）
-          if (c.stage === '定痛' && (mDetails?.implicatePainScore ?? 0) >= 50) {
-            const clientContacts = decisionCoverageByClient.get(c.id)?.contacts ?? [];
-            const hasPositiveStanceAnomaly = clientContacts.some((ct: any) => ct.stance === '支持');
-            if (!hasPositiveStanceAnomaly) {
-              anomalies.push('定痛不完整：缺能力认可信号（无关键人态度为支持）');
+          if (dataSufficient) {
+            // 1. 无Champion且已在"定痛"阶段超过7天
+            if (c.stage === '定痛' && championScore === 0 && stageDwellDays > 7) {
+              anomalies.push('定痛阶段无Champion');
             }
-          }
-          // 2. 拜访次数=0且已建图超过14天
-          if (c.stage === '建图' && visitCount === 0 && stageDwellDays > 14) {
-            anomalies.push('建图超14天未拜访');
-          }
-          // 3. 关键人数量=0
-          if (contactCount === 0) {
-            anomalies.push('汇报链路未摸清');
-          }
-          // 4. 最后一次拜访距今超过21天
-          if (daysSinceLastVisit !== null && daysSinceLastVisit > 21) {
-            anomalies.push(`失联${daysSinceLastVisit}天`);
-          } else if (daysSinceLastVisit === null && stageDwellDays > 21) {
-            anomalies.push('从未拜访');
-          }
-          // 5. MEDDPICC总分<20且阶段已到"找人"
-          if (c.stage === '找人' && mScore < 20) {
-            anomalies.push('MEDDPICC严重滞后');
+            // 1b. 定痛阶段无能力认可信号（I维度达标但无支持态度且无正面拜访记录）
+            if (c.stage === '定痛' && (mDetails?.implicatePainScore ?? 0) >= 50) {
+              const clientContacts = decisionCoverageByClient.get(c.id)?.contacts ?? [];
+              const hasPositiveStanceAnomaly = clientContacts.some((ct: any) => ct.stance === '支持');
+              if (!hasPositiveStanceAnomaly) {
+                anomalies.push('定痛不完整：缺能力认可信号（无关键人态度为支持）');
+              }
+            }
+            // 2. 关键人数量=0
+            if (contactCount === 0) {
+              anomalies.push('汇报链路未摸清');
+            }
+            // 3. 最后一次拜访距今超过21天
+            if (daysSinceLastVisit !== null && daysSinceLastVisit > 21) {
+              anomalies.push(`失联${daysSinceLastVisit}天`);
+            }
+            // 4. MEDDPICC总分<20且阶段已到"找人"
+            if (c.stage === '找人' && mScore < 20) {
+              anomalies.push('MEDDPICC严重滞后');
+            }
           }
 
           return {
             id: c.id,
             name: c.name,
             stage: c.stage,
-            priority: c.priority,
             stageDwellDays,
             hasActionThisWeek,
             lastVisitDate: visitStats?.lastVisitDate ?? null,
@@ -5757,7 +5756,8 @@ ${input.aiSuggestion}
             daysSinceLastVisit,
             championScore,
             meddpiccAvg: mScore,
-            isStagnant,
+            dataSufficient,
+            isStagnant: dataSufficient && isStagnant,
             anomalies,
           };
         })
