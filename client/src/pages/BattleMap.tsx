@@ -3616,7 +3616,7 @@ export default function BattleMap() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const clientId = Number(params.get("clientId"));
-    const opportunityId = Number(params.get("oppId"));
+    const opportunityId = Number(params.get("oppId") || params.get("opportunityId"));
     if (!Number.isInteger(clientId) || clientId <= 0) return;
     navigate(
       Number.isInteger(opportunityId) && opportunityId > 0
