@@ -6,6 +6,10 @@ vi.mock("./db", () => ({
     { id: 1, name: "美的集团", industry: "智能制造", stage: "进门", priority: "P0", keywords: ["AI", "数字化"], notes: null, createdAt: new Date(), updatedAt: new Date() },
     { id: 2, name: "大疆创新", industry: "无人机/消费电子", stage: "建图", priority: "P0", keywords: ["合规", "数据安全"], notes: null, createdAt: new Date(), updatedAt: new Date() },
   ]),
+  getAllClientsWithVisitStats: vi.fn().mockResolvedValue([
+    { id: 1, name: "美的集团", industry: "智能制造", stage: "进门", priority: "P0", keywords: ["AI", "数字化"], notes: null, createdAt: new Date(), updatedAt: new Date(), visitCount: 0, contactCount: 0, lastVisitDate: null, daysSinceLastVisit: null },
+    { id: 2, name: "大疆创新", industry: "无人机/消费电子", stage: "建图", priority: "P0", keywords: ["合规", "数据安全"], notes: null, createdAt: new Date(), updatedAt: new Date(), visitCount: 0, contactCount: 0, lastVisitDate: null, daysSinceLastVisit: null },
+  ]),
   getClientById: vi.fn().mockResolvedValue({ id: 1, name: "美的集团", industry: "智能制造", stage: "进门", priority: "P0", keywords: ["AI"], notes: null, createdAt: new Date(), updatedAt: new Date() }),
   updateClient: vi.fn().mockResolvedValue(undefined),
   getMeddpiccByClientId: vi.fn().mockResolvedValue({

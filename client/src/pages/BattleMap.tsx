@@ -1430,13 +1430,13 @@ function ProductCoverageBar({ clientId }: { clientId: number }) {
   );
 }
 
-function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }: {
+function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
   client: any;
-  onFocus?: () => void;
   defaultExpanded?: boolean;
   initialTab?: "meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin";
   focusOppId?: number | null;
 }) {
+  const [, setLocation] = useLocation();
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin" | "metrics">(initialTab ?? "meddpicc");
   const [editing, setEditing] = useState(false);
@@ -2232,27 +2232,13 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
 
         {/* Actions */}
         <div className="flex items-center justify-between mt-3">
-          {onFocus ? (
-            /* Grid mode: clicking expands into full-screen single-client view */
-            !expanded ? (
-              <button
-                onClick={onFocus}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-              >
-                <ChevronDown className="w-3 h-3" />
-                展开详情
-              </button>
-            ) : null
-          ) : (
-            /* Full-screen mode: show collapse button */
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              {expanded ? "收起详情" : "展开详情"}
-            </button>
-          )}
+          <button
+            onClick={() => setLocation(`/clients/${client.id}`)}
+            className="flex items-center gap-1 text-xs font-medium text-cyan-200 transition-colors hover:text-cyan-100"
+          >
+            <Target className="w-3 h-3" />
+            进入客户作战台
+          </button>
           <button
             onClick={() => { setEditing(!editing); setEditData({}); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
@@ -3554,30 +3540,6 @@ export default function BattleMap() {
   const isAD = !currentUser || currentUser.podRole === 'AD';
 
   const [showCreate, setShowCreate] = useState(false);
-  // Single-client focus mode: ?clientId=xxx from dashboard navigation
-  const [, navigate] = useLocation();
-  const initialFocusId = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get("clientId");
-    return id ? parseInt(id, 10) : null;
-  }, []);
-  const initialFocusOppId = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get("oppId");
-    return id ? parseInt(id, 10) : null;
-  }, []);
-  const [focusClientId, setFocusClientId] = useState<number | null>(initialFocusId);
-
-  const goToClient = useCallback((id: number, oppId?: number) => {
-    setFocusClientId(id);
-    const url = oppId ? `/battle-map?clientId=${id}&oppId=${oppId}` : `/battle-map?clientId=${id}`;
-    window.history.pushState({}, "", url);
-  }, []);
-
-  const goToAllClients = useCallback(() => {
-    setFocusClientId(null);
-    window.history.replaceState({}, "", "/battle-map");
-  }, []);
 
   const [editTarget, setEditTarget] = useState<(typeof clients)[0] | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -3884,66 +3846,10 @@ export default function BattleMap() {
           ))}
         </div>
       ) : (
-        focusClientId ? (
-          // ── Single-client focus mode ──────────────────────────────────────
-          (() => {
-            const focusClient = clients.find(c => c.id === focusClientId);
-            if (!focusClient) return (
-              <div className="text-center py-16 text-muted-foreground">
-                <p className="text-sm">未找到该客户，可能已被删除。</p>
-                <button
-                  className="mt-3 text-xs text-primary hover:underline"
-                  onClick={goToAllClients}
-                >← 返回全部客户</button>
-              </div>
-            );
-            return (
-              <div>
-                {/* Back button */}
-                <button
-                  className="mb-4 flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors group border border-primary/30 hover:border-primary/60 px-3 py-1.5 rounded-lg bg-primary/5 hover:bg-primary/10 w-fit"
-                  onClick={goToAllClients}
-                >
-                  <svg className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                  返回全部客户
-                </button>
-                {/* Single client full-width card */}
-                <div className="relative group">
-                  <ClientCard
-                    client={focusClient}
-                    defaultExpanded={true}
-                    initialTab={initialFocusOppId ? "fronts" : undefined}
-                    focusOppId={initialFocusOppId}
-                  />
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <button
-                      onClick={() => openEdit(focusClient)}
-                      className="w-6 h-6 rounded bg-background/90 border border-border flex items-center justify-center hover:bg-primary/20 hover:border-primary/40 transition-colors"
-                      title="编辑客户基本信息"
-                    >
-                      <Edit2 className="w-3 h-3 text-muted-foreground" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget(focusClient)}
-                      className="w-6 h-6 rounded bg-background/90 border border-border flex items-center justify-center hover:bg-red-500/20 hover:border-red-500/40 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3 text-muted-foreground" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })()
-        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredClients.map(client => (
             <div key={client.id} id={`client-card-${client.id}`} className="relative group">
-              <ClientCard
-                client={client}
-                onFocus={() => {
-                  goToClient(client.id);
-                }}
-              />
+              <ClientCard client={client} />
               {/* Hover action buttons */}
               <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                 <button
@@ -4014,7 +3920,7 @@ export default function BattleMap() {
             </div>
           )}
         </div>
-      ))}
+      )}
 
       {/* Create Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>

@@ -694,3 +694,13 @@
 - [x] 后端 GET /api/download-pdf/:type 接口（cards/manual，验证 admin session，用 pdf-lib 动态叠加斜排半透明水印）
 - [x] 原始 PDF 上传到 webdev 静态存储（cards: main_fa5b30eb.pdf，manual: main_732bfb87.pdf）
 - [x] DemoAccess 页面每条 token 记录旁新增「下载卡片」按钮（蓝色下载图标），点击下载带接收人姓名水印的 PDF
+
+## AI 创新产品说明书（亚信 2026 年中大会 Workshop）
+- [ ] 解析 Workshop 提交模板的字段、评分要求与格式约束
+- [ ] 基于 AIStorm Command 已实现能力撰写产品说明书，明确现状与规划边界
+- [ ] 生成并核验可编辑的 DOCX 提交文件
+
+## AI 创新产品说明书 Demo 演示
+- [ ] 设计 5—10 分钟真实操作演示主线，避免功能堆砌
+- [ ] 编写逐分钟操作分镜、口播与真实数据展示口径
+- [ ] 整理录屏前数据准备、界面状态和妙记提交清单
