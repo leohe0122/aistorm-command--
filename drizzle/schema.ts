@@ -538,6 +538,7 @@ export const productDocs = mysqlTable("product_docs", {
   title: varchar("title", { length: 300 }).notNull(),
   description: text("description"),
   productLine: varchar("productLine", { length: 100 }),  // 产品线：TrustOne/CloudGuard/NDR/ThreatTrace等
+  folderId: int("folderId"), // 可选的自建子文件夹；为空时位于产品线根目录
   tags: json("tags").$type<string[]>(),
   filename: varchar("filename", { length: 300 }).notNull(),
   fileKey: varchar("fileKey", { length: 500 }).notNull(),
@@ -551,6 +552,20 @@ export const productDocs = mysqlTable("product_docs", {
 });
 export type ProductDoc = typeof productDocs.$inferSelect;
 export type InsertProductDoc = typeof productDocs.$inferInsert;
+
+/**
+ * 武器库产品文档子文件夹。产品线是第一层固定目录，用户可在其下创建资料包文件夹。
+ */
+export const productDocFolders = mysqlTable("product_doc_folders", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 120 }).notNull(),
+  productLine: varchar("productLine", { length: 100 }).notNull(),
+  createdBy: varchar("createdBy", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ProductDocFolder = typeof productDocFolders.$inferSelect;
+export type InsertProductDocFolder = typeof productDocFolders.$inferInsert;
 
 /**
  * AI生成记录（方案类/弹药类/话术类的生成历史）

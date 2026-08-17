@@ -15,7 +15,7 @@ import {
   FileText, Upload, Trash2, Search, Plus, Bot, Wand2,
   FileDown, ChevronDown, ChevronUp, Copy, Check,
   ShoppingCart, X, Calculator, Package, Swords, Shield,
-  Eye, Sparkles, ExternalLink, Loader2, Tag, FilePlus2, Files
+  Eye, Sparkles, ExternalLink, Loader2, Tag, FilePlus2, Files, Folder, FolderOpen, FolderPlus, Pencil
 } from "lucide-react";
 import { PRODUCT_LINE_GROUPS } from '../../../shared/productLines';
 import KillSheetsTab from "./KillSheetsTab";
@@ -396,6 +396,7 @@ const FOLDER_DEFS = [
 
 function ProductDocsTab() {
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [activeSubfolderId, setActiveSubfolderId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -411,12 +412,17 @@ function ProductDocsTab() {
   const [batchUploading, setBatchUploading] = useState(false);
   const [noteDialog, setNoteDialog] = useState(false);
   const [noteForm, setNoteForm] = useState({ title: "", description: "", content: "" });
+  const [folderDialog, setFolderDialog] = useState(false);
+  const [folderName, setFolderName] = useState("");
+  const [draggingDocId, setDraggingDocId] = useState<number | null>(null);
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const { data: docs = [], refetch } = trpc.productDocs.list.useQuery(undefined);
+  const foldersQuery = trpc.productDocs.listFolders.useQuery(activeFolder ? { productLine: activeFolder } : undefined);
+  const subfolders = (foldersQuery.data || []) as Array<{ id: number; name: string; productLine: string }>;
 
   const deleteMut = trpc.productDocs.delete.useMutation({
     onSuccess: () => { toast.success("已删除"); refetch(); },
@@ -424,6 +430,22 @@ function ProductDocsTab() {
   });
   const updateProductLineMut = trpc.productDocs.updateProductLine.useMutation({
     onSuccess: () => { toast.success("已移动"); refetch(); },
+    onError: (e: any) => toast.error("移动失败: " + e.message),
+  });
+  const createFolderMut = trpc.productDocs.createFolder.useMutation({
+    onSuccess: () => { toast.success("子文件夹已创建"); foldersQuery.refetch(); setFolderName(""); setFolderDialog(false); },
+    onError: (e: any) => toast.error("创建文件夹失败: " + e.message),
+  });
+  const renameFolderMut = trpc.productDocs.renameFolder.useMutation({
+    onSuccess: () => { toast.success("文件夹已重命名"); foldersQuery.refetch(); },
+    onError: (e: any) => toast.error("重命名失败: " + e.message),
+  });
+  const deleteFolderMut = trpc.productDocs.deleteFolder.useMutation({
+    onSuccess: () => { toast.success("文件夹已删除"); foldersQuery.refetch(); },
+    onError: (e: any) => toast.error("删除文件夹失败: " + e.message),
+  });
+  const moveToFolderMut = trpc.productDocs.moveToFolder.useMutation({
+    onSuccess: () => { toast.success("文档已归档"); refetch(); foldersQuery.refetch(); },
     onError: (e: any) => toast.error("移动失败: " + e.message),
   });
   const getSignedUrlMut = trpc.productDocs.getSignedUrl.useMutation({
@@ -464,7 +486,7 @@ function ProductDocsTab() {
           const { fileKey, fileUrl, extractedText } = JSON.parse(xhr.responseText);
           await confirmUploadMut.mutateAsync({
             title, description: description || undefined,
-            productLine: activeFolder || undefined, filename: file.name,
+            productLine: activeFolder || undefined, folderId: activeSubfolderId, filename: file.name,
             mimeType: file.type || "application/octet-stream",
             fileKey, fileUrl, fileSize: file.size, extractedText: extractedText || undefined,
           });
@@ -531,6 +553,7 @@ function ProductDocsTab() {
       title: noteForm.title.trim(),
       description: noteForm.description.trim() || undefined,
       productLine: activeFolder,
+      folderId: activeSubfolderId,
       content: noteForm.content.trim(),
     });
   };
@@ -559,9 +582,29 @@ function ProductDocsTab() {
   };
 
   const activeFolderDef = FOLDER_DEFS.find(f => f.productLine === activeFolder);
-  const folderDocs = activeFolder ? (docsByLine[activeFolder] || []).filter((d: any) =>
-    !search || d.title.toLowerCase().includes(search.toLowerCase())
-  ) : [];
+  const folderDocs = activeFolder ? (docsByLine[activeFolder] || []) : [];
+  const currentSubfolder = activeSubfolderId === null ? null : subfolders.find(folder => folder.id === activeSubfolderId) || null;
+  const visibleDocs = folderDocs.filter((doc: any) => {
+    const inCurrentFolder = activeSubfolderId === null ? !doc.folderId : doc.folderId === activeSubfolderId;
+    return inCurrentFolder && (!search || doc.title.toLowerCase().includes(search.toLowerCase()));
+  });
+  const getFolderDocCount = (folderId: number) => folderDocs.filter((doc: any) => doc.folderId === folderId).length;
+  const handleCreateFolder = () => {
+    if (!activeFolder || !folderName.trim()) return;
+    createFolderMut.mutate({ productLine: activeFolder, name: folderName.trim() });
+  };
+  const handleRenameFolder = (folder: { id: number; name: string }) => {
+    const name = window.prompt("请输入新的文件夹名称", folder.name)?.trim();
+    if (name && name !== folder.name) renameFolderMut.mutate({ id: folder.id, name });
+  };
+  const handleDeleteFolder = (folder: { id: number; name: string }) => {
+    if (window.confirm(`确认删除文件夹「${folder.name}」？仅空文件夹可以删除。`)) deleteFolderMut.mutate({ id: folder.id });
+  };
+  const handleMoveDoc = (docId: number, value: string) => {
+    if (value === "root") { moveToFolderMut.mutate({ id: docId, folderId: null }); return; }
+    if (value.startsWith("subfolder:")) { moveToFolderMut.mutate({ id: docId, folderId: Number(value.slice(10)) }); return; }
+    if (value.startsWith("line:")) updateProductLineMut.mutate({ id: docId, productLine: value.slice(5) });
+  };
 
   // ── 二级文档列表视图 ──
   if (activeFolder && activeFolderDef) {
@@ -569,7 +612,7 @@ function ProductDocsTab() {
       <div className="space-y-4">
         {/* 面包屑导航 */}
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => { setActiveFolder(null); setSearch(""); }}
+          <button type="button" onClick={() => { setActiveFolder(null); setActiveSubfolderId(null); setSearch(""); }}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
             <ChevronDown className="h-4 w-4 rotate-90" /> 武器库
           </button>
@@ -577,6 +620,12 @@ function ProductDocsTab() {
           <span className={`text-sm font-medium px-2 py-0.5 rounded-full ${activeFolderDef.badge}`}>
             {activeFolderDef.icon} {activeFolderDef.label}
           </span>
+          {currentSubfolder && <>
+            <span className="text-muted-foreground">/</span>
+            <button type="button" onClick={() => setActiveSubfolderId(null)} className="flex items-center gap-1 text-sm font-medium hover:text-primary transition-colors">
+              <FolderOpen className="h-4 w-4 text-amber-500" /> {currentSubfolder.name}
+            </button>
+          </>}
         </div>
 
         {/* 工具栏 */}
@@ -585,6 +634,9 @@ function ProductDocsTab() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input className="pl-9" placeholder="搜索文档..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          {activeSubfolderId === null && <Button type="button" variant="outline" onClick={() => setFolderDialog(true)} className="gap-2 flex-shrink-0">
+            <FolderPlus className="h-4 w-4" /> 新建文件夹
+          </Button>}
           <Button type="button" variant="outline" onClick={() => setNoteDialog(true)} className="gap-2 flex-shrink-0">
             <FilePlus2 className="h-4 w-4" /> 新建文档
           </Button>
@@ -596,19 +648,41 @@ function ProductDocsTab() {
           </Button>
         </div>
 
-        {/* 文档列表 */}
-        {folderDocs.length === 0 ? (
+        {/* 子文件夹：文档可拖拽到任一资料包完成归档 */}
+        {activeSubfolderId === null && subfolders.length > 0 && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {subfolders.map(folder => (
+              <div key={folder.id} role="button" tabIndex={0}
+                onClick={() => setActiveSubfolderId(folder.id)}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setActiveSubfolderId(folder.id); }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); if (draggingDocId !== null) moveToFolderMut.mutate({ id: draggingDocId, folderId: folder.id }); setDraggingDocId(null); }}
+                className="group relative cursor-pointer rounded-xl border border-amber-500/25 bg-amber-500/[0.04] p-4 text-left transition-colors hover:border-amber-500/60 hover:bg-amber-500/[0.08] focus:outline-none focus:ring-2 focus:ring-primary">
+                <Folder className="h-8 w-8 text-amber-500" />
+                <p className="mt-2 truncate text-sm font-semibold">{folder.name}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{getFolderDocCount(folder.id)} 份文档 · 拖入归档</p>
+                <div className="absolute right-2 top-2 hidden gap-1 group-hover:flex">
+                  <button type="button" title="重命名" onClick={e => { e.stopPropagation(); handleRenameFolder(folder); }} className="rounded p-1 text-muted-foreground hover:bg-background hover:text-primary"><Pencil className="h-3.5 w-3.5" /></button>
+                  <button type="button" title="删除空文件夹" onClick={e => { e.stopPropagation(); handleDeleteFolder(folder); }} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 当前目录的文档列表 */}
+        {visibleDocs.length === 0 ? (
           <div className={`flex flex-col items-center py-16 rounded-2xl border-2 border-dashed bg-gradient-to-br ${activeFolderDef.color} ${activeFolderDef.border} gap-3`}>
             <span className="text-5xl">{activeFolderDef.icon}</span>
-            <p className="text-sm text-muted-foreground">此文件夹暂无文档</p>
+            <p className="text-sm text-muted-foreground">{currentSubfolder ? `「${currentSubfolder.name}」暂无文档` : "产品线根目录暂无文档"}</p>
             <Button type="button" variant="outline" size="sm" onClick={() => setUploadDialog(true)} className="gap-1.5">
               <Upload className="h-3.5 w-3.5" /> 上传第一份文档
             </Button>
           </div>
         ) : (
           <div className="space-y-2">
-            {folderDocs.map((doc: any) => (
-              <div key={doc.id} className="group flex items-center gap-3 px-4 py-3 rounded-xl border border-border bg-card hover:bg-accent/20 transition-colors">
+            {visibleDocs.map((doc: any) => (
+              <div key={doc.id} draggable onDragStart={() => setDraggingDocId(doc.id)} onDragEnd={() => setDraggingDocId(null)} className="group flex cursor-grab items-center gap-3 px-4 py-3 rounded-xl border border-border bg-card hover:bg-accent/20 transition-colors active:cursor-grabbing">
                 <span className="text-xl flex-shrink-0">{getMimeIcon(doc.mimeType)}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{doc.title}</p>
@@ -619,16 +693,21 @@ function ProductDocsTab() {
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   {/* 移动到... */}
-                  <Select onValueChange={v => { if (v !== activeFolder) updateProductLineMut.mutate({ id: doc.id, productLine: v }); }}>
+                  <Select onValueChange={v => handleMoveDoc(doc.id, v)}>
                     <SelectTrigger className="h-7 text-xs w-auto gap-1 px-2 border-dashed opacity-0 group-hover:opacity-100 transition-opacity">
                       <Tag className="h-3 w-3" /> 移动到
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectGroup>
+                        <SelectLabel>当前产品线</SelectLabel>
+                        <SelectItem value="root">产品线根目录</SelectItem>
+                        {subfolders.map(folder => <SelectItem key={folder.id} value={`subfolder:${folder.id}`}>📁 {folder.name}</SelectItem>)}
+                      </SelectGroup>
                       {["亚信科技", "亚信安全", "其他"].map(group => (
                         <SelectGroup key={group}>
                           <SelectLabel>{group}</SelectLabel>
                           {FOLDER_DEFS.filter(f => f.group === group && f.productLine !== activeFolder).map(f => (
-                            <SelectItem key={f.productLine} value={f.productLine}>
+                            <SelectItem key={f.productLine} value={`line:${f.productLine}`}>
                               {f.icon} {f.label}
                             </SelectItem>
                           ))}
@@ -658,6 +737,19 @@ function ProductDocsTab() {
             ))}
           </div>
         )}
+
+        {/* 新建子文件夹 Dialog */}
+        <Dialog open={folderDialog} onOpenChange={open => { setFolderDialog(open); if (!open) setFolderName(""); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle className="flex items-center gap-2"><FolderPlus className="h-5 w-5 text-amber-500" /> 新建「{activeFolderDef.label}」资料文件夹</DialogTitle></DialogHeader>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">文件夹名称 *</label>
+              <Input autoFocus value={folderName} onChange={e => setFolderName(e.target.value)} placeholder="例：AI Pentest 产品与客户资料包" onKeyDown={e => { if (e.key === "Enter") handleCreateFolder(); }} />
+              <p className="text-xs text-muted-foreground">文件夹用于归档同一主题的多份资料。创建后可直接在里面批量上传、新建文档，或从根目录拖拽已有文档进入。</p>
+            </div>
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setFolderDialog(false)}>取消</Button><Button type="button" disabled={!folderName.trim() || createFolderMut.isPending} onClick={handleCreateFolder} className="gap-2"><FolderPlus className="h-4 w-4" /> 创建文件夹</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* 上传 Dialog */}
         <Dialog open={uploadDialog} onOpenChange={open => { setUploadDialog(open); if (!open) { setSelectedFile(null); setUploadForm({ title: "", description: "" }); } }}>

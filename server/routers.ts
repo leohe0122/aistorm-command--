@@ -3808,6 +3808,7 @@ ${contactList}
         title: z.string().min(1),
         description: z.string().optional(),
         productLine: z.string().optional(),
+        folderId: z.number().nullable().optional(),
         tags: z.array(z.string()).optional(),
         filename: z.string(),
         mimeType: z.string(),
@@ -3824,6 +3825,7 @@ ${contactList}
           title: input.title,
           description: input.description,
           productLine: input.productLine,
+          folderId: input.folderId ?? null,
           tags: input.tags,
           filename: input.filename,
           fileKey: input.fileKey,
@@ -3842,6 +3844,7 @@ ${contactList}
         title: z.string().min(1).max(300),
         description: z.string().max(2000).optional(),
         productLine: z.string().min(1).max(100),
+        folderId: z.number().nullable().optional(),
         content: z.string().min(1).max(50000),
         tags: z.array(z.string()).optional(),
       }))
@@ -3864,6 +3867,7 @@ ${contactList}
           title: input.title,
           description: input.description,
           productLine: input.productLine,
+          folderId: input.folderId ?? null,
           tags: input.tags,
           filename,
           fileKey,
@@ -3916,9 +3920,83 @@ ${contactList}
         }
         return { total: docs.length, processed, failed };
       }),
-    // 删除产品文档
-    // AI 批量识别产品线
-    // 修改文档产品线（文件夹归档）
+    // 自建子文件夹：产品线为固定第一层，子文件夹用于归档资料包。
+    listFolders: protectedProcedure
+      .input(z.object({ productLine: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { productDocFolders } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        if (input?.productLine) {
+          return db.select().from(productDocFolders)
+            .where(eq(productDocFolders.productLine, input.productLine))
+            .orderBy(productDocFolders.createdAt);
+        }
+        return db.select().from(productDocFolders).orderBy(productDocFolders.productLine, productDocFolders.createdAt);
+      }),
+
+    createFolder: protectedProcedure
+      .input(z.object({ productLine: z.string().min(1).max(100), name: z.string().trim().min(1).max(120) }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocFolders } = await import('../drizzle/schema');
+        const { and, eq } = await import('drizzle-orm');
+        const existing = await db.select({ id: productDocFolders.id }).from(productDocFolders)
+          .where(and(eq(productDocFolders.productLine, input.productLine), eq(productDocFolders.name, input.name))).limit(1);
+        if (existing.length) throw new Error('该产品线下已存在同名文件夹');
+        const [result] = await db.insert(productDocFolders).values({
+          productLine: input.productLine,
+          name: input.name,
+          createdBy: ctx.user?.name || 'unknown',
+        });
+        return { id: Number((result as any).insertId), name: input.name };
+      }),
+
+    renameFolder: protectedProcedure
+      .input(z.object({ id: z.number(), name: z.string().trim().min(1).max(120) }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocFolders } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.update(productDocFolders).set({ name: input.name }).where(eq(productDocFolders.id, input.id));
+        return { success: true };
+      }),
+
+    deleteFolder: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocFolders, productDocs } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const docsInFolder = await db.select({ id: productDocs.id }).from(productDocs)
+          .where(eq(productDocs.folderId, input.id)).limit(1);
+        if (docsInFolder.length) throw new Error('请先将文件夹内文档移动到其他位置，再删除文件夹');
+        await db.delete(productDocFolders).where(eq(productDocFolders.id, input.id));
+        return { success: true };
+      }),
+
+    moveToFolder: protectedProcedure
+      .input(z.object({ id: z.number(), folderId: z.number().nullable() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs, productDocFolders } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        if (input.folderId === null) {
+          await db.update(productDocs).set({ folderId: null }).where(eq(productDocs.id, input.id));
+          return { success: true };
+        }
+        const [folder] = await db.select().from(productDocFolders).where(eq(productDocFolders.id, input.folderId)).limit(1);
+        if (!folder) throw new Error('目标文件夹不存在或已被删除');
+        await db.update(productDocs).set({ folderId: folder.id, productLine: folder.productLine }).where(eq(productDocs.id, input.id));
+        return { success: true };
+      }),
+
+    // 修改文档产品线（跨产品线移动时回到目标产品线根目录）
     updateProductLine: protectedProcedure
       .input(z.object({ id: z.number(), productLine: z.string() }))
       .mutation(async ({ input }) => {
@@ -3926,7 +4004,7 @@ ${contactList}
         if (!db) throw new Error('Database unavailable');
         const { productDocs } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
-        await db.update(productDocs).set({ productLine: input.productLine }).where(eq(productDocs.id, input.id));
+        await db.update(productDocs).set({ productLine: input.productLine, folderId: null }).where(eq(productDocs.id, input.id));
         return { success: true };
       }),
 
