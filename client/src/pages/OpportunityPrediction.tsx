@@ -120,11 +120,6 @@ function ClientPredictionCard({ client, triggerAnalyze, onScoreLoaded }: { clien
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className={cn("text-xs font-bold px-1.5 py-0.5 rounded border",
-                client.priority === "P0" ? "bg-red-500/20 text-red-400 border-red-500/30" :
-                  client.priority === "P1" ? "bg-orange-500/20 text-orange-400 border-orange-500/30" :
-                    "bg-muted text-muted-foreground border-border"
-              )}>{client.priority}</span>
               <h3 className="font-semibold text-foreground">{client.name}</h3>
               <span className={cn("text-xs", stageColor[client.stage])}>{client.stage}</span>
             </div>

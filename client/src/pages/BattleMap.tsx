@@ -1454,7 +1454,6 @@ function ClientDiscoveryCard({ client }: { client: any }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="rounded-md border border-cyan-400/25 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold text-cyan-200">{client.priority ?? "P2"}</span>
             <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{client.stage ?? "建图"}</span>
           </div>
           <h3 className="mt-3 truncate text-lg font-semibold text-foreground">{client.name}</h3>
@@ -3394,7 +3393,7 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
   );
 }
 
-const EMPTY_FORM = { name: "", nameEn: "", industry: "", priority: "P1" as "P0"|"P1"|"P2", stage: "建图" as string, hookTopic: "", securityAngle: "", monitorKeywords: "" };
+const EMPTY_FORM = { name: "", nameEn: "", industry: "", stage: "建图" as string, hookTopic: "", securityAngle: "", monitorKeywords: "" };
 
 // WinStrategy 情报信号折叠面板 + 一键复制（独立组件，避免 hooks 违规）
 function WinStrategyExtras({ clientId, aiSuggestion, enabled, stage }: { clientId: number; aiSuggestion: string; enabled: boolean; stage?: string }) {
@@ -3699,8 +3698,8 @@ export default function BattleMap() {
   });
 
   // CSV Template columns
-  const CSV_TEMPLATE_HEADER = "客户名称,英文名称,行业,优先级(P0/P1/P2),当前阶段,敲门砖话题,安全切入点,情报监控关键词(英文分号分隔)";
-  const CSV_TEMPLATE_EXAMPLE = "华为技术,Huawei Technologies,通信/5G基础设施,P0,建图,客户正在推进安全自动化,TrustOne EDR + NDR,Huawei 5G security NDR";
+  const CSV_TEMPLATE_HEADER = "客户名称,英文名称,行业,当前阶段,敲门砖话题,安全切入点,情报监控关键词(英文分号分隔)";
+  const CSV_TEMPLATE_EXAMPLE = "华为技术,Huawei Technologies,通信/5G基础设施,建图,客户正在推进安全自动化,TrustOne EDR + NDR,Huawei 5G security NDR";
   function downloadTemplate() {
     const bom = "\uFEFF";
     const content = bom + CSV_TEMPLATE_HEADER + "\n" + CSV_TEMPLATE_EXAMPLE;
@@ -3722,10 +3721,9 @@ export default function BattleMap() {
       const cols = lines[i].split(",").map(c => c.trim().replace(/^"|"$/g, ""));
       const name = cols[0]?.trim();
       if (!name) { errors.push(`第 ${i + 1} 行：客户名称为空，已跳过`); continue; }
-      const priority = ["P0", "P1", "P2"].includes(cols[3]?.toUpperCase()) ? cols[3].toUpperCase() as "P0"|"P1"|"P2" : "P1";
-      const stage = STAGES.includes(cols[4]) ? cols[4] : "建图";
-      const keywords = cols[7] ? cols[7].split(/[，,；;]+/).map(k => k.trim()).filter(Boolean) : [];
-      rows.push({ name, nameEn: cols[1] || undefined, industry: cols[2] || undefined, priority, stage, hookTopic: cols[5] || undefined, securityAngle: cols[6] || undefined, monitorKeywords: keywords.length ? keywords : undefined });
+      const stage = STAGES.includes(cols[3]) ? cols[3] : "建图";
+      const keywords = cols[6] ? cols[6].split(/[，,；;]+/).map(k => k.trim()).filter(Boolean) : [];
+      rows.push({ name, nameEn: cols[1] || undefined, industry: cols[2] || undefined, stage, hookTopic: cols[4] || undefined, securityAngle: cols[5] || undefined, monitorKeywords: keywords.length ? keywords : undefined });
     }
     return { rows, errors };
   }
@@ -3752,7 +3750,7 @@ export default function BattleMap() {
   function openEdit(c: (typeof clients)[0]) {
     setForm({
       name: c.name, nameEn: c.nameEn ?? "", industry: c.industry ?? "",
-      priority: c.priority, stage: c.stage,
+      stage: c.stage,
       hookTopic: c.hookTopic ?? "", securityAngle: c.securityAngle ?? "",
       monitorKeywords: (c.monitorKeywords ?? []).join(", "),
     });
@@ -3898,8 +3896,6 @@ export default function BattleMap() {
         <SalesPipelineSteps />
       </div>
 
-      {/* P0 unvisited alert banner */}
-
       {/* Client cards */}
       {isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -3947,7 +3943,7 @@ export default function BattleMap() {
                       <span className="w-6 h-6 rounded-full bg-primary/20 text-primary text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
                       <span className="text-sm font-semibold text-foreground">新增目标客户</span>
                     </div>
-                    <p className="text-xs text-muted-foreground">录入客户名称、行业、优先级，建立客户档案</p>
+                    <p className="text-xs text-muted-foreground">录入客户名称、行业与当前经营阶段，建立客户档案</p>
                     <button type="button" onClick={openCreate}
                       className="w-full text-xs px-3 py-1.5 rounded-lg bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 transition-colors font-medium">
                       + 新增客户
@@ -4004,14 +4000,7 @@ export default function BattleMap() {
               <Input placeholder="例：通信/5G基础设施" value={form.industry} onChange={e => setForm(f => ({ ...f, industry: e.target.value }))} />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>优先级</Label>
-                <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v as "P0"|"P1"|"P2" }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{["P0","P1","P2"].map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 col-span-2">
                 <Label>当前阶段</Label>
                 <Select value={form.stage} onValueChange={v => setForm(f => ({ ...f, stage: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -4057,7 +4046,6 @@ export default function BattleMap() {
                 name: form.name.trim(),
                 nameEn: form.nameEn || undefined,
                 industry: form.industry || undefined,
-                priority: form.priority,
                 stage: form.stage as any,
                 hookTopic: form.hookTopic || undefined,
                 securityAngle: form.securityAngle || undefined,
@@ -4090,14 +4078,7 @@ export default function BattleMap() {
               <Input value={form.industry} onChange={e => setForm(f => ({ ...f, industry: e.target.value }))} />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>优先级</Label>
-                <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v as "P0"|"P1"|"P2" }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{["P0","P1","P2"].map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 col-span-2">
                 <Label>当前阶段</Label>
                 <Select value={form.stage} onValueChange={v => setForm(f => ({ ...f, stage: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -4141,7 +4122,6 @@ export default function BattleMap() {
                 name: form.name.trim(),
                 nameEn: form.nameEn || undefined,
                 industry: form.industry || undefined,
-                priority: form.priority,
                 stage: form.stage as any,
                 hookTopic: form.hookTopic || undefined,
                 securityAngle: form.securityAngle || undefined,
@@ -4238,7 +4218,7 @@ export default function BattleMap() {
                 <table className="w-full text-xs">
                   <thead className="bg-muted/50 sticky top-0">
                     <tr>
-                      {["客户名称","英文名称","行业","优先级","阶段","敲门砖","安全切入","监控关键词"].map(h => (
+                      {["客户名称","英文名称","行业","阶段","敲门砖","安全切入","监控关键词"].map(h => (
                         <th key={h} className="text-left px-3 py-2 text-muted-foreground font-medium whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -4249,7 +4229,6 @@ export default function BattleMap() {
                         <td className="px-3 py-2 font-medium text-foreground whitespace-nowrap">{r.name}</td>
                         <td className="px-3 py-2 text-muted-foreground">{r.nameEn || "—"}</td>
                         <td className="px-3 py-2 text-muted-foreground">{r.industry || "—"}</td>
-                        <td className="px-3 py-2"><span className={cn("px-1.5 py-0.5 rounded text-[10px] font-bold", r.priority === "P0" ? "bg-red-500/20 text-red-400" : r.priority === "P1" ? "bg-orange-500/20 text-orange-400" : "bg-muted text-muted-foreground")}>{r.priority}</span></td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{r.stage}</td>
                         <td className="px-3 py-2 text-muted-foreground max-w-[120px] truncate">{r.hookTopic || "—"}</td>
                         <td className="px-3 py-2 text-muted-foreground max-w-[120px] truncate">{r.securityAngle || "—"}</td>

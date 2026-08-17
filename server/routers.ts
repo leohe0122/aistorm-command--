@@ -46,7 +46,6 @@ import { getAllClients, getAllClientsWithVisitStats, getClientById, updateClient
 import { saveAiReview, getLatestReviewsByClient, getLatestReviewByType } from "./db";
 import { getClientMetrics, upsertClientMetrics } from "./db";
 import { getAllCaseStudies, getCaseStudiesByIndustry, insertCaseStudy, updateCaseStudy, deleteCaseStudy } from "./db";
-import { demoTokens } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
 
 async function loadCustomerReadiness(clientId: number) {
@@ -2139,7 +2138,7 @@ ${contactStances || "暂无关键人数据"}
         const stageChangedAt = (c as any).stageChangedAt;
         const stageDays = stageChangedAt ? Math.floor((now - new Date(stageChangedAt).getTime()) / 86400000) : null;
         return {
-          id: c.id, name: c.name, stage: c.stage, priority: c.priority,
+          id: c.id, name: c.name, stage: c.stage,
           meddpiccAvg: mAvg, daysSinceVisit, visitCount: visitCountMap.get(c.id) ?? 0,
           oppCount: opps.length, activeOppCount: opps.filter(o => o.status === '活跃').length,
           hasChampion, hasEB, stageDays,
@@ -2150,13 +2149,13 @@ ${contactStances || "暂无关键人数据"}
       // 构建全局统计
       const stageDistribution = allClients.reduce((acc, c) => { acc[c.stage] = (acc[c.stage] ?? 0) + 1; return acc; }, {} as Record<string, number>);
       const activeOpps = allOpps.filter(o => o.status === '活跃');
-      const stagnantClients = clientSummaries.filter(c => c.daysSinceVisit !== null && c.daysSinceVisit > 30 && c.priority !== 'P2');
+      const stagnantClients = clientSummaries.filter(c => c.daysSinceVisit !== null && c.daysSinceVisit > 30);
       const noChampionIn1N = clientSummaries.filter(c => !c.hasChampion && c.stage === '进入商机');
       const noEBIn1N = clientSummaries.filter(c => !c.hasEB && c.stage === '进入商机');
 
       const stageLines = Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个客户`).join('\n');
       const clientLines = clientSummaries.map(c =>
-        `**${c.name}**（${c.priority}/${c.stage}）\n  - MEDDPICC均分: ${c.meddpiccAvg}%，拜访次数: ${c.visitCount}，距上次拜访: ${c.daysSinceVisit !== null ? c.daysSinceVisit + '天' : '从未拜访'}\n  - 活跃商机: ${c.activeOppCount}个，Champion: ${c.hasChampion ? '✓已找到' : '✗未找到'}，经济决策人: ${c.hasEB ? '✓已覆盖' : '✗未覆盖'}\n  - 阶段停留: ${c.stageDays !== null ? c.stageDays + '天' : '未知'}${c.assignedSamName ? `，负责SAM: ${c.assignedSamName}` : ''}`
+        `**${c.name}**（${c.stage}）\n  - MEDDPICC均分: ${c.meddpiccAvg}%，拜访次数: ${c.visitCount}，距上次拜访: ${c.daysSinceVisit !== null ? c.daysSinceVisit + '天' : '从未拜访'}\n  - 活跃商机: ${c.activeOppCount}个，Champion: ${c.hasChampion ? '✓已找到' : '✗未找到'}，经济决策人: ${c.hasEB ? '✓已覆盖' : '✗未覆盖'}\n  - 阶段停留: ${c.stageDays !== null ? c.stageDays + '天' : '未知'}${c.assignedSamName ? `，负责SAM: ${c.assignedSamName}` : ''}`
       ).join('\n\n');
       const stagnantNames = stagnantClients.map(c => c.name).join('、') || '无';
       const noChampionNames = noChampionIn1N.map(c => c.name).join('、') || '无';
@@ -2177,7 +2176,7 @@ ${stageLines}
 ${clientLines}
 
 【风险预警】
-- 超30天未拜访的P0/P1客户: ${stagnantNames}
+- 超30天未拜访的客户: ${stagnantNames}
 - 进入商机但无Champion的客户: ${noChampionNames}
 - 进入商机但无经济决策人的客户: ${noEBNames}
 
@@ -2186,8 +2185,8 @@ ${clientLines}
 ## 1. 整体漏斗健康度评估
 （各阶段分布是否合理？是否有阶段严重积压？转化率预判）
 
-## 2. 资源投入优先级建议
-（哪些客户值得加大投入？哪些应该降低优先级？理由是什么？）
+## 2. 基于事实的资源投入建议
+（哪些客户出现了应升级处理的风险或购买信号？证据是什么？）
 
 ## 3. 本季度赢单风险分析
 （哪些商机最有可能赢单？哪些商机存在高风险？关键阻碍是什么？）
@@ -2279,7 +2278,7 @@ ${clientLines}
       const avgVisitCount = clientIds.length > 0 ? (Array.from(visitCountMap.values()).reduce((a, b) => a + b, 0) / clientIds.length).toFixed(1) : '0';
       const stagnantClients = samClients.filter(c => {
         const lastVisit = lastVisitMap.get(c.id);
-        return (!lastVisit || Math.floor((now - new Date(lastVisit).getTime()) / 86400000) > 30) && c.priority !== 'P2';
+        return !lastVisit || Math.floor((now - new Date(lastVisit).getTime()) / 86400000) > 30;
       });
 
       const clientSummaryLines = samClients.map(c => {
@@ -2291,7 +2290,7 @@ ${clientLines}
         const hasEB = contacts.some(ct => ct.buyingRole === '经济决策人');
         const lastVisit = lastVisitMap.get(c.id);
         const daysSince = lastVisit ? Math.floor((now - new Date(lastVisit).getTime()) / 86400000) : null;
-        return `- **${c.name}**（${c.priority}/${c.stage}）MEDDPICC均分:${mAvg}% Champion:${hasChampion?'✓':'✗'} EB:${hasEB?'✓':'✗'} 拜访:${visitCountMap.get(c.id)??0}次 距上次:${daysSince!==null?daysSince+'天':'从未'} 活跃商机:${opps.filter(o=>o.status==='活跃').length}个`;
+        return `- **${c.name}**（${c.stage}）MEDDPICC均分:${mAvg}% Champion:${hasChampion?'✓':'✗'} EB:${hasEB?'✓':'✗'} 拜访:${visitCountMap.get(c.id)??0}次 距上次:${daysSince!==null?daysSince+'天':'从未'} 活跃商机:${opps.filter(o=>o.status==='活跃').length}个`;
       }).join('\n');
 
       const prompt = `你是一位经验丰富的销售总监（AD），正在对 SAM **${input.samName}** 进行教练 Review。
@@ -2316,7 +2315,7 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
 
 【拜访频率】
 - 平均每客户拜访次数: ${avgVisitCount}次
-- 超30天未拜访的P0/P1客户: ${stagnantClients.map(c => c.name).join('、') || '无'}
+- 超30天未拜访的客户: ${stagnantClients.map(c => c.name).join('、') || '无'}
 
 请从以下四个维度对 ${input.samName} 进行教练 Review，每个维度给出具体数据支撑和辅导建议：
 
@@ -5325,7 +5324,7 @@ ${input.aiSuggestion}
       });
       const generated = buildAdCommandRecommendations(
         allClients.map(client => ({
-          id: client.id, name: client.name, stage: client.stage, priority: client.priority,
+          id: client.id, name: client.name, stage: client.stage,
           stageChangedAt: client.stageChangedAt, lastMeetingAt: latestMeeting.get(client.id) ?? null,
           championScore: clientScore.get(client.id)?.championScore ?? 0, assignedSamName: client.assignedSamName,
         })),
@@ -5337,15 +5336,17 @@ ${input.aiSuggestion}
         })),
       );
       const knownFingerprints = new Set(existing.map(item => item.fingerprint));
-      const inserts = generated.filter(item => !knownFingerprints.has(item.fingerprint)).map(item => ({
+      const inserts = generated.filter(item => !knownFingerprints.has(item.fingerprint)).map(({ urgency, ...item }) => ({
         ...item,
+        // 数据库遗留字段仅作存储兼容；用户界面与研判逻辑统一使用行动紧迫度。
+        priority: urgency === '立即处理' ? 'P0' : urgency === '本周推进' ? 'P1' : 'P2',
         clientId: item.clientId ?? undefined,
         opportunityId: item.opportunityId ?? undefined,
-        dueDate: new Date(Date.now() + (item.priority === 'P0' ? 2 : 7) * 86_400_000),
+        dueDate: new Date(Date.now() + (urgency === '立即处理' ? 2 : 7) * 86_400_000),
       }));
       if (inserts.length) await db.insert(adCommandRecommendations).values(inserts as any);
       const currentFingerprints = new Set(generated.map(item => item.fingerprint));
-      const derivedTypes = new Set(['p0-contact', 'champion-gap', 'opp-stagnant']);
+      const derivedTypes = new Set(['contact-gap', 'champion-gap', 'opp-stagnant']);
       for (const item of existing) {
         const isDerived = Array.from(derivedTypes).some(prefix => item.fingerprint.startsWith(prefix));
         if (item.status === 'pending' && isDerived && !currentFingerprints.has(item.fingerprint)) {
@@ -5371,7 +5372,10 @@ ${input.aiSuggestion}
           }
         }
       }
-      return recommendations;
+      return recommendations.map(item => ({
+        ...item,
+        urgency: item.priority === 'P0' ? '立即处理' : item.priority === 'P1' ? '本周推进' : '持续跟进',
+      }));
     }),
     confirm: publicProcedure.input(z.object({ id: z.number(), confirmedBy: z.string().min(1) })).mutation(async ({ input }) => {
       const db = await getDb();
@@ -5866,11 +5870,12 @@ ${input.aiSuggestion}
         })
         .sort((a, b) => b.stageDwellDays - a.stageDwellDays);
 
-      // 9. 高风险客户（MEDDPICC < 30 或 P0 且本周未拜访）
+      // 9. 高风险客户：仅以已入库的 MEDDPICC 证据缺口或长期未触达为依据
       const riskClients = allClients.filter(c => {
         const mScore = meddpiccMap.get(c.id)?.avg ?? 0;
         const notVisited = !visitedThisWeek.has(c.id);
-        return mScore < 30 || (c.priority === 'P0' && notVisited);
+        const hasAnyVisit = (visitStatsByClient.get(c.id)?.visitCount ?? 0) > 0;
+        return mScore < 30 || (hasAnyVisit && notVisited);
       }).map(c => ({
         ...c,
         meddpiccAvg: meddpiccMap.get(c.id)?.avg ?? 0,
@@ -5878,7 +5883,7 @@ ${input.aiSuggestion}
         visitedThisWeek: visitedThisWeek.has(c.id),
         visitCount: visitStatsByClient.get(c.id)?.visitCount ?? 0,
         lastVisitDate: visitStatsByClient.get(c.id)?.lastVisitDate ?? null,
-        riskReason: (meddpiccMap.get(c.id)?.avg ?? 0) < 30 ? 'MEDDPICC偏低' : 'P0未拜访',
+        riskReason: (meddpiccMap.get(c.id)?.avg ?? 0) < 30 ? 'MEDDPICC证据不足' : '本周尚无客户触达',
         visitQuality: {
           totalVisits: visitStatsByClient.get(c.id)?.visitCount ?? 0,
           aiMinutesCount: visitStatsByClient.get(c.id)?.aiMinutesCount ?? 0,
@@ -6350,63 +6355,6 @@ ${input.extractedText.slice(0, 4000)}
         return { title: input.filename?.replace(/\.[^.]+$/, '') || '', clientAlias: '', industry: '', clientSize: '大型企业', region: '', painPoint: '', solution: '', quantifiedResult: '', roiHighlight: '', isConfidential: false, needsVerification: false };
       }
     }),
-  }),
-
-  // ─── Demo Access Token Management ──────────────────────────────────
-  demoAccess: router({
-    // List all tokens (admin only)
-    listTokens: adminProcedure.query(async ({ ctx }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
-      const tokens = await db.select().from(demoTokens).orderBy(demoTokens.createdAt);
-      return tokens;
-    }),
-
-    // Create a new token (admin only)
-    createToken: adminProcedure
-      .input(z.object({
-        recipientName: z.string().min(1),
-        recipientEmail: z.string().email().optional(),
-        note: z.string().optional(),
-        expiresInDays: z.number().optional(), // undefined = never expires
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const db = await getDb();
-        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
-        const token = crypto.randomBytes(24).toString('hex');
-        const expiresAt = input.expiresInDays
-          ? new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000)
-          : null;
-        await db.insert(demoTokens).values({
-          token,
-          recipientName: input.recipientName,
-          recipientEmail: input.recipientEmail,
-          note: input.note,
-          createdBy: ctx.user.name || ctx.user.openId,
-          expiresAt: expiresAt || undefined,
-        });
-        return { token, url: `https://command.aistorm.com/demo.html?token=${token}` };
-      }),
-
-    // Revoke a token (admin only)
-    revokeToken: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
-        await db.update(demoTokens).set({ isActive: 0 }).where(eq(demoTokens.id, input.id));
-        return { success: true };
-      }),
-
-    // Delete a token (admin only)
-    deleteToken: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'DB unavailable' });
-        await db.delete(demoTokens).where(eq(demoTokens.id, input.id));
-        return { success: true };
-      }),
   }),
 
   // ─── Products 产品配置管理 ───────────────────────────────────────────────

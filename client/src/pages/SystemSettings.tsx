@@ -276,7 +276,7 @@ function FeishuBriefingTab() {
             <div className="space-y-2 text-xs text-muted-foreground">
               <div className="flex items-start gap-2"><span className="text-cyan-400 font-mono">📊</span> 今日 Portfolio 健康度概览</div>
               <div className="flex items-start gap-2"><span className="text-cyan-400 font-mono">🔴</span> 高风险商机预警（MEDDPICC 低于阈值）</div>
-              <div className="flex items-start gap-2"><span className="text-cyan-400 font-mono">📅</span> 本周待拜访 P0 客户提醒</div>
+              <div className="flex items-start gap-2"><span className="text-cyan-400 font-mono">📅</span> 基于实际触达时效的客户跟进提醒</div>
               <div className="flex items-start gap-2"><span className="text-cyan-400 font-mono">✅</span> POD 团队待办任务汇总</div>
             </div>
           </div>

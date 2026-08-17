@@ -4,7 +4,7 @@ export type GeneratedCommandRecommendation = {
   clientId: number | null;
   opportunityId: number | null;
   kind: "today_action" | "anomaly" | "pending_approval" | "sam_coaching";
-  priority: "P0" | "P1" | "P2";
+  urgency: "立即处理" | "本周推进" | "持续跟进";
   title: string;
   aiConclusion: string;
   facts: CommandFact[];
@@ -18,7 +18,6 @@ type ClientInput = {
   id: number;
   name: string;
   stage: string;
-  priority: string;
   stageChangedAt?: Date | string | null;
   lastMeetingAt?: Date | string | null;
   championScore?: number | null;
@@ -73,7 +72,7 @@ export function buildAdCommandRecommendations(
     if (action.responsibleRole !== "AD") continue;
     result.push({
       clientId: action.clientId, opportunityId: action.opportunityId ?? null, kind: "today_action",
-      priority: action.priority === "高" ? "P0" : action.priority === "中" ? "P1" : "P2",
+      urgency: action.priority === "高" ? "立即处理" : action.priority === "中" ? "本周推进" : "持续跟进",
       title: action.title,
       aiConclusion: `存在已确认但尚未完成的 ${action.timeframe} AD 行动`,
       facts: [
@@ -90,24 +89,23 @@ export function buildAdCommandRecommendations(
   for (const client of clients) {
     if (client.stage === "进入商机") continue;
     const days = daysSince(client.lastMeetingAt, now);
-    if (client.priority === "P0" && days !== null && days > 30) {
+    if (days !== null && days > 30) {
       result.push({
-        clientId: client.id, opportunityId: null, kind: "today_action", priority: "P0",
+        clientId: client.id, opportunityId: null, kind: "today_action", urgency: "立即处理",
         title: `介入 ${client.name} 的客户对话恢复`,
-        aiConclusion: days === null ? "P0 客户尚无已入库有效对话" : `P0 客户已 ${days} 天无有效对话`,
+        aiConclusion: `客户已 ${days} 天无有效对话`,
         facts: [
-          { label: "客户优先级", value: client.priority },
           { label: "最后有效对话", value: days === null ? "尚无入库记录" : `${days} 天前` },
           { label: "当前阶段", value: client.stage },
         ],
         methodology: "0→1 作战节奏 · 购买信号验证",
         suggestedAction: "由 AD 确认一次高价值客户接触或升级路径，并指定 SAM 在会后回填购买信号事实。",
-        assignedRole: "AD", fingerprint: `p0-contact-${client.id}`,
+        assignedRole: "AD", fingerprint: `contact-gap-${client.id}`,
       });
     }
     if (days !== null && (client.championScore ?? 0) <= 1) {
       result.push({
-        clientId: client.id, opportunityId: null, kind: "sam_coaching", priority: "P1",
+        clientId: client.id, opportunityId: null, kind: "sam_coaching", urgency: "本周推进",
         title: `辅导 ${client.name} 的内部推动者识别`,
         aiConclusion: "Champion 证据不足，客户关系缺少内部推动力",
         facts: [
@@ -129,7 +127,7 @@ export function buildAdCommandRecommendations(
       const dim = opp.weakestDimension || "关键赢单证据";
       const score = opp.weakestScore ?? 0;
       result.push({
-        clientId: opp.clientId, opportunityId: opp.id, kind: "anomaly", priority: "P0",
+        clientId: opp.clientId, opportunityId: opp.id, kind: "anomaly", urgency: "立即处理",
         title: `介入 ${opp.clientName} · ${opp.name} 的停滞战线`,
         aiConclusion: `商机停滞 ${days} 天，${dim} 证据不足`,
         facts: [
@@ -144,6 +142,6 @@ export function buildAdCommandRecommendations(
     }
   }
 
-  const rank = { P0: 0, P1: 1, P2: 2 };
-  return result.sort((a, b) => rank[a.priority] - rank[b.priority]).slice(0, 12);
+  const rank = { "立即处理": 0, "本周推进": 1, "持续跟进": 2 };
+  return result.sort((a, b) => rank[a.urgency] - rank[b.urgency]).slice(0, 12);
 }

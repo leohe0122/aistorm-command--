@@ -35,16 +35,9 @@ function ClientAssignRow({ client, members, onSuccess, showRsmMode }: {
   const assignSamMut = trpc.clients.assignSam.useMutation({ onSuccess: () => { onSuccess(); setEditSam(false); } });
   const assignRsmMut = trpc.clients.assignRsm.useMutation({ onSuccess: () => { onSuccess(); setEditRsm(false); } });
 
-  const priorityColors: Record<string, string> = {
-    P0: "bg-red-500/20 text-red-400", P1: "bg-orange-500/20 text-orange-400", P2: "bg-blue-500/20 text-blue-400",
-  };
-
   return (
     <tr className="border-b border-border/50 hover:bg-muted/10 transition-colors">
       <td className="px-4 py-2.5 font-medium text-foreground">{client.name}</td>
-      <td className="px-4 py-2.5">
-        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${priorityColors[client.priority] || "bg-muted text-muted-foreground"}`}>{client.priority}</span>
-      </td>
       <td className="px-4 py-2.5 text-xs text-muted-foreground">{client.stage}</td>
       <td className="px-4 py-2.5">
         {showRsmMode ? (
@@ -389,7 +382,6 @@ export default function TeamManagement() {
                     <table className="w-full text-sm">
                       <thead><tr className="border-b border-border bg-muted/20">
                         <th className="text-left px-4 py-2 text-xs text-muted-foreground">客户名称</th>
-                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">优先级</th>
                         <th className="text-left px-4 py-2 text-xs text-muted-foreground">阶段</th>
                         <th className="text-left px-4 py-2 text-xs text-muted-foreground">属地 RSM</th>
                         <th className="text-right px-4 py-2 text-xs text-muted-foreground">操作</th>
@@ -406,7 +398,6 @@ export default function TeamManagement() {
                     <table className="w-full text-sm">
                       <thead><tr className="border-b border-border bg-muted/20">
                         <th className="text-left px-4 py-2 text-xs text-muted-foreground">客户名称</th>
-                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">优先级</th>
                         <th className="text-left px-4 py-2 text-xs text-muted-foreground">阶段</th>
                         <th className="text-left px-4 py-2 text-xs text-muted-foreground">主责 SAM</th>
                         <th className="text-right px-4 py-2 text-xs text-muted-foreground">操作</th>
@@ -423,7 +414,6 @@ export default function TeamManagement() {
                     <table className="w-full text-sm">
                       <thead><tr className="border-b border-border bg-muted/20">
                         <th className="text-left px-4 py-2 text-xs text-muted-foreground">客户名称</th>
-                        <th className="text-left px-4 py-2 text-xs text-muted-foreground">优先级</th>
                         <th className="text-left px-4 py-2 text-xs text-muted-foreground">阶段</th>
                         <th className="text-right px-4 py-2 text-xs text-muted-foreground">分配</th>
                       </tr></thead>
@@ -558,7 +548,6 @@ export default function TeamManagement() {
                 <div className="bg-muted/30 rounded-lg p-3 space-y-1 max-h-32 overflow-y-auto">
                   {targetClients.map(c => (
                     <div key={c.id} className="flex items-center gap-2 text-xs">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${c.priority === 'P0' ? 'bg-red-500/20 text-red-400' : c.priority === 'P1' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-muted text-muted-foreground'}`}>{c.priority}</span>
                       <span className="text-foreground">{c.name}</span>
                       <span className="text-muted-foreground">· {c.stage}</span>
                     </div>

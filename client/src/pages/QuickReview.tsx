@@ -92,7 +92,7 @@ export default function QuickReview() {
               <option value="">-- 请选择客户 --</option>
               {clients.map(c => (
                 <option key={c.id} value={c.id}>
-                  {c.name}（{c.stage}）{c.priority === "P0" ? " 🔴" : c.priority === "P1" ? " 🟡" : " 🟢"}
+                  {c.name}（{c.stage}）
                 </option>
               ))}
             </select>

@@ -23,7 +23,6 @@ import EmailLogin from "./pages/EmailLogin";
 import UserManagement from "./pages/UserManagement";
 import SystemSettings from "./pages/SystemSettings";
 import TeamManagement from "./pages/TeamManagement";
-import DemoAccess from "./pages/DemoAccess";
 import ClientWorkstation from "./pages/ClientWorkstation";
 import OpportunityRoom from "./pages/OpportunityRoom";
 import { trpc } from "@/lib/trpc";
@@ -147,7 +146,6 @@ function Router() {
         <Route path="/arsenal" component={Arsenal} />
         <Route path="/admin/users" component={UserManagement} />
         <Route path="/team" component={TeamManagement} />
-        <Route path="/demo-access" component={DemoAccess} />
         <Route component={NotFound} />
       </Switch>
     </CommandLayout>

@@ -12,7 +12,7 @@ type CommandRecommendation = {
   clientId: number | null;
   opportunityId: number | null;
   kind: "today_action" | "anomaly" | "pending_approval" | "sam_coaching";
-  priority: "P0" | "P1" | "P2";
+  urgency: "立即处理" | "本周推进" | "持续跟进";
   title: string;
   aiConclusion: string;
   facts: Array<{ label: string; value: string }>;
@@ -24,10 +24,10 @@ type CommandRecommendation = {
   podTaskId: number | null;
 };
 
-const PRIORITY_STYLE: Record<string, string> = {
-  P0: "bg-red-500/15 text-red-300 border-red-500/30",
-  P1: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  P2: "bg-slate-500/15 text-slate-300 border-slate-500/30",
+const URGENCY_STYLE: Record<string, string> = {
+  "立即处理": "bg-red-500/15 text-red-300 border-red-500/30",
+  "本周推进": "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  "持续跟进": "bg-slate-500/15 text-slate-300 border-slate-500/30",
 };
 
 function formatDueDate(value: Date | string | null) {
@@ -45,12 +45,12 @@ function RecommendationCard({ item, onConfirm, onSkip, onNavigate }: {
   return (
     <article className="rounded-xl border border-border/70 bg-card p-4 shadow-sm">
       <div className="flex gap-3">
-        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${PRIORITY_STYLE[item.priority]}`}>
+        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${URGENCY_STYLE[item.urgency]}`}>
           {item.kind === "anomaly" ? <AlertTriangle className="h-4 w-4" /> : item.kind === "pending_approval" ? <Clock3 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className={`border ${PRIORITY_STYLE[item.priority]}`}>{item.priority}</Badge>
+            <Badge variant="outline" className={`border ${URGENCY_STYLE[item.urgency]}`}>{item.urgency}</Badge>
             <h3 className="text-sm font-semibold text-foreground">{item.title}</h3>
           </div>
           <p className="mt-1 text-sm text-foreground/90">{item.aiConclusion}</p>

@@ -927,26 +927,6 @@ export type WinStrategyHistory = typeof winStrategyHistory.$inferSelect;
 export type InsertWinStrategyHistory = typeof winStrategyHistory.$inferInsert;
 
 /**
- * Demo access tokens — 用于 demo.html 访问鉴权和分发记录
- */
-export const demoTokens = mysqlTable("demo_tokens", {
-  id: int("id").autoincrement().primaryKey(),
-  token: varchar("token", { length: 64 }).notNull().unique(),
-  recipientName: varchar("recipientName", { length: 100 }).notNull(),
-  recipientEmail: varchar("recipientEmail", { length: 320 }),
-  note: text("note"),
-  createdBy: varchar("createdBy", { length: 100 }),
-  expiresAt: timestamp("expiresAt"),
-  accessCount: int("accessCount").default(0).notNull(),
-  lastAccessAt: timestamp("lastAccessAt"),
-  lastAccessIp: varchar("lastAccessIp", { length: 64 }),
-  isActive: tinyint("isActive").default(1).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-export type DemoToken = typeof demoTokens.$inferSelect;
-export type InsertDemoToken = typeof demoTokens.$inferInsert;
-
-/**
  * 产品配置表 — 可配置的产品列表，用于产品覆盖度看板
  */
 export const products = mysqlTable("products", {
