@@ -8,6 +8,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
+import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -46,6 +47,50 @@ import { getClientMetrics, upsertClientMetrics } from "./db";
 import { getAllCaseStudies, getCaseStudiesByIndustry, insertCaseStudy, updateCaseStudy, deleteCaseStudy } from "./db";
 import { demoTokens } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
+
+async function loadCustomerReadiness(clientId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+  const { clients, keyContacts, meetingMinutes, meddpicc } = await import("../drizzle/schema.js");
+  const { eq } = await import("drizzle-orm");
+  const [client] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
+  if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "未找到客户" });
+  const [contacts, meetings, evidence] = await Promise.all([
+    db.select().from(keyContacts).where(eq(keyContacts.clientId, clientId)),
+    db.select().from(meetingMinutes).where(eq(meetingMinutes.clientId, clientId)),
+    db.select().from(meddpicc).where(eq(meddpicc.clientId, clientId)).limit(1),
+  ]);
+  const readiness = evaluateCustomerReadiness({
+    stage: client.stage as CustomerStage,
+    contacts,
+    meetings,
+    evidence: evidence[0] ?? null,
+    hookTopic: client.hookTopic,
+    securityAngle: client.securityAngle,
+  });
+  return { client, contacts, meetings, readiness };
+}
+
+const customerStageOrder: CustomerStage[] = ["建图", "进门", "定痛", "找人", "进入商机"];
+
+async function advanceCustomerStageByEvidence(clientId: number, requestedStage: CustomerStage) {
+  const { client, readiness } = await loadCustomerReadiness(clientId);
+  if (requestedStage === "进入商机") {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "进入商机必须通过“申请开商机”完成，系统会同时保存 0→1 证据快照。" });
+  }
+  const currentIndex = customerStageOrder.indexOf(client.stage as CustomerStage);
+  const expectedStage = customerStageOrder[currentIndex + 1];
+  if (requestedStage !== expectedStage) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: `当前阶段为“${client.stage}”，只能申请推进至下一阶段“${expectedStage || "无"}”。` });
+  }
+  const blockers = readiness.standardActions.filter(action => !action.passed);
+  if (blockers.length) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: `尚不满足阶段推进条件：${blockers.map(item => item.label).join("；")}` });
+  }
+  await updateClient(clientId, { stage: requestedStage } as any);
+  invalidateClientsCache();
+  return { stage: requestedStage, evidence: readiness.standardActions };
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -103,11 +148,22 @@ export const appRouter = router({
       monitorKeywords: z.array(z.string()).optional(),
       priority: z.enum(["P0", "P1", "P2"]).optional(),
       plannedFirstVisitDate: z.number().nullable().optional(),
-    })).mutation(({ input }) => {
+    })).mutation(async ({ input }) => {
       const { id, ...data } = input;
+      if (data.stage !== undefined) {
+        await advanceCustomerStageByEvidence(id, data.stage as CustomerStage);
+        const { stage: _stage, ...remaining } = data;
+        if (Object.keys(remaining).length === 0) return { ok: true };
+        invalidateClientsCache();
+        return updateClient(id, remaining as any);
+      }
       invalidateClientsCache();
       return updateClient(id, data as any);
     }),
+    advanceStage: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      stage: z.enum(["进门", "定痛", "找人"]),
+    })).mutation(({ input }) => advanceCustomerStageByEvidence(input.clientId, input.stage)),
     create: protectedProcedure.input(z.object({
       name: z.string().min(1),
       nameEn: z.string().optional(),
@@ -2817,6 +2873,15 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
       const { eq, desc } = await import('drizzle-orm');
       return db.select().from(podTasks).where(eq(podTasks.opportunityId, input.opportunityId)).orderBy(desc(podTasks.createdAt));
     }),
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { podTasks } = await import('../drizzle/schema.js');
+      const { and, desc, eq, isNull } = await import('drizzle-orm');
+      return db.select().from(podTasks)
+        .where(and(eq(podTasks.clientId, input.clientId), isNull(podTasks.opportunityId)))
+        .orderBy(desc(podTasks.createdAt));
+    }),
     addTask: publicProcedure.input(z.object({
       clientId: z.number(),
       assignedRole: z.enum(["AD", "SAM", "SA", "RSM"]),
@@ -3258,6 +3323,60 @@ ${contactList}
       const { opportunities } = await import('../drizzle/schema.js');
       const { eq, desc } = await import('drizzle-orm');
       return db.select().from(opportunities).where(eq(opportunities.clientId, input.clientId)).orderBy(desc(opportunities.createdAt));
+    }),
+    customerReadiness: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const { readiness } = await loadCustomerReadiness(input.clientId);
+      return readiness;
+    }),
+    createFromCustomerReadiness: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      name: z.string().trim().min(3).max(200),
+      productId: z.number().nullable().optional(),
+      estimatedValue: z.string().trim().max(100).optional(),
+      expectedCloseDate: z.string().trim().max(50).optional(),
+      customerObjective: z.string().trim().min(10).max(2000),
+      contactName: z.string().trim().max(100).optional(),
+    })).mutation(async ({ input }) => {
+      const { client, readiness } = await loadCustomerReadiness(input.clientId);
+      if (!readiness.canApplyForOpportunity) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `尚不满足申请开商机的客观门控：${readiness.blockers.map(item => item.label).join("；")}`,
+        });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { clients, opportunities } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const approvedAt = new Date();
+      const snapshot = {
+        approvedAt: approvedAt.toISOString(),
+        customerStage: client.stage,
+        gateChecks: readiness.checks.map(check => ({
+          id: check.id,
+          label: check.label,
+          evidence: check.evidence,
+          passed: check.passed,
+        })),
+        championName: readiness.championName,
+        latestMeetingDate: readiness.latestMeetingDate,
+      };
+      const notes = `客户目标：${input.customerObjective}\n\n本商机由客户作战台客观门控申请创建；0→1 证据快照已固化，后续赢单判断请在独立商机作战室维护。`;
+      const [result] = await db.insert(opportunities).values({
+        clientId: input.clientId,
+        name: input.name,
+        stage: "初步需求",
+        status: "活跃",
+        productId: input.productId ?? null,
+        estimatedValue: input.estimatedValue || null,
+        expectedCloseDate: input.expectedCloseDate || null,
+        contactName: input.contactName || readiness.championName || null,
+        notes,
+        entryEvidenceSnapshot: snapshot,
+      } as any);
+      await db.update(clients).set({ stage: "进入商机", stageChangedAt: approvedAt }).where(eq(clients.id, input.clientId));
+      invalidateClientsCache();
+      return { id: (result as any).insertId, snapshot };
     }),
     create: protectedProcedure.input(z.object({
       clientId: z.number(),

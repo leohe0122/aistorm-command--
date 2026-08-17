@@ -678,6 +678,14 @@ export const opportunities = mysqlTable("opportunities", {
   winStrategy: text("winStrategy"),             // 赢单策略
   keyMilestones: text("keyMilestones"),         // 关键里程碑
   riskAndMitigation: text("riskAndMitigation"), // 风险与应对
+  /** 从客户作战台申请开商机时固化的 0→1 客观行为证据；只读，不作为商机赢单评分。 */
+  entryEvidenceSnapshot: json("entryEvidenceSnapshot").$type<{
+    approvedAt: string;
+    customerStage: string;
+    gateChecks: Array<{ id: string; label: string; evidence: string; passed: boolean }>;
+    championName?: string;
+    latestMeetingDate?: string;
+  }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   /** 当前商机子阶段开始时间（每次阶段推进时更新）。用于计算商机停滞天数。 */
