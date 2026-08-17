@@ -84,6 +84,12 @@ async function startServer() {
   // 飞书机器人 Webhook（接收消息事件 + 卡片回调）
   app.post("/api/feishu/webhook", feishuWebhookHandler);
 
+  // 旧 Demo 已随新版三层作战架构下线；在静态资源回退前明确返回永久移除，
+  // 防止 CDN 或历史构建继续呈现重构前的演示页面。
+  app.get("/demo.html", (_req, res) => {
+    res.status(410).type("text/plain").send("此演示已下线，请使用 AIStorm Command 的实时作战台路径。");
+  });
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
