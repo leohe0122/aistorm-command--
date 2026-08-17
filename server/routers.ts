@@ -3850,14 +3850,13 @@ ${contactList}
         if (!db) throw new Error('Database unavailable');
         const { productDocs } = await import('../drizzle/schema');
         const { storagePut } = await import('./storage');
-        const safeBaseName = input.title
-          .replace(/[\\/:*?"<>|]/g, '-')
-          .replace(/\s+/g, '-')
-          .slice(0, 80) || 'knowledge-note';
-        const filename = `${safeBaseName}.md`;
+        // 中文标题仅作为数据库展示名；S3/Forge 的对象路径必须严格使用 ASCII。
+        const filename = `${input.title}.md`;
         const markdown = `# ${input.title}\n\n${input.description ? `> ${input.description}\n\n` : ''}${input.content.trim()}\n`;
+        const { createAsciiDocumentStorageKey } = await import('./storage');
+        const fileKeyBase = createAsciiDocumentStorageKey('product-docs/notes', 'md');
         const { key: fileKey, url: fileUrl } = await storagePut(
-          `product-docs/notes/${Date.now()}-${filename}`,
+          fileKeyBase,
           markdown,
           'text/markdown; charset=utf-8',
         );
