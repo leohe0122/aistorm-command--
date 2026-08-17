@@ -361,6 +361,26 @@ export type MeddpiccLog = typeof meddpiccLogs.$inferSelect;
 export type InsertMeddpiccLog = typeof meddpiccLogs.$inferInsert;
 
 /**
+ * 客户购买信号：进入商机的唯一门控证据。
+ * 记录客户发生了什么，而不是销售完成了什么动作；三类信号跨产品通用。
+ */
+export const customerPurchaseSignals = mysqlTable("customer_purchase_signals", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull(),
+  signalType: mysqlEnum("signalType", ["intent_subject", "decision_chain", "trigger_event"]).notNull(),
+  subjectName: varchar("subjectName", { length: 150 }).notNull(),
+  occurredAt: timestamp("occurredAt").notNull(),
+  statement: text("statement").notNull(),
+  sourceType: mysqlEnum("sourceType", ["meeting", "customer_message", "customer_email", "intelligence", "other_evidence"]).notNull(),
+  sourceMeetingId: int("sourceMeetingId"),
+  sourceReference: text("sourceReference"),
+  createdBy: varchar("createdBy", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type CustomerPurchaseSignal = typeof customerPurchaseSignals.$inferSelect;
+export type InsertCustomerPurchaseSignal = typeof customerPurchaseSignals.$inferInsert;
+
+/**
  * 商机温度预测记录
  */
 export const opportunityScores = mysqlTable("opportunity_scores", {

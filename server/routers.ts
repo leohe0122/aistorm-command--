@@ -51,24 +51,21 @@ import { eq } from "drizzle-orm";
 async function loadCustomerReadiness(clientId: number) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
-  const { clients, keyContacts, meetingMinutes, meddpicc } = await import("../drizzle/schema.js");
+  const { clients, keyContacts, meetingMinutes, customerPurchaseSignals } = await import("../drizzle/schema.js");
   const { eq } = await import("drizzle-orm");
   const [client] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
   if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "未找到客户" });
-  const [contacts, meetings, evidence] = await Promise.all([
+  const [contacts, meetings, signals] = await Promise.all([
     db.select().from(keyContacts).where(eq(keyContacts.clientId, clientId)),
     db.select().from(meetingMinutes).where(eq(meetingMinutes.clientId, clientId)),
-    db.select().from(meddpicc).where(eq(meddpicc.clientId, clientId)).limit(1),
+    db.select().from(customerPurchaseSignals).where(eq(customerPurchaseSignals.clientId, clientId)),
   ]);
   const readiness = evaluateCustomerReadiness({
     stage: client.stage as CustomerStage,
     contacts,
-    meetings,
-    evidence: evidence[0] ?? null,
-    hookTopic: client.hookTopic,
-    securityAngle: client.securityAngle,
+    signals,
   });
-  return { client, contacts, meetings, readiness };
+  return { client, contacts, meetings, signals, readiness };
 }
 
 const customerStageOrder: CustomerStage[] = ["建图", "进门", "定痛", "找人", "进入商机"];
@@ -82,10 +79,6 @@ async function advanceCustomerStageByEvidence(clientId: number, requestedStage: 
   const expectedStage = customerStageOrder[currentIndex + 1];
   if (requestedStage !== expectedStage) {
     throw new TRPCError({ code: "PRECONDITION_FAILED", message: `当前阶段为“${client.stage}”，只能申请推进至下一阶段“${expectedStage || "无"}”。` });
-  }
-  const blockers = readiness.standardActions.filter(action => !action.passed);
-  if (blockers.length) {
-    throw new TRPCError({ code: "PRECONDITION_FAILED", message: `尚不满足阶段推进条件：${blockers.map(item => item.label).join("；")}` });
   }
   await updateClient(clientId, { stage: requestedStage } as any);
   invalidateClientsCache();
@@ -479,6 +472,47 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
         ? and(eq(meddpiccLogs.clientId, input.clientId), eq(meddpiccLogs.dimension, input.dimension))
         : eq(meddpiccLogs.clientId, input.clientId);
       return db.select().from(meddpiccLogs).where(conditions).orderBy(desc(meddpiccLogs.createdAt)).limit(100);
+    }),
+  }),
+
+  // ── Customer Purchase Signals ────────────────────────────────────────────
+  purchaseSignals: router({
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { customerPurchaseSignals } = await import("../drizzle/schema.js");
+      const { desc, eq } = await import("drizzle-orm");
+      return db.select().from(customerPurchaseSignals)
+        .where(eq(customerPurchaseSignals.clientId, input.clientId))
+        .orderBy(desc(customerPurchaseSignals.occurredAt), desc(customerPurchaseSignals.createdAt));
+    }),
+    create: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      signalType: z.enum(["intent_subject", "decision_chain", "trigger_event"]),
+      subjectName: z.string().trim().min(1).max(150),
+      occurredAt: z.string().datetime(),
+      statement: z.string().trim().min(8).max(5000),
+      sourceType: z.enum(["meeting", "customer_message", "customer_email", "intelligence", "other_evidence"]),
+      sourceMeetingId: z.number().optional(),
+      sourceReference: z.string().trim().max(5000).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { customerPurchaseSignals } = await import("../drizzle/schema.js");
+      const [result] = await db.insert(customerPurchaseSignals).values({
+        ...input,
+        occurredAt: new Date(input.occurredAt),
+        createdBy: ctx.user.name || ctx.user.email || "已登录用户",
+      });
+      return { id: (result as any).insertId };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { customerPurchaseSignals } = await import("../drizzle/schema.js");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(customerPurchaseSignals).where(eq(customerPurchaseSignals.id, input.id));
+      return { ok: true };
     }),
   }),
 
@@ -3334,7 +3368,7 @@ ${contactList}
       productId: z.number().nullable().optional(),
       estimatedValue: z.string().trim().max(100).optional(),
       expectedCloseDate: z.string().trim().max(50).optional(),
-      customerObjective: z.string().trim().min(10).max(2000),
+      customerObjective: z.string().trim().max(2000).optional(),
       contactName: z.string().trim().max(100).optional(),
     })).mutation(async ({ input }) => {
       const { client, readiness } = await loadCustomerReadiness(input.clientId);
@@ -3358,10 +3392,17 @@ ${contactList}
           evidence: check.evidence,
           passed: check.passed,
         })),
-        championName: readiness.championName,
-        latestMeetingDate: readiness.latestMeetingDate,
+        purchaseSignals: readiness.checks.map(check => ({
+          type: check.id,
+          label: check.label,
+          subjectName: check.signal?.subjectName || "",
+          occurredAt: check.signal ? new Date(check.signal.occurredAt).toISOString() : "",
+          statement: check.signal?.statement || "",
+          sourceType: check.signal?.sourceType || "",
+          sourceReference: check.signal?.sourceReference || "",
+        })),
       };
-      const notes = `客户目标：${input.customerObjective}\n\n本商机由客户作战台客观门控申请创建；0→1 证据快照已固化，后续赢单判断请在独立商机作战室维护。`;
+      const notes = `${input.customerObjective ? `补充说明：${input.customerObjective}\n\n` : ""}本商机由客户作战台三项购买信号门控申请创建；意向主体、决策链触达与触发事件的事实快照已固化。后续产品方案与赢单判断请在独立商机作战室维护。`;
       const [result] = await db.insert(opportunities).values({
         clientId: input.clientId,
         name: input.name,
@@ -3370,7 +3411,7 @@ ${contactList}
         productId: input.productId ?? null,
         estimatedValue: input.estimatedValue || null,
         expectedCloseDate: input.expectedCloseDate || null,
-        contactName: input.contactName || readiness.championName || null,
+        contactName: input.contactName || null,
         notes,
         entryEvidenceSnapshot: snapshot,
       } as any);

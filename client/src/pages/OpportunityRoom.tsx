@@ -69,6 +69,13 @@ function AIProcessGuide({ methodology, facts, judgement, action }: { methodology
   );
 }
 
+function EntryPurchaseSignals({ snapshot }: { snapshot: any }) {
+  const signals = Array.isArray(snapshot?.purchaseSignals) ? snapshot.purchaseSignals : [];
+  const labels: Record<string, string> = { intent_subject: "意向主体", decision_chain: "决策链触达", trigger_event: "触发事件" };
+  if (signals.length === 0) return <section className="rounded-xl border border-slate-700/60 bg-slate-950/50 p-4"><div className="text-sm font-semibold text-slate-100">进入商机的购买信号快照</div><p className="mt-1 text-xs leading-5 text-slate-500">这是一条在新门控上线前已存在的商机，未固化三项购买信号。请补充已有客户事实，不能以历史推测补填。</p></section>;
+  return <section className="overflow-hidden rounded-xl border border-emerald-400/20 bg-emerald-400/[0.045]"><div className="border-b border-emerald-400/15 px-4 py-3"><div className="text-sm font-semibold text-emerald-100">进入商机的购买信号快照</div><p className="mt-1 text-[11px] leading-5 text-emerald-50/60">创建时从客户作战台固化：说明客户为什么现在会买，而不是我们准备卖什么。</p></div><div className="grid gap-px bg-emerald-400/10 lg:grid-cols-3">{signals.map((signal: any) => <article key={signal.type} className="bg-slate-950/60 p-3"><div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-300/80">{labels[signal.type] || signal.label}</div><p className="text-xs font-medium text-slate-100">{signal.subjectName || "未记录主体"}</p><p className="mt-1 text-[10px] text-slate-500">{formatDate(signal.occurredAt)} · {signal.sourceType || "来源待补充"}</p><p className="mt-2 text-xs leading-5 text-slate-300">{signal.statement || "数据不足，暂不判断"}</p></article>)}</div></section>;
+}
+
 function AIWarJudgement({
   clientId, opportunityId, opportunity, contacts, meetings, signals, meddpicc
 }: { clientId: number; opportunityId: number; opportunity: any; contacts: any[]; meetings: any[]; signals: any[]; meddpicc: any }) {
@@ -110,6 +117,7 @@ function AIWarJudgement({
           {reviewMutation.isPending ? "分析中…" : "生成 / 更新 AI Review"}
         </Button>
       </div>
+      <div className="px-4 pt-4"><EntryPurchaseSignals snapshot={opportunity.entryEvidenceSnapshot} /></div>
       <div className="grid gap-px bg-cyan-300/10 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="bg-slate-950/60 p-4">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/70">判断</div>

@@ -1,38 +1,43 @@
 import { describe, expect, it } from "vitest";
 import { evaluateCustomerReadiness } from "../shared/customerReadiness";
 
-const meeting = {
-  id: 1,
-  meetingDate: new Date("2026-08-10T00:00:00.000Z"),
-  attendees: "张总, 王敏",
-  keyPoints: "客户确认目前终端告警响应缓慢，需在本季度内明确改善路径。",
-};
+const signals = [
+  { id: 1, signalType: "intent_subject" as const, subjectName: "王敏", occurredAt: new Date("2026-08-10T00:00:00.000Z"), statement: "我们正在评估替换现有终端检测平台。", sourceType: "meeting" },
+  { id: 2, signalType: "decision_chain" as const, subjectName: "李总", occurredAt: new Date("2026-08-11T00:00:00.000Z"), statement: "李总已参与技术选型讨论并影响预算审批。", sourceType: "customer_email" },
+  { id: 3, signalType: "trigger_event" as const, subjectName: "安全合规截止日", occurredAt: new Date("2026-08-12T00:00:00.000Z"), statement: "监管检查要求在本季度完成终端检测能力整改。", sourceType: "intelligence" },
+];
 
 describe("evaluateCustomerReadiness", () => {
-  it("不会把销售主观兴趣当作开商机证据", () => {
+  it("不会把销售主观兴趣、拜访次数或联系人数量当作开商机证据", () => {
     const result = evaluateCustomerReadiness({
       stage: "找人",
       contacts: [{ id: 1, name: "张总", buyingRole: "Champion", relationship: "Champion" }],
-      meetings: [{ ...meeting, attendees: "王敏" }],
-      evidence: { implicatePainNotes: "客户表达兴趣" },
+      signals: [],
     });
     expect(result.canApplyForOpportunity).toBe(false);
-    expect(result.blockers.map(item => item.id)).toContain("decision_path");
-    expect(result.blockers.map(item => item.id)).toContain("champion_direct_dialogue");
+    expect(result.blockers.map(item => item.id)).toEqual(["intent_subject", "decision_chain", "trigger_event"]);
   });
 
-  it("只有带时间戳的直接对话、痛点与决策路径同时存在时才允许申请开商机", () => {
+  it("意向主体、已触达决策链与触发事件三个客户事实齐备时才允许申请开商机", () => {
     const result = evaluateCustomerReadiness({
       stage: "找人",
       contacts: [
-        { id: 1, name: "张总", buyingRole: "Champion", relationship: "Champion" },
+        { id: 1, name: "王敏", buyingRole: "用户影响者", relationship: "已接触" },
         { id: 2, name: "李总", buyingRole: "经济决策人", relationship: "已接触" },
-        { id: 3, name: "王敏", buyingRole: "技术决策人", relationship: "已接触" },
       ],
-      meetings: [meeting],
-      evidence: { implicatePainNotes: "客户确认告警响应时间过长影响关键系统稳定运行。" },
+      signals,
     });
     expect(result.canApplyForOpportunity).toBe(true);
     expect(result.blockers).toHaveLength(0);
+  });
+
+  it("决策链信号未对应至有影响力的关键人时不得放行", () => {
+    const result = evaluateCustomerReadiness({
+      stage: "找人",
+      contacts: [{ id: 1, name: "王敏", buyingRole: "未知", relationship: "已接触" }],
+      signals,
+    });
+    expect(result.canApplyForOpportunity).toBe(false);
+    expect(result.blockers.map(item => item.id)).toContain("decision_chain");
   });
 });

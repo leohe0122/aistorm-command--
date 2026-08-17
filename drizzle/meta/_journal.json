@@ -239,6 +239,13 @@
       "when": 1786976490096,
       "tag": "0033_dizzy_wong",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1786977876154,
+      "tag": "0034_dark_spot",
+      "breakpoints": true
     }
   ]
 }
