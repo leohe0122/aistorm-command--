@@ -3836,6 +3836,47 @@ ${contactList}
         return { id: (result as any).insertId, fileKey: input.fileKey, fileUrl: input.fileUrl };
       }),
 
+    // 系统内新建知识文档：内容同时存入 S3 Markdown 文件与产品文档索引，供预览和 AI 生成引用
+    createNote: protectedProcedure
+      .input(z.object({
+        title: z.string().min(1).max(300),
+        description: z.string().max(2000).optional(),
+        productLine: z.string().min(1).max(100),
+        content: z.string().min(1).max(50000),
+        tags: z.array(z.string()).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const { storagePut } = await import('./storage');
+        const safeBaseName = input.title
+          .replace(/[\\/:*?"<>|]/g, '-')
+          .replace(/\s+/g, '-')
+          .slice(0, 80) || 'knowledge-note';
+        const filename = `${safeBaseName}.md`;
+        const markdown = `# ${input.title}\n\n${input.description ? `> ${input.description}\n\n` : ''}${input.content.trim()}\n`;
+        const { key: fileKey, url: fileUrl } = await storagePut(
+          `product-docs/notes/${Date.now()}-${filename}`,
+          markdown,
+          'text/markdown; charset=utf-8',
+        );
+        const [result] = await db.insert(productDocs).values({
+          title: input.title,
+          description: input.description,
+          productLine: input.productLine,
+          tags: input.tags,
+          filename,
+          fileKey,
+          fileUrl,
+          mimeType: 'text/markdown',
+          fileSize: Buffer.byteLength(markdown, 'utf8'),
+          extractedText: markdown,
+          uploadedBy: ctx.user?.name || 'unknown',
+        });
+        return { id: (result as any).insertId, fileKey, fileUrl };
+      }),
+
     // 批量补跑文字提取（为已上传但无extractedText的文档）
     extractTextBatch: protectedProcedure
       .mutation(async () => {
