@@ -61,7 +61,7 @@ function EvidenceSummary({
 function AIProcessGuide({ methodology, facts, judgement, action }: { methodology: string; facts: string; judgement: string; action: string }) {
   return (
     <section className="grid gap-px overflow-hidden rounded-xl border border-cyan-300/15 bg-cyan-300/10 lg:grid-cols-4">
-      <div className="bg-cyan-400/[0.06] p-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-300/75">AI 依据</div><p className="text-xs leading-5 text-slate-300">{facts}</p></div>
+      <div className="bg-cyan-400/[0.06] p-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-300/75">AI 依据 · 已入库事实</div><p className="text-xs leading-5 text-slate-300">{facts}</p></div>
       <div className="bg-slate-950/65 p-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-300/75">方法论</div><p className="text-xs leading-5 text-slate-200">{methodology}</p></div>
       <div className="bg-slate-950/65 p-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-300/75">判断规则</div><p className="text-xs leading-5 text-slate-300">{judgement}</p></div>
       <div className="bg-slate-950/65 p-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-300/75">人类行动</div><p className="text-xs leading-5 text-cyan-100">{action}</p></div>
