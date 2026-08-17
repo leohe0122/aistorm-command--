@@ -830,7 +830,7 @@ function ActiveFrontsPanel({ clientId, focusOppId }: { clientId: number; focusOp
   );
 }
 
-function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientName: string }) {
+export function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientName: string }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [chainAnalysis, setChainAnalysis] = useState<{ reportingChain: string; tips: any[] } | null>(null);
@@ -1398,7 +1398,7 @@ function KeyContactsPanel({ clientId, clientName }: { clientId: number; clientNa
 }
 
 // ── 产品覆盖度状态栏 ──────────────────────────────────────────────────────────
-function ProductCoverageBar({ clientId }: { clientId: number }) {
+export function ProductCoverageBar({ clientId }: { clientId: number }) {
   const { data: coverage } = trpc.products.clientCoverage.useQuery({ clientId });
   if (!coverage || coverage.length === 0) return null;
   return (
