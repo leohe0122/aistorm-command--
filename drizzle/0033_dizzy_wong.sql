@@ -1,0 +1,1 @@
+ALTER TABLE `opportunities` ADD `entryEvidenceSnapshot` json;

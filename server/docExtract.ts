@@ -16,6 +16,10 @@ export async function extractTextFromBuffer(
     const mime = mimeType.toLowerCase();
     const name = filename.toLowerCase();
 
+    // 纯文本 / Markdown
+    if (mime.startsWith('text/') || name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.markdown')) {
+      return buffer.toString('utf8').replace(/^\uFEFF/, '').slice(0, MAX_CHARS);
+    }
     // PDF
     if (mime.includes('pdf') || name.endsWith('.pdf')) {
       return await extractPdf(buffer);

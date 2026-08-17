@@ -361,6 +361,26 @@ export type MeddpiccLog = typeof meddpiccLogs.$inferSelect;
 export type InsertMeddpiccLog = typeof meddpiccLogs.$inferInsert;
 
 /**
+ * 客户购买信号：进入商机的唯一门控证据。
+ * 记录客户发生了什么，而不是销售完成了什么动作；三类信号跨产品通用。
+ */
+export const customerPurchaseSignals = mysqlTable("customer_purchase_signals", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull(),
+  signalType: mysqlEnum("signalType", ["intent_subject", "decision_chain", "trigger_event"]).notNull(),
+  subjectName: varchar("subjectName", { length: 150 }).notNull(),
+  occurredAt: timestamp("occurredAt").notNull(),
+  statement: text("statement").notNull(),
+  sourceType: mysqlEnum("sourceType", ["meeting", "customer_message", "customer_email", "intelligence", "other_evidence"]).notNull(),
+  sourceMeetingId: int("sourceMeetingId"),
+  sourceReference: text("sourceReference"),
+  createdBy: varchar("createdBy", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type CustomerPurchaseSignal = typeof customerPurchaseSignals.$inferSelect;
+export type InsertCustomerPurchaseSignal = typeof customerPurchaseSignals.$inferInsert;
+
+/**
  * 商机温度预测记录
  */
 export const opportunityScores = mysqlTable("opportunity_scores", {
@@ -538,6 +558,7 @@ export const productDocs = mysqlTable("product_docs", {
   title: varchar("title", { length: 300 }).notNull(),
   description: text("description"),
   productLine: varchar("productLine", { length: 100 }),  // 产品线：TrustOne/CloudGuard/NDR/ThreatTrace等
+  folderId: int("folderId"), // 可选的自建子文件夹；为空时位于产品线根目录
   tags: json("tags").$type<string[]>(),
   filename: varchar("filename", { length: 300 }).notNull(),
   fileKey: varchar("fileKey", { length: 500 }).notNull(),
@@ -551,6 +572,20 @@ export const productDocs = mysqlTable("product_docs", {
 });
 export type ProductDoc = typeof productDocs.$inferSelect;
 export type InsertProductDoc = typeof productDocs.$inferInsert;
+
+/**
+ * 武器库产品文档子文件夹。产品线是第一层固定目录，用户可在其下创建资料包文件夹。
+ */
+export const productDocFolders = mysqlTable("product_doc_folders", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 120 }).notNull(),
+  productLine: varchar("productLine", { length: 100 }).notNull(),
+  createdBy: varchar("createdBy", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ProductDocFolder = typeof productDocFolders.$inferSelect;
+export type InsertProductDocFolder = typeof productDocFolders.$inferInsert;
 
 /**
  * AI生成记录（方案类/弹药类/话术类的生成历史）
@@ -663,6 +698,14 @@ export const opportunities = mysqlTable("opportunities", {
   winStrategy: text("winStrategy"),             // 赢单策略
   keyMilestones: text("keyMilestones"),         // 关键里程碑
   riskAndMitigation: text("riskAndMitigation"), // 风险与应对
+  /** 从客户作战台申请开商机时固化的 0→1 客观行为证据；只读，不作为商机赢单评分。 */
+  entryEvidenceSnapshot: json("entryEvidenceSnapshot").$type<{
+    approvedAt: string;
+    customerStage: string;
+    gateChecks: Array<{ id: string; label: string; evidence: string; passed: boolean }>;
+    championName?: string;
+    latestMeetingDate?: string;
+  }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   /** 当前商机子阶段开始时间（每次阶段推进时更新）。用于计算商机停滞天数。 */

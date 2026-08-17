@@ -8,6 +8,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
+import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -46,6 +47,43 @@ import { getClientMetrics, upsertClientMetrics } from "./db";
 import { getAllCaseStudies, getCaseStudiesByIndustry, insertCaseStudy, updateCaseStudy, deleteCaseStudy } from "./db";
 import { demoTokens } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
+
+async function loadCustomerReadiness(clientId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+  const { clients, keyContacts, meetingMinutes, customerPurchaseSignals } = await import("../drizzle/schema.js");
+  const { eq } = await import("drizzle-orm");
+  const [client] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
+  if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "未找到客户" });
+  const [contacts, meetings, signals] = await Promise.all([
+    db.select().from(keyContacts).where(eq(keyContacts.clientId, clientId)),
+    db.select().from(meetingMinutes).where(eq(meetingMinutes.clientId, clientId)),
+    db.select().from(customerPurchaseSignals).where(eq(customerPurchaseSignals.clientId, clientId)),
+  ]);
+  const readiness = evaluateCustomerReadiness({
+    stage: client.stage as CustomerStage,
+    contacts,
+    signals,
+  });
+  return { client, contacts, meetings, signals, readiness };
+}
+
+const customerStageOrder: CustomerStage[] = ["建图", "进门", "定痛", "找人", "进入商机"];
+
+async function advanceCustomerStageByEvidence(clientId: number, requestedStage: CustomerStage) {
+  const { client, readiness } = await loadCustomerReadiness(clientId);
+  if (requestedStage === "进入商机") {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "进入商机必须通过“申请开商机”完成，系统会同时保存 0→1 证据快照。" });
+  }
+  const currentIndex = customerStageOrder.indexOf(client.stage as CustomerStage);
+  const expectedStage = customerStageOrder[currentIndex + 1];
+  if (requestedStage !== expectedStage) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: `当前阶段为“${client.stage}”，只能申请推进至下一阶段“${expectedStage || "无"}”。` });
+  }
+  await updateClient(clientId, { stage: requestedStage } as any);
+  invalidateClientsCache();
+  return { stage: requestedStage, evidence: readiness.standardActions };
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -103,11 +141,22 @@ export const appRouter = router({
       monitorKeywords: z.array(z.string()).optional(),
       priority: z.enum(["P0", "P1", "P2"]).optional(),
       plannedFirstVisitDate: z.number().nullable().optional(),
-    })).mutation(({ input }) => {
+    })).mutation(async ({ input }) => {
       const { id, ...data } = input;
+      if (data.stage !== undefined) {
+        await advanceCustomerStageByEvidence(id, data.stage as CustomerStage);
+        const { stage: _stage, ...remaining } = data;
+        if (Object.keys(remaining).length === 0) return { ok: true };
+        invalidateClientsCache();
+        return updateClient(id, remaining as any);
+      }
       invalidateClientsCache();
       return updateClient(id, data as any);
     }),
+    advanceStage: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      stage: z.enum(["进门", "定痛", "找人"]),
+    })).mutation(({ input }) => advanceCustomerStageByEvidence(input.clientId, input.stage)),
     create: protectedProcedure.input(z.object({
       name: z.string().min(1),
       nameEn: z.string().optional(),
@@ -423,6 +472,47 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
         ? and(eq(meddpiccLogs.clientId, input.clientId), eq(meddpiccLogs.dimension, input.dimension))
         : eq(meddpiccLogs.clientId, input.clientId);
       return db.select().from(meddpiccLogs).where(conditions).orderBy(desc(meddpiccLogs.createdAt)).limit(100);
+    }),
+  }),
+
+  // ── Customer Purchase Signals ────────────────────────────────────────────
+  purchaseSignals: router({
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { customerPurchaseSignals } = await import("../drizzle/schema.js");
+      const { desc, eq } = await import("drizzle-orm");
+      return db.select().from(customerPurchaseSignals)
+        .where(eq(customerPurchaseSignals.clientId, input.clientId))
+        .orderBy(desc(customerPurchaseSignals.occurredAt), desc(customerPurchaseSignals.createdAt));
+    }),
+    create: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      signalType: z.enum(["intent_subject", "decision_chain", "trigger_event"]),
+      subjectName: z.string().trim().min(1).max(150),
+      occurredAt: z.string().datetime(),
+      statement: z.string().trim().min(8).max(5000),
+      sourceType: z.enum(["meeting", "customer_message", "customer_email", "intelligence", "other_evidence"]),
+      sourceMeetingId: z.number().optional(),
+      sourceReference: z.string().trim().max(5000).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { customerPurchaseSignals } = await import("../drizzle/schema.js");
+      const [result] = await db.insert(customerPurchaseSignals).values({
+        ...input,
+        occurredAt: new Date(input.occurredAt),
+        createdBy: ctx.user.name || ctx.user.email || "已登录用户",
+      });
+      return { id: (result as any).insertId };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { customerPurchaseSignals } = await import("../drizzle/schema.js");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(customerPurchaseSignals).where(eq(customerPurchaseSignals.id, input.id));
+      return { ok: true };
     }),
   }),
 
@@ -2810,6 +2900,22 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
     listByRole: publicProcedure.input(z.object({ role: z.enum(["AD", "SAM", "SA", "RSM"]) })).query(({ input }) =>
       getPodTasksByRole(input.role)
     ),
+    listByOpportunity: publicProcedure.input(z.object({ opportunityId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { podTasks } = await import('../drizzle/schema.js');
+      const { eq, desc } = await import('drizzle-orm');
+      return db.select().from(podTasks).where(eq(podTasks.opportunityId, input.opportunityId)).orderBy(desc(podTasks.createdAt));
+    }),
+    listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { podTasks } = await import('../drizzle/schema.js');
+      const { and, desc, eq, isNull } = await import('drizzle-orm');
+      return db.select().from(podTasks)
+        .where(and(eq(podTasks.clientId, input.clientId), isNull(podTasks.opportunityId)))
+        .orderBy(desc(podTasks.createdAt));
+    }),
     addTask: publicProcedure.input(z.object({
       clientId: z.number(),
       assignedRole: z.enum(["AD", "SAM", "SA", "RSM"]),
@@ -2844,10 +2950,19 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
       taskStatus: z.enum(["pending", "in_progress", "done"]),
     })).mutation(async ({ input }) => {
       const { getDb } = await import('./db.js');
-      const { podTasks } = await import('../drizzle/schema.js');
+      const { podTasks, actionItems } = await import('../drizzle/schema.js');
       const { eq } = await import('drizzle-orm');
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
+      const [podTask] = await db.select({ id: podTasks.id, sourceActionId: podTasks.sourceActionId }).from(podTasks).where(eq(podTasks.id, input.id)).limit(1);
+      if (!podTask) {
+        const actionUpdates: any = {
+          isCompleted: input.taskStatus === 'done',
+          completedAt: input.taskStatus === 'done' ? new Date() : null,
+        };
+        await db.update(actionItems).set(actionUpdates).where(eq(actionItems.id, input.id));
+        return { ok: true, source: 'actionItem' };
+      }
       const updates: any = { taskStatus: input.taskStatus };
       if (input.taskStatus === 'done') {
         updates.isCompleted = true;
@@ -2857,7 +2972,13 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         updates.completedAt = null;
       }
       await db.update(podTasks).set(updates).where(eq(podTasks.id, input.id));
-      return { ok: true };
+      if (podTask.sourceActionId) {
+        await db.update(actionItems).set({
+          isCompleted: input.taskStatus === 'done',
+          completedAt: input.taskStatus === 'done' ? new Date() : null,
+        }).where(eq(actionItems.id, podTask.sourceActionId));
+      }
+      return { ok: true, source: 'podTask' };
     }),
     listDealReviews: publicProcedure.query(() => getDealReviews()),
     weeklyReport: publicProcedure.mutation(async () => {
@@ -3236,6 +3357,67 @@ ${contactList}
       const { opportunities } = await import('../drizzle/schema.js');
       const { eq, desc } = await import('drizzle-orm');
       return db.select().from(opportunities).where(eq(opportunities.clientId, input.clientId)).orderBy(desc(opportunities.createdAt));
+    }),
+    customerReadiness: publicProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const { readiness } = await loadCustomerReadiness(input.clientId);
+      return readiness;
+    }),
+    createFromCustomerReadiness: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      name: z.string().trim().min(3).max(200),
+      productId: z.number().nullable().optional(),
+      estimatedValue: z.string().trim().max(100).optional(),
+      expectedCloseDate: z.string().trim().max(50).optional(),
+      customerObjective: z.string().trim().max(2000).optional(),
+      contactName: z.string().trim().max(100).optional(),
+    })).mutation(async ({ input }) => {
+      const { client, readiness } = await loadCustomerReadiness(input.clientId);
+      if (!readiness.canApplyForOpportunity) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: `尚不满足申请开商机的客观门控：${readiness.blockers.map(item => item.label).join("；")}`,
+        });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { clients, opportunities } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const approvedAt = new Date();
+      const snapshot = {
+        approvedAt: approvedAt.toISOString(),
+        customerStage: client.stage,
+        gateChecks: readiness.checks.map(check => ({
+          id: check.id,
+          label: check.label,
+          evidence: check.evidence,
+          passed: check.passed,
+        })),
+        purchaseSignals: readiness.checks.map(check => ({
+          type: check.id,
+          label: check.label,
+          subjectName: check.signal?.subjectName || "",
+          occurredAt: check.signal ? new Date(check.signal.occurredAt).toISOString() : "",
+          statement: check.signal?.statement || "",
+          sourceType: check.signal?.sourceType || "",
+          sourceReference: check.signal?.sourceReference || "",
+        })),
+      };
+      const notes = `${input.customerObjective ? `补充说明：${input.customerObjective}\n\n` : ""}本商机由客户作战台三项购买信号门控申请创建；意向主体、决策链触达与触发事件的事实快照已固化。后续产品方案与赢单判断请在独立商机作战室维护。`;
+      const [result] = await db.insert(opportunities).values({
+        clientId: input.clientId,
+        name: input.name,
+        stage: "初步需求",
+        status: "活跃",
+        productId: input.productId ?? null,
+        estimatedValue: input.estimatedValue || null,
+        expectedCloseDate: input.expectedCloseDate || null,
+        contactName: input.contactName || null,
+        notes,
+        entryEvidenceSnapshot: snapshot,
+      } as any);
+      await db.update(clients).set({ stage: "进入商机", stageChangedAt: approvedAt }).where(eq(clients.id, input.clientId));
+      invalidateClientsCache();
+      return { id: (result as any).insertId, snapshot };
     }),
     create: protectedProcedure.input(z.object({
       clientId: z.number(),
@@ -3808,6 +3990,7 @@ ${contactList}
         title: z.string().min(1),
         description: z.string().optional(),
         productLine: z.string().optional(),
+        folderId: z.number().nullable().optional(),
         tags: z.array(z.string()).optional(),
         filename: z.string(),
         mimeType: z.string(),
@@ -3824,6 +4007,7 @@ ${contactList}
           title: input.title,
           description: input.description,
           productLine: input.productLine,
+          folderId: input.folderId ?? null,
           tags: input.tags,
           filename: input.filename,
           fileKey: input.fileKey,
@@ -3834,6 +4018,48 @@ ${contactList}
           uploadedBy: ctx.user?.name || 'unknown',
         });
         return { id: (result as any).insertId, fileKey: input.fileKey, fileUrl: input.fileUrl };
+      }),
+
+    // 系统内新建知识文档：内容同时存入 S3 Markdown 文件与产品文档索引，供预览和 AI 生成引用
+    createNote: protectedProcedure
+      .input(z.object({
+        title: z.string().min(1).max(300),
+        description: z.string().max(2000).optional(),
+        productLine: z.string().min(1).max(100),
+        folderId: z.number().nullable().optional(),
+        content: z.string().min(1).max(50000),
+        tags: z.array(z.string()).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const { storagePut } = await import('./storage');
+        // 中文标题仅作为数据库展示名；S3/Forge 的对象路径必须严格使用 ASCII。
+        const filename = `${input.title}.md`;
+        const markdown = `# ${input.title}\n\n${input.description ? `> ${input.description}\n\n` : ''}${input.content.trim()}\n`;
+        const { createAsciiDocumentStorageKey } = await import('./storage');
+        const fileKeyBase = createAsciiDocumentStorageKey('product-docs/notes', 'md');
+        const { key: fileKey, url: fileUrl } = await storagePut(
+          fileKeyBase,
+          markdown,
+          'text/markdown; charset=utf-8',
+        );
+        const [result] = await db.insert(productDocs).values({
+          title: input.title,
+          description: input.description,
+          productLine: input.productLine,
+          folderId: input.folderId ?? null,
+          tags: input.tags,
+          filename,
+          fileKey,
+          fileUrl,
+          mimeType: 'text/markdown',
+          fileSize: Buffer.byteLength(markdown, 'utf8'),
+          extractedText: markdown,
+          uploadedBy: ctx.user?.name || 'unknown',
+        });
+        return { id: (result as any).insertId, fileKey, fileUrl };
       }),
 
     // 批量补跑文字提取（为已上传但无extractedText的文档）
@@ -3876,9 +4102,83 @@ ${contactList}
         }
         return { total: docs.length, processed, failed };
       }),
-    // 删除产品文档
-    // AI 批量识别产品线
-    // 修改文档产品线（文件夹归档）
+    // 自建子文件夹：产品线为固定第一层，子文件夹用于归档资料包。
+    listFolders: protectedProcedure
+      .input(z.object({ productLine: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        if (!db) return [];
+        const { productDocFolders } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        if (input?.productLine) {
+          return db.select().from(productDocFolders)
+            .where(eq(productDocFolders.productLine, input.productLine))
+            .orderBy(productDocFolders.createdAt);
+        }
+        return db.select().from(productDocFolders).orderBy(productDocFolders.productLine, productDocFolders.createdAt);
+      }),
+
+    createFolder: protectedProcedure
+      .input(z.object({ productLine: z.string().min(1).max(100), name: z.string().trim().min(1).max(120) }))
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocFolders } = await import('../drizzle/schema');
+        const { and, eq } = await import('drizzle-orm');
+        const existing = await db.select({ id: productDocFolders.id }).from(productDocFolders)
+          .where(and(eq(productDocFolders.productLine, input.productLine), eq(productDocFolders.name, input.name))).limit(1);
+        if (existing.length) throw new Error('该产品线下已存在同名文件夹');
+        const [result] = await db.insert(productDocFolders).values({
+          productLine: input.productLine,
+          name: input.name,
+          createdBy: ctx.user?.name || 'unknown',
+        });
+        return { id: Number((result as any).insertId), name: input.name };
+      }),
+
+    renameFolder: protectedProcedure
+      .input(z.object({ id: z.number(), name: z.string().trim().min(1).max(120) }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocFolders } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.update(productDocFolders).set({ name: input.name }).where(eq(productDocFolders.id, input.id));
+        return { success: true };
+      }),
+
+    deleteFolder: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocFolders, productDocs } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        const docsInFolder = await db.select({ id: productDocs.id }).from(productDocs)
+          .where(eq(productDocs.folderId, input.id)).limit(1);
+        if (docsInFolder.length) throw new Error('请先将文件夹内文档移动到其他位置，再删除文件夹');
+        await db.delete(productDocFolders).where(eq(productDocFolders.id, input.id));
+        return { success: true };
+      }),
+
+    moveToFolder: protectedProcedure
+      .input(z.object({ id: z.number(), folderId: z.number().nullable() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs, productDocFolders } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        if (input.folderId === null) {
+          await db.update(productDocs).set({ folderId: null }).where(eq(productDocs.id, input.id));
+          return { success: true };
+        }
+        const [folder] = await db.select().from(productDocFolders).where(eq(productDocFolders.id, input.folderId)).limit(1);
+        if (!folder) throw new Error('目标文件夹不存在或已被删除');
+        await db.update(productDocs).set({ folderId: folder.id, productLine: folder.productLine }).where(eq(productDocs.id, input.id));
+        return { success: true };
+      }),
+
+    // 修改文档产品线（跨产品线移动时回到目标产品线根目录）
     updateProductLine: protectedProcedure
       .input(z.object({ id: z.number(), productLine: z.string() }))
       .mutation(async ({ input }) => {
@@ -3886,7 +4186,7 @@ ${contactList}
         if (!db) throw new Error('Database unavailable');
         const { productDocs } = await import('../drizzle/schema');
         const { eq } = await import('drizzle-orm');
-        await db.update(productDocs).set({ productLine: input.productLine }).where(eq(productDocs.id, input.id));
+        await db.update(productDocs).set({ productLine: input.productLine, folderId: null }).where(eq(productDocs.id, input.id));
         return { success: true };
       }),
 

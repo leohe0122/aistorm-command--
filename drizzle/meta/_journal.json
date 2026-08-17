@@ -225,6 +225,27 @@
       "when": 1786443916456,
       "tag": "0031_fine_the_initiative",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1786964367321,
+      "tag": "0032_melodic_nightshade",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1786976490096,
+      "tag": "0033_dizzy_wong",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1786977876154,
+      "tag": "0034_dark_spot",
+      "breakpoints": true
     }
   ]
 }

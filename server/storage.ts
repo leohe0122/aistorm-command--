@@ -2,6 +2,7 @@
 // Uploads via Forge Server presigned URL to S3 (PUT direct).
 // Downloads return /manus-storage/{key} paths served via 307 redirect.
 
+import crypto from "node:crypto";
 import { ENV } from "./_core/env";
 
 function getForgeConfig() {
@@ -27,6 +28,20 @@ function appendHashSuffix(relKey: string): string {
   const lastDot = relKey.lastIndexOf(".");
   if (lastDot === -1) return `${relKey}_${hash}`;
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
+}
+
+/**
+ * 生成可传递给 Forge/S3 预签名接口的纯 ASCII 文档键。
+ * 中文标题仅保存在数据库 title/filename，绝不进入对象路径。
+ */
+export function createAsciiDocumentStorageKey(
+  directory = "product-docs/notes",
+  extension = "md",
+): string {
+  const safeDirectory = directory.replace(/[^A-Za-z0-9/_-]/g, "").replace(/\/+$/, "") || "documents";
+  const safeExtension = extension.replace(/[^A-Za-z0-9]/g, "") || "txt";
+  const id = crypto.randomUUID().replace(/-/g, "");
+  return `${safeDirectory}/note-${Date.now()}-${id}.${safeExtension}`;
 }
 
 export async function storagePut(
