@@ -714,21 +714,23 @@
 ## 香港电讯产品覆盖度
 - [x] 盘点香港电讯现有商机与产品关联状态
 - [x] 将 Darktrace 替代方案关联 ThreatTrace
-- [ ] 从武器库确认 AI Pentest 的正式产品归属后完成关联
+- [x] 从武器库确认 AI Pentest 的正式产品归属后完成关联
 - [x] 验证客户详情的产品覆盖状态栏（3 项活跃产品关联符合前端跟进中判定）
 - [x] 移除非核心产品的 Mobile Security Platform 测试商机及关联记录
 
 ## 香港电讯 AI Pentest 产品归属
-- [ ] 核对武器库 HKT Pentest 专项文档与“安全服务”产品线归属
-- [ ] 将 AI Pentest AI 渗透测试商机关联到安全服务产品线
-- [ ] 复核香港电讯产品覆盖聚合包含安全服务
+- [x] 核对武器库 HKT Pentest 专项文档与“安全服务”产品线归属
+- [x] 将 AI Pentest AI 渗透测试商机关联到安全服务产品线
+- [x] 复核香港电讯产品覆盖聚合包含安全服务
+- [x] 在产品配置中新增“安全服务 / Security Services”，以承载渗透测试等服务型商机
 
 ## HKT EDR 与 Virtual Patch 最新经营进展
-- [ ] 核对 EDR、Virtual Patch 现有商机、关键人和经营记录
-- [ ] 写入内部汇报、竞争结果、年度金额与关键人意见
-- [ ] 记录 Felix 异议及 Marcos—Felix 关系风险，更新 Buying Group 与赢单行动
-- [ ] 验证 HKT 商机数据和下一步行动在 Command 中可见
-- [ ] 更新 EDR、Virtual Patch 的 MEDDPICC 行为证据与决策风险说明
+- [x] 核对 EDR、Virtual Patch 现有商机、关键人和经营记录
+- [x] 写入内部汇报、竞争结果、年度金额与关键人意见
+- [x] 记录 Felix 异议及 Marcos—Felix 关系风险，更新 Buying Group 与赢单行动
+- [x] 验证 HKT 商机数据和下一步行动在 Command 中可见
+- [x] 更新 EDR、Virtual Patch 的 MEDDPICC 行为证据与决策风险说明
+- [x] 删除过期的 HKT 测试行动项，并建立基于真实进展的行动任务
 
 ## HKT 关键人图谱补全
 - [x] 逐项核对 Marcos、Ronald、Benny、Adrian、Ryan、Ray 与现有图谱
