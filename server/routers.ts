@@ -2810,6 +2810,13 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
     listByRole: publicProcedure.input(z.object({ role: z.enum(["AD", "SAM", "SA", "RSM"]) })).query(({ input }) =>
       getPodTasksByRole(input.role)
     ),
+    listByOpportunity: publicProcedure.input(z.object({ opportunityId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { podTasks } = await import('../drizzle/schema.js');
+      const { eq, desc } = await import('drizzle-orm');
+      return db.select().from(podTasks).where(eq(podTasks.opportunityId, input.opportunityId)).orderBy(desc(podTasks.createdAt));
+    }),
     addTask: publicProcedure.input(z.object({
       clientId: z.number(),
       assignedRole: z.enum(["AD", "SAM", "SA", "RSM"]),
@@ -2844,10 +2851,19 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
       taskStatus: z.enum(["pending", "in_progress", "done"]),
     })).mutation(async ({ input }) => {
       const { getDb } = await import('./db.js');
-      const { podTasks } = await import('../drizzle/schema.js');
+      const { podTasks, actionItems } = await import('../drizzle/schema.js');
       const { eq } = await import('drizzle-orm');
       const db = await getDb();
       if (!db) throw new Error('DB unavailable');
+      const [podTask] = await db.select({ id: podTasks.id, sourceActionId: podTasks.sourceActionId }).from(podTasks).where(eq(podTasks.id, input.id)).limit(1);
+      if (!podTask) {
+        const actionUpdates: any = {
+          isCompleted: input.taskStatus === 'done',
+          completedAt: input.taskStatus === 'done' ? new Date() : null,
+        };
+        await db.update(actionItems).set(actionUpdates).where(eq(actionItems.id, input.id));
+        return { ok: true, source: 'actionItem' };
+      }
       const updates: any = { taskStatus: input.taskStatus };
       if (input.taskStatus === 'done') {
         updates.isCompleted = true;
@@ -2857,7 +2873,13 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         updates.completedAt = null;
       }
       await db.update(podTasks).set(updates).where(eq(podTasks.id, input.id));
-      return { ok: true };
+      if (podTask.sourceActionId) {
+        await db.update(actionItems).set({
+          isCompleted: input.taskStatus === 'done',
+          completedAt: input.taskStatus === 'done' ? new Date() : null,
+        }).where(eq(actionItems.id, podTask.sourceActionId));
+      }
+      return { ok: true, source: 'podTask' };
     }),
     listDealReviews: publicProcedure.query(() => getDealReviews()),
     weeklyReport: publicProcedure.mutation(async () => {
