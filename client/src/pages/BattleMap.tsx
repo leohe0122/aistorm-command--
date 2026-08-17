@@ -1430,7 +1430,7 @@ export function ProductCoverageBar({ clientId }: { clientId: number }) {
   );
 }
 
-function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }: {
+function LegacyClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }: {
   client: any;
   onFocus?: () => void;
   defaultExpanded?: boolean;
@@ -2976,11 +2976,11 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                     <Sparkles className="w-3 h-3" />
                     AI Win Strategy 建议
                   </div>
-                  <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{winStrategy.aiSuggestion}</div>
+                  <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{winStrategy?.aiSuggestion ?? ""}</div>
                 </div>
               )}
               {winStrategy?.aiSuggestion && (
-                <WinStrategyExtras clientId={client.id} aiSuggestion={winStrategy.aiSuggestion} enabled={expanded && activeTab === "winstrategy"} stage={client.stage} />
+                <WinStrategyExtras clientId={client.id} aiSuggestion={winStrategy?.aiSuggestion ?? ""} enabled={expanded && activeTab === "winstrategy"} stage={client.stage} />
               )}
 
               {!winStrategy && !wsEdit && (
@@ -3010,7 +3010,7 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
         {reviewSavedAt && !reviewLoading && (
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-md">
             <span className="text-green-400">✓ 已保存</span>
-            <span>生成于 {reviewSavedAt.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+            <span>生成于 {reviewSavedAt?.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
             <button type="button" onClick={() => loadHistoryReview(reviewType, reviewOppId ?? undefined)} className="ml-auto text-purple-400 hover:text-purple-300 underline">
               加载上次结果
             </button>
@@ -3029,17 +3029,18 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
             {(() => {
               const delta = reviewDelta;
               if (!delta) return null;
+              const verifiedDelta = delta;
               const dimLabels: Record<string, string> = {
                 metricsScore: 'M', economicBuyerScore: 'E', decisionCriteriaScore: 'D1',
                 decisionProcessScore: 'D2', paperProcessScore: 'P', implicatePainScore: 'I',
                 championScore: 'C', competitionScore: 'C2',
               };
-              const deltaItems = Object.entries(delta.meddpiccDelta || {}).map(([k, v]) => ({
+              const deltaItems = Object.entries(verifiedDelta.meddpiccDelta || {}).map(([k, v]) => ({
                 label: dimLabels[k] || k, value: v as number,
               }));
               return (
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] bg-blue-500/5 border border-blue-500/20 rounded-lg px-3 py-2">
-                  <span className="text-blue-400 font-medium flex-shrink-0">📊 距上次 Review {delta.daysBetween}天</span>
+                  <span className="text-blue-400 font-medium flex-shrink-0">📊 距上次 Review {verifiedDelta.daysBetween}天</span>
                   {deltaItems.length > 0 && (
                     <span className="text-muted-foreground">MEDDPICC：{deltaItems.map(d => (
                       <span key={d.label} className={d.value > 0 ? 'text-green-400' : 'text-red-400'}>
@@ -3047,9 +3048,9 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
                       </span>
                     ))}</span>
                   )}
-                  {delta.newContacts > 0 && <span className="text-cyan-400">新增关键人 {delta.newContacts}位</span>}
-                  {delta.newVisits > 0 && <span className="text-purple-400">新增拜访 {delta.newVisits}次</span>}
-                  {deltaItems.length === 0 && delta.newContacts === 0 && delta.newVisits === 0 && (
+                  {verifiedDelta.newContacts > 0 && <span className="text-cyan-400">新增关键人 {verifiedDelta.newContacts}位</span>}
+                  {verifiedDelta.newVisits > 0 && <span className="text-purple-400">新增拜访 {verifiedDelta.newVisits}次</span>}
+                  {deltaItems.length === 0 && verifiedDelta.newContacts === 0 && verifiedDelta.newVisits === 0 && (
                     <span className="text-muted-foreground">暂无明显变化</span>
                   )}
                 </div>
@@ -3353,6 +3354,52 @@ function ClientCard({ client, onFocus, defaultExpanded, initialTab, focusOppId }
       </DialogContent>
     </Dialog>
     </>
+  );
+}
+
+// 新版三层架构下，战场地图只用于发现客户并进入客户作战台。
+// 所有客户经营、商机细节及方法论工作流均在独立页面完成。
+function ClientCard({ client }: { client: any; onFocus?: () => void; defaultExpanded?: boolean; initialTab?: string; focusOppId?: number | null }) {
+  const [, setLocation] = useLocation();
+  const { data: contacts = [] } = trpc.contacts.listByClient.useQuery({ clientId: client.id });
+  const { data: opportunities = [] } = trpc.opportunities.listByClient.useQuery({ clientId: client.id });
+  const activeOpportunities = opportunities.filter((opportunity: any) => opportunity.status === "活跃").length;
+
+  return (
+    <article className="group overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-cyan-400/45 hover:bg-cyan-400/[0.025]">
+      <button
+        type="button"
+        onClick={() => setLocation(`/clients/${client.id}`)}
+        className="block w-full px-4 py-4 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70"
+        aria-label={`进入${client.name}客户作战台`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <span className={cn("rounded border px-1.5 py-0.5 text-[10px] font-bold",
+                client.priority === "P0" ? "border-red-500/30 bg-red-500/20 text-red-400" :
+                  client.priority === "P1" ? "border-orange-500/30 bg-orange-500/20 text-orange-400" :
+                    "border-border bg-muted text-muted-foreground"
+              )}>{client.priority}</span>
+              <h3 className="truncate text-sm font-semibold text-foreground">{client.name}</h3>
+              <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] text-cyan-300">客户作战台</span>
+            </div>
+            <p className="text-xs text-muted-foreground">{[client.industry, client.stage].filter(Boolean).join(" · ")}</p>
+            <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{client.notes || client.securityAngle || "进入客户作战台查看关系态势、关键人、产品覆盖与机会组合。"}</p>
+          </div>
+          <span className="flex shrink-0 items-center gap-1 rounded-lg border border-cyan-400/25 bg-cyan-400/10 px-2.5 py-1.5 text-xs font-medium text-cyan-200 transition-colors group-hover:bg-cyan-400/20">
+            <Target className="h-3.5 w-3.5" />进入
+          </span>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/50 pt-3 text-[10px] text-muted-foreground">
+          <span>{contacts.length} 位关键人</span>
+          <span className="text-border">•</span>
+          <span>{activeOpportunities} 条活跃商机</span>
+          <span className="text-border">•</span>
+          <span>阶段：{client.stage || "待判定"}</span>
+        </div>
+      </button>
+    </article>
   );
 }
 

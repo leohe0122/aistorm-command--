@@ -262,7 +262,7 @@ function RiskClientCard({ c, navigate, isExpanded, onToggle, onExpand }: {
             <div
               className="text-sm font-semibold truncate cursor-pointer hover:text-primary transition-colors"
               style={{ minWidth: 0, flex: '1 1 0' }}
-              onClick={() => navigate(`/battle-map?clientId=${c.id}`)}
+              onClick={() => navigate(`/clients/${c.id}`)}
             >
               {c.name}
             </div>
@@ -1136,7 +1136,7 @@ export default function ADDashboard() {
                           ? "bg-green-500/5 border-green-500/20 hover:bg-green-500/10"
                           : "bg-muted/20 border-border/30 hover:bg-muted/40"
                       }`}
-                      onClick={() => navigate(`/battle-map?clientId=${c.id}`)}
+                      onClick={() => navigate(`/clients/${c.id}`)}
                     >
                       {/* 行1：客户名 + 阶段 + 停留天数 */}
                       <div className="flex items-center gap-2">
@@ -1359,7 +1359,7 @@ export default function ADDashboard() {
                     {/* 客户分组标题 */}
                     <div
                       className="flex items-center gap-2 px-2 py-1 cursor-pointer hover:bg-muted/20 rounded"
-                      onClick={() => navigate(`/battle-map?clientId=${group.clientId}`)}
+                      onClick={() => navigate(`/clients/${group.clientId}`)}
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-[#00A8D6] flex-shrink-0" />
                       <span className="text-xs font-semibold text-foreground">{group.clientName}</span>
@@ -1397,7 +1397,7 @@ export default function ADDashboard() {
                                 ? "bg-yellow-500/5 border-l-2 border-yellow-500/30 hover:bg-yellow-500/10"
                                 : "border-l-2 border-transparent hover:bg-muted/20"
                             }`}
-                            onClick={() => navigate(`/battle-map?clientId=${opp.clientId}&oppId=${opp.id}`)}
+                            onClick={() => navigate(`/clients/${opp.clientId}/opportunities/${opp.id}`)}
                           >
                             <span className="font-medium truncate min-w-0 flex-1">{opp.name}</span>
                             <span className={`w-16 text-right text-[9px] flex-shrink-0 ${!opp.expectedCloseDate ? "text-orange-400/60" : "text-muted-foreground/60"}`}>
@@ -1453,7 +1453,7 @@ export default function ADDashboard() {
                   ? "border-red-500/40 bg-red-500/5 hover:bg-red-500/10"
                   : "border-muted hover:bg-muted/50"
               }`}
-              onClick={() => navigate(`/battle-map?clientId=${client.id}`)}
+              onClick={() => navigate(`/clients/${client.id}`)}
             >
               <div className="flex items-start justify-between gap-1">
                 <span className="text-xs font-medium leading-tight truncate">{client.name}</span>
@@ -1514,7 +1514,7 @@ export default function ADDashboard() {
                     <tr
                       key={c.clientId}
                       className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/battle-map?clientId=${c.clientId}`)}
+                      onClick={() => navigate(`/clients/${c.clientId}`)}
                     >
                       <td className="py-2 pr-3 font-medium truncate max-w-[8rem]">{c.clientName}</td>
                       <td className="py-2 px-2 text-center">
