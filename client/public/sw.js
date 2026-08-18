@@ -1,5 +1,5 @@
 // AIStorm Command Service Worker
-const CACHE_NAME = 'aistorm-command-v20260817-3';
+const CACHE_NAME = 'aistorm-command-v20260818-stage-filter-1';
 
 // Install: skip waiting so new SW activates immediately
 self.addEventListener('install', (event) => {
