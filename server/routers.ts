@@ -3037,7 +3037,7 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         return `${c.name}(${c.stage}): MEDDPICC平均${avgScore}分, 本周新增信号${signals.length}条, 完成行动${completed.length}个, 待处理${pending.length}个, AI商机温度${latestScore ? latestScore.overallScore : '未评分'}`;
       }).join('\n');
 
-      const prompt = `你是一个企业级大客户销售作战参谋。以下是大湾区T100专项上周的战场数据：
+      const prompt = `以下是大湾区T100专项上周的战场数据：
 
 ${clientSummaries}
 
