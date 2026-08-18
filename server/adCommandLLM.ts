@@ -70,29 +70,13 @@ export async function enrichAdCommandRecommendation(
 ): Promise<GeneratedCommandRecommendation> {
   try {
     const response = await invokeLLM({
-      model: "gpt-5-mini",
+      // 复用系统 AI 模型配置中已验证的快速模型，避免特定供应商不支持目录模型而返回 400。
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: "你是严谨的大客户销售总监。只根据输入事实研判，绝不编造。" },
         { role: "user", content: buildRecommendationLlmPrompt(recommendation, context) },
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "ad_methodology_judgment",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              judgment: { type: "string" },
-              adAction: { type: "string" },
-              methodology: { type: "string" },
-            },
-            required: ["judgment", "adAction", "methodology"],
-            additionalProperties: false,
-          },
-        },
-      },
-      maxTokens: 320,
+      maxTokens: 420,
     });
     const raw = String(response.choices?.[0]?.message?.content || "");
     const parsed = JSON.parse(raw) as LlmMethodologyOutput;

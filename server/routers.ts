@@ -5510,7 +5510,7 @@ ${input.aiSuggestion}
         };
       });
       const response = await invokeLLM({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: '你是严谨的销售教练，只能依据输入的客户事实生成可执行辅导。' },
           { role: 'user', content: buildSamCoachPrompt(input.samName, facts) },

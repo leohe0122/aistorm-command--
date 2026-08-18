@@ -56,35 +56,13 @@ export async function generateGlobalBattleReview(candidates: GlobalCandidateFact
   if (!candidates.length) return null;
   try {
     const response = await invokeLLM({
-      model: "gpt-5-mini",
+      // 使用当前系统 AI 配置已经验证的快速模型；JSON 由提示词和解析校验共同约束。
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: "你是严谨的销售指挥官，只基于输入事实生成结构化周度战场研判。" },
         { role: "user", content: buildGlobalBattleReviewPrompt(candidates) },
       ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "weekly_global_battle_review",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              judgment: { type: "string" }, funnelHealth: { type: "string" }, winRisk: { type: "string" }, teamGap: { type: "string" },
-              actions: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: { clientId: { type: "number" }, title: { type: "string" }, action: { type: "string" }, evidence: { type: "string" } },
-                  required: ["clientId", "title", "action", "evidence"], additionalProperties: false,
-                },
-              },
-            },
-            required: ["judgment", "funnelHealth", "winRisk", "teamGap", "actions"],
-            additionalProperties: false,
-          },
-        },
-      },
-      maxTokens: 1200,
+      maxTokens: 1400,
     });
     const parsed = JSON.parse(String(response.choices?.[0]?.message?.content || "{}")) as GlobalBattleReview;
     const validIds = new Set(candidates.map((candidate) => candidate.clientId));
