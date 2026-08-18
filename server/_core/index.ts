@@ -12,6 +12,8 @@ import { visitReminderHandler } from "../scheduled/visitReminder";
 import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
 
+const BUILD_MARKER = "20260819-ai-review-cache-headers-v2";
+
 async function startServer() {
   console.log(`[STARTUP] PORT=${process.env.PORT ?? "undefined"} NODE_ENV=${process.env.NODE_ENV ?? "undefined"}`);
   const app = express();
@@ -19,6 +21,16 @@ async function startServer() {
   // 不依赖数据库、认证或任何外部服务；用于托管平台最早期健康探针。
   app.get("/__startup", (_req, res) => {
     res.status(200).json({ ok: true, ts: Date.now(), port: process.env.PORT ?? null, env: process.env.NODE_ENV ?? null });
+  });
+  // 无缓存版本探针：用于确认域名实际命中的服务实例与前端缓存策略版本。
+  app.get("/__version", (_req, res) => {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.status(200).json({
+      build: BUILD_MARKER,
+      aiReviewRoute: "review-one-to-n-v3-nonempty-guard",
+      serviceWorker: "20260819-ai-review-v1",
+      ts: Date.now(),
+    });
   });
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
