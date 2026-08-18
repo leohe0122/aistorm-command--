@@ -450,6 +450,33 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
           console.error("[MEDDPICC] Failed to save snapshot:", err);
         });
       }
+      // AI Evidence Challenge: when Champion or EB ≥75, verify with LLM
+      let aiChallenge: string | null = null;
+      const champScore = Number(data.championScore ?? 0);
+      const ebScore = Number(data.economicBuyerScore ?? 0);
+      if (champScore >= 75 || ebScore >= 75) {
+        try {
+          const meetings = await getMeetingsByClientId(clientId);
+          const recentSummary = meetings.slice(0, 3).map((m: any) => (m.aiMinutes || m.keyPoints || "").slice(0, 200)).join("\n") || "暂无拜访记录";
+          const dimension = champScore >= 75 ? "Champion" : "Economic Buyer";
+          const score = champScore >= 75 ? champScore : ebScore;
+          const evidence = champScore >= 75 ? (data.championNotes || "未填写") : (data.economicBuyerNotes || "未填写");
+          const challengeRes = await invokeLLM({
+            model: "gpt-5-mini",
+            messages: [
+              { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+              { role: "user", content: `${dimension}评分被录入为${score}/100。\nChampion的三个验证条件：(1)影响力（能推动EB）(2)个人动机（为什么他要帮我们）(3)实际行动（做了什么具体推动行为）。\n最近3次拜访摘要：${recentSummary}\n已录入的评分依据：${evidence}\n\n请在20字内判断：这个评分有足够的事实支撑吗？如果没有，指出哪个条件缺失。只输出判断结论，不解释框架。` }
+            ],
+            maxCompletionTokens: 100,
+          });
+          aiChallenge = String(challengeRes.choices?.[0]?.message?.content || "").trim() || null;
+        } catch (e) {
+          console.warn("[Command2] AI evidence challenge failed:", e);
+        }
+      }
+      // Event-driven: non-blocking refresh after MEDDPICC score change
+      setImmediate(() => triggerSingleClientRefresh(clientId));
+      return { aiChallenge };
     }),
     history: publicProcedure.input(z.object({ clientId: z.number(), weeks: z.number().default(4) })).query(async ({ input }) => {
       return getMeddpiccHistory(input.clientId, input.weeks);
@@ -546,6 +573,8 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
         occurredAt: new Date(input.occurredAt),
         createdBy: ctx.user.name || ctx.user.email || "已登录用户",
       });
+      // Event-driven: non-blocking refresh after new purchase signal
+      setImmediate(() => triggerSingleClientRefresh(input.clientId));
       return { id: (result as any).insertId };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
@@ -1486,11 +1515,33 @@ ${situationSnapshot}
       const executiveTitles = ["CEO", "CFO", "CIO", "CISO"];
       const executiveCoverageCount = contacts.filter(contact => executiveTitles.some(title => `${contact.title || ""} ${contact.department || ""}`.toUpperCase().includes(title))).length;
       const uncoveredPriorityLayers = Math.max(0, executiveTitles.length - executiveCoverageCount);
-      const reframeMeeting = meetings.find((meeting: any) => `${meeting.aiMinutes || ""}${meeting.keyPoints || ""}${meeting.summary || ""}`.includes("之前没这样想"));
+      // Challenger Reframe: LLM detection instead of keyword matching
+      let reframeEvidence: string | null = null;
+      const latestMeetingContent = meetings[0] ? (meetings[0].aiMinutes || meetings[0].keyPoints || "").slice(0, 500) : "";
+      if (latestMeetingContent.length > 100) {
+        try {
+          const reframeCheck = await invokeLLM({
+            model: "gpt-5-mini",
+            maxCompletionTokens: 60,
+            messages: [
+              { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+              { role: "user", content: `以下拜访摘要中是否出现了 Challenger Reframe 迹象？\n（Reframe定义：SAM提出了客户之前没考虑过的风险视角，客户表达了认知改变）\n拜访内容：${latestMeetingContent}\n只回答 yes 或 no，再用10字说明依据。` }
+            ],
+          });
+          const checkResult = String(reframeCheck.choices?.[0]?.message?.content || "");
+          if (checkResult.toLowerCase().startsWith("yes")) {
+            reframeEvidence = `最近拜访检测到 Reframe 迹象：${checkResult.slice(3).trim()}`;
+          }
+        } catch (e) {
+          // Fallback to keyword match if LLM fails
+          const reframeMeeting = meetings.find((meeting: any) => `${meeting.aiMinutes || ""}${meeting.keyPoints || ""}`.includes("之前没这样想"));
+          if (reframeMeeting) reframeEvidence = `拜访记录 ${new Date(reframeMeeting.meetingDate).toLocaleDateString("zh-CN")} 出现客户认知重构表述`;
+        }
+      }
       const accountMapBlock = buildAccountMapDiagnosticLayer({
         executiveCoverageCount,
         uncoveredPriorityLayers,
-        reframeEvidence: reframeMeeting ? `拜访记录 ${new Date(reframeMeeting.meetingDate).toLocaleDateString("zh-CN")} 出现客户认知重构表述` : null,
+        reframeEvidence,
       });
       const contradictionBlock = contradictions.length > 0
         ? `\n【⚠️ AI一致性矛盾检测（${contradictions.length}项）】\n${contradictions.join("\n")}`
@@ -2892,6 +2943,8 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         initiatedBy: input.initiatedBy,
         entrySource: "manual",
       });
+      // Event-driven: non-blocking single-client native refresh after meeting log saved
+      setImmediate(() => triggerSingleClientRefresh(input.clientId));
       return { id, aiMinutes, meddpiccSuggestions, hookTopicSuggestion, securityAngleSuggestion, detectedCompetitors };
     }),
     quickLog: publicProcedure.input(z.object({
@@ -5358,6 +5411,8 @@ ${input.aiSuggestion}
       const { goNoGo } = await import("../drizzle/schema"); const { eq } = await import("drizzle-orm"); const { opportunityId, clientId: _clientId, ...values } = input;
       const existing = await db.select({ id: goNoGo.id }).from(goNoGo).where(eq(goNoGo.opportunityId, opportunityId)).limit(1);
       if (existing[0]) await db.update(goNoGo).set({ ...values, updatedAt: new Date() }).where(eq(goNoGo.opportunityId, opportunityId)); else await db.insert(goNoGo).values({ opportunityId, ...values });
+      // Event-driven: non-blocking refresh after Go/No-Go gate change
+      setImmediate(() => triggerSingleClientRefresh(input.clientId));
       return { opportunityId };
     }),
     savePainMetric: protectedProcedure.input(z.object({ id: z.number().optional(), clientId: z.number(), opportunityId: z.number(), painType: z.string().max(100).nullable().optional(), painStatement: z.string().max(4000).nullable().optional(), affectedSponsor: z.string().max(100).nullable().optional(), currentBaseline: z.string().max(4000).nullable().optional(), targetImprovement: z.string().max(4000).nullable().optional(), valueLogic: z.string().max(4000).nullable().optional(), timeframe: z.string().max(50).nullable().optional(), annualValue: z.number().int().min(0).nullable().optional(), confidence: z.number().min(0).max(1).nullable().optional(), evidenceStrength: z.enum(["未验证", "口头确认", "书面确认", "高层确认"]).nullable().optional() })).mutation(async ({ input }) => {
@@ -5477,7 +5532,30 @@ ${input.aiSuggestion}
             } : null,
             painMetricsTotal: clientPains.length ? clientPains.reduce((total, item) => total + Number(item.annualValue ?? 0), 0) : null,
             goNoGoScore: gateScores.length ? Math.min(...gateScores) : null,
-            dealHealthScore: null,
+            dealHealthScore: (() => {
+              // Calculate Deal Health from available snapshot data
+              const { calculateDealHealth } = require('../shared/command2');
+              const s = score;
+              const threeWhyMin = whyFacts.length ? Math.min(
+                ...whyFacts.map((w: any) => Math.min(Number(w.whyChangeScore ?? 0), Number(w.whyNowScore ?? 0), Number(w.whyUsScore ?? 0)))
+              ) : null;
+              const execCount = clientCoverage.filter((item: any) => item.hasExecMeeting).length;
+              const input = {
+                relationshipPower: execCount >= 2 ? 4 : execCount > 0 ? 2 : null,
+                meddpicc: s ? Math.round((Number(s.championScore ?? 0) + Number(s.economicBuyerScore ?? 0) + Number(s.decisionCriteriaScore ?? 0) + Number(s.decisionProcessScore ?? 0) + Number(s.paperProcessScore ?? 0) + Number(s.implicatePainScore ?? 0) + Number(s.competitionScore ?? 0) + Number(s.metricsScore ?? 0)) / 8 / 20) : null,
+                metricsValue: s ? Math.round(Number(s.metricsScore ?? 0) / 20) : null,
+                champion: s ? Math.round(Number(s.championScore ?? 0) / 20) : null,
+                accountFit: accountByClient.get(client.id)?.strategicFitScore ?? null,
+                economicBuyer: s ? Math.round(Number(s.economicBuyerScore ?? 0) / 20) : null,
+                threeWhy: threeWhyMin != null ? Math.round(threeWhyMin / 20) : null,
+                decisionCriteria: s ? Math.round(Number(s.decisionCriteriaScore ?? 0) / 20) : null,
+                processPaper: s ? Math.round(Number(s.paperProcessScore ?? 0) / 20) : null,
+                competition: s ? Math.round(Number(s.competitionScore ?? 0) / 20) : null,
+                actionDiscipline: null, // No data source yet
+              };
+              const result = calculateDealHealth(input);
+              return result.score;
+            })(),
             activeOpportunities: activeOpps.map(opportunity => {
               const scoreItem = oppScore.get(opportunity.id) as any;
               const weakest = dimensionLabels.map(([key, label]) => ({ label, score: Number(scoreItem?.[key] ?? 0) })).sort((a, b) => a.score - b.score)[0];
@@ -6780,3 +6858,4 @@ ${input.extractedText.slice(0, 4000)}
 
 });
 export type AppRouter = typeof appRouter;
+import { triggerSingleClientRefresh } from "./eventDrivenRefresh";
