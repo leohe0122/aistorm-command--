@@ -4,6 +4,7 @@ import { SALES_METHODOLOGY_SYSTEM_PROMPT } from "./salesMethodology";
 
 const routersSource = readFileSync(new URL("./routers.ts", import.meta.url), "utf8");
 const arsenalSource = readFileSync(new URL("../client/src/pages/Arsenal.tsx", import.meta.url), "utf8");
+const workstationSource = readFileSync(new URL("../client/src/pages/ClientWorkstation.tsx", import.meta.url), "utf8");
 const opportunityRoomSource = readFileSync(new URL("../client/src/pages/OpportunityRoom.tsx", import.meta.url), "utf8");
 
 describe("武器库作战上下文", () => {
@@ -20,10 +21,15 @@ describe("武器库作战上下文", () => {
     expect(routersSource).toContain("customerFeedback");
   });
 
-  it("武器库允许按商机查看历史并记录人工采用反馈", () => {
-    expect(arsenalSource).toContain("关联商机（可选）");
-    expect(arsenalSource).toContain("客户反馈（可选）");
-    expect(arsenalSource).toContain("updateOutcome");
+  it("内容生成仅在客户与商机上下文中执行，武器库保持纯仓库边界", () => {
+    expect(arsenalSource).not.toContain("trpc.arsenalAI.generate.useMutation");
+    expect(arsenalSource).not.toContain("AI方案定制");
+    expect(workstationSource).toContain("ClientKnockMaterialGenerator");
+    expect(workstationSource).toContain("clientId: client.id");
+    expect(workstationSource).toContain("已保存到武器库历史");
+    expect(opportunityRoomSource).toContain("OpportunityMaterialGenerator");
+    expect(opportunityRoomSource).toContain("opportunityId: opportunity.id");
+    expect(opportunityRoomSource).toContain("保存到武器库历史");
   });
 
   it("商机作战室要求人工确认后才创建竞品反制 POD 任务", () => {

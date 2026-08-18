@@ -46,15 +46,15 @@ describe("作战工作流入口收敛", () => {
     expect(dailyBriefing).toContain("RSS 外部情报摘要");
   });
 
-  it("从商机作战室直达武器库，并携带可审核的客户与商机上下文", () => {
+  it("将商机作战材料留在 actions 工作区，不再跳转到武器库生成内容", () => {
     const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
     const arsenal = projectFile("client/src/pages/Arsenal.tsx");
-    expect(opportunityRoom).toContain("生成武器");
-    expect(opportunityRoom).toContain("tab: \"ai\"");
-    expect(opportunityRoom).toContain("clientName");
-    expect(arsenal).toContain("来自商机作战室的上下文");
-    expect(arsenal).toContain("未确认事项明确标为待验证假设");
-    expect(arsenal).toContain("clientId: selectedClientId");
+    expect(opportunityRoom).toContain("生成作战材料");
+    expect(opportunityRoom).toContain('data-room-section={section.id}');
+    expect(opportunityRoom).toContain("opportunity-material-generator");
+    expect(opportunityRoom).not.toContain('tab: "ai"');
+    expect(arsenal).not.toContain("AIArsenalTab");
+    expect(arsenal).not.toContain('value="ai"');
   });
 
   it("将 CRM 收敛至系统设置，并将 POD 定位为次级任务汇总", () => {
@@ -141,22 +141,26 @@ describe("作战工作流入口收敛", () => {
     expect(workstation).not.toContain("coachQuestions");
   });
 
-  it("将方案定制绑定统一方法论与商机 Deal Map 事实，并将 Champion/竞品能力迁回商机作战室", () => {
+  it("将内容生成留在客户与商机上下文，将武器库收敛为三类仓库能力", () => {
     const routers = projectFile("server/routers.ts");
     const diagnosticContext = projectFile("server/diagnosticContext.ts");
     const arsenal = projectFile("client/src/pages/Arsenal.tsx");
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
     const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
     expect(routers).toContain("opportunityId: z.number().optional()");
     expect(routers).toContain("getArsenalOpportunityContext");
     expect(routers).toContain("content: SALES_METHODOLOGY_SYSTEM_PROMPT");
     expect(diagnosticContext).toContain("当前商机的已入库 Deal Map 事实");
     expect(diagnosticContext).toContain("当前最弱 Win 因子");
-    expect(arsenal).toContain("const [selectedOpportunityId, setSelectedOpportunityId]");
-    expect(arsenal).toContain("关联商机（可选）");
-    expect(arsenal).toContain("opportunityId: selectedOpportunityId");
-    expect(arsenal).toContain('grid grid-cols-4');
+    expect(arsenal).toContain('grid w-full max-w-3xl grid-cols-3');
+    expect(arsenal).not.toContain("AI方案定制");
+    expect(arsenal).not.toContain("trpc.arsenalAI.generate.useMutation");
     expect(arsenal).not.toContain('value="champion"');
     expect(arsenal).not.toContain('value="killsheets"');
+    expect(workstation).toContain("function ClientKnockMaterialGenerator");
+    expect(workstation).toContain("trpc.arsenalAI.generate.useMutation");
+    expect(workstation).toContain("clientId: client.id");
+    expect(workstation).toContain("进入商机后请在商机作战室生成上下文化内容");
     expect(opportunityRoom).toContain("Champion 突破话术");
     expect(opportunityRoom).toContain("竞品对比作战卡");
     expect(opportunityRoom).toContain("启动 Champion 培育计划");
@@ -165,16 +169,23 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain("激活属地资源与商务通路");
   });
 
-  it("将 AI 作战材料生成设为商机行动区主入口，并保留武器库的上下文优先提示", () => {
+  it("将 AI 作战材料分层为客户 0→1 敲门材料与商机 1→N 赢单材料", () => {
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
     const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
     const arsenal = projectFile("client/src/pages/Arsenal.tsx");
+    const layout = projectFile("client/src/components/CommandLayout.tsx");
+    expect(workstation).toContain("生成敲门材料");
+    expect(workstation).toContain("0→1 敲门材料");
+    expect(workstation).toContain("已保存到武器库历史");
     expect(opportunityRoom).toContain("AI 作战材料生成");
     expect(opportunityRoom).toContain("trpc.arsenalAI.generate.useMutation");
     expect(opportunityRoom).toContain("opportunityId: opportunity.id");
     expect(opportunityRoom).toContain("保存到武器库历史");
     expect(opportunityRoom).toContain("转为 POD 任务");
     expect(opportunityRoom).toContain('sourceType: "manual"');
-    expect(arsenal).toContain("建议在「商机作战室 → 行动任务」中使用");
+    expect(arsenal).toContain("产品文档管理 · 成功案例库 · 智能报价工具");
+    expect(arsenal).not.toContain("AI方案定制");
+    expect(layout).toContain("产品文档·成功案例库·报价工具");
   });
 
   it("让竞品反制任务、POD 来源 Review 深链与本周闭环率形成可解释的产品化闭环", () => {

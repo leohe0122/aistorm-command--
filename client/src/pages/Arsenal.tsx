@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from "react";
-import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -13,8 +12,8 @@ import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 import {
-  FileText, Upload, Trash2, Search, Plus, Bot, Wand2,
-  FileDown, ChevronDown, ChevronUp, Copy, Check,
+  FileText, Upload, Trash2, Search, Plus,
+  FileDown, ChevronDown, ChevronUp, Check,
   ShoppingCart, X, Calculator, Package, Swords, Shield,
   Eye, Sparkles, ExternalLink, Loader2, Tag, FilePlus2, Files, Folder, FolderOpen, FolderPlus, Pencil
 } from "lucide-react";
@@ -949,205 +948,6 @@ function ProductDocsTab() {
     </div>
   );
 }
-// ─── AI方案定制 Tab ──────────────────────────────────────────────────────────
-
-type WeaponContext = { clientId?: number; opportunityId?: number; clientName?: string; opportunityName?: string; stage?: string; product?: string; competitor?: string; focus?: string };
-
-function AIArsenalTab({ weaponContext }: { weaponContext?: WeaponContext }) {
-  const [category, setCategory] = useState<"方案类" | "弹药类" | "话术类">("方案类");
-  const [prompt, setPrompt] = useState("");
-  const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
-  const [targetContact, setTargetContact] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [result, setResult] = useState<{ id: number; content: string; title: string } | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [hydratedContextKey, setHydratedContextKey] = useState("");
-  const [feedbackById, setFeedbackById] = useState<Record<number, string>>({});
-  const [selectedClientId, setSelectedClientId] = useState<number | undefined>(weaponContext?.clientId);
-  const [selectedOpportunityId, setSelectedOpportunityId] = useState<number | undefined>(weaponContext?.opportunityId);
-
-  const { data: docs = [] } = trpc.productDocs.list.useQuery(undefined);
-  const { data: clients = [] } = trpc.clients.list.useQuery();
-  const { data: opportunities = [] } = trpc.opportunities.listByClient.useQuery({ clientId: selectedClientId || 0 }, { enabled: Boolean(selectedClientId) });
-  const { data: history = [], refetch: refetchHistory } = trpc.arsenalAI.list.useQuery(selectedOpportunityId ? { clientId: selectedClientId, opportunityId: selectedOpportunityId } : selectedClientId ? { clientId: selectedClientId } : undefined);
-  const generateMut = trpc.arsenalAI.generate.useMutation({
-    onSuccess: (data) => { setResult(data); refetchHistory(); },
-    onError: (e) => toast.error("生成失败: " + e.message),
-  });
-  const deleteMut = trpc.arsenalAI.delete.useMutation({
-    onSuccess: () => { toast.success("已删除"); refetchHistory(); },
-  });
-  const outcomeMut = trpc.arsenalAI.updateOutcome.useMutation({
-    onSuccess: () => { toast.success("已记录采用状态与客户反馈；下次生成仅将其作为待验证参考"); refetchHistory(); },
-    onError: (error) => toast.error(`更新方案处置记录失败：${error.message}`),
-  });
-
-  const contextKey = [weaponContext?.clientId, weaponContext?.opportunityId, weaponContext?.opportunityName, weaponContext?.stage, weaponContext?.product, weaponContext?.competitor, weaponContext?.focus].filter(Boolean).join("|");
-  useEffect(() => {
-    if (!contextKey || hydratedContextKey === contextKey) return;
-    const details = [
-      weaponContext?.clientName ? `客户：${weaponContext.clientName}` : "",
-      weaponContext?.opportunityName ? `商机：${weaponContext.opportunityName}` : "",
-      weaponContext?.stage ? `当前阶段：${weaponContext.stage}` : "",
-      weaponContext?.product ? `关联产品：${weaponContext.product}` : "",
-      weaponContext?.competitor ? `已确认竞品：${weaponContext.competitor}` : "",
-      weaponContext?.focus ? `当前需要补强的赢单证据：${weaponContext.focus}` : "",
-    ].filter(Boolean).join("\n");
-    setPrompt(`${details}\n\n请基于以上已入库商机事实，生成可供负责人审核的${weaponContext?.competitor ? "竞争材料或差异化方案" : "方案材料"}。请将未确认事项明确标为待验证假设，不要编造客户承诺或数据。`);
-    if (weaponContext?.competitor) setCategory("弹药类");
-    setHydratedContextKey(contextKey);
-  }, [contextKey, hydratedContextKey, weaponContext]);
-
-  const handleGenerate = async () => {
-    if (!prompt.trim()) { toast.error("请描述你的需求"); return; }
-    setGenerating(true); setResult(null);
-    try {
-      const linkedOpportunity = (opportunities as any[]).find((item: any) => item.id === selectedOpportunityId);
-      await generateMut.mutateAsync({ category, prompt: prompt.trim(), docIds: selectedDocIds.length > 0 ? selectedDocIds : undefined, clientId: selectedClientId, opportunityId: selectedOpportunityId, targetContact: targetContact || undefined, title: linkedOpportunity ? `${(clients as any[]).find((item: any) => item.id === selectedClientId)?.name || "客户"} · ${linkedOpportunity.name} · ${category}` : undefined });
-    } finally { setGenerating(false); }
-  };
-
-  const handleCopy = () => {
-    if (!result) return;
-    navigator.clipboard.writeText(result.content);
-    setCopied(true); setTimeout(() => setCopied(false), 2000);
-  };
-
-  const toggleDoc = (id: number) => setSelectedDocIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-
-  const categoryConfig: Record<string, { color: string; label: string; desc: string }> = {
-    "方案类": { color: "bg-blue-500/10 text-blue-600 border-blue-200", label: "技术方案", desc: "生成面向客户的技术解决方案文档" },
-    "弹药类": { color: "bg-orange-500/10 text-orange-600 border-orange-200", label: "竞争弹药", desc: "生成竞争差异化亮点与对比材料" },
-    "话术类": { color: "bg-green-500/10 text-green-600 border-green-200", label: "销售话术", desc: "生成销售沟通话术与应对脚本" },
-  };
-
-  const placeholders: Record<string, string> = {
-    "方案类": "例：我要给华大基因的IT总监写一份TrustOne XDR的技术方案，他们目前用的是传统防病毒，主要痛点是告警太多处理不过来...",
-    "弹药类": "例：我在跟Palo Alto竞争，客户是金融行业，对方主打SASE，帮我生成对比弹药...",
-    "话术类": "例：我要拜访某银行的安全负责人，他对预算比较敏感，帮我准备开场白和价值主张话术...",
-  };
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="space-y-4">
-        {weaponContext?.opportunityName && <div className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.06] p-3"><div className="flex items-center gap-2 text-xs font-semibold text-cyan-100"><Sparkles className="h-3.5 w-3.5" />来自商机作战室的上下文</div><p className="mt-1 text-[11px] leading-5 text-slate-300">{weaponContext.clientName} · {weaponContext.opportunityName}{weaponContext.stage ? ` · ${weaponContext.stage}` : ""}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">已预填当前作战事实；请在生成前审阅并补充需求，AI 不会把未确认信息写成客户结论。</p></div>}
-        <div className="grid gap-3 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.03] p-3 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-medium">关联客户（可选）</label><Select value={selectedClientId ? String(selectedClientId) : "none"} onValueChange={value => { const nextClientId = value === "none" ? undefined : Number(value); setSelectedClientId(nextClientId); setSelectedOpportunityId(undefined); }}><SelectTrigger className="h-9 text-xs"><SelectValue placeholder="不关联客户" /></SelectTrigger><SelectContent><SelectItem value="none">不关联客户</SelectItem>{(clients as any[]).map((item: any) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}</SelectContent></Select></div><div><label className="mb-1 block text-xs font-medium">关联商机（可选）</label><Select value={selectedOpportunityId ? String(selectedOpportunityId) : "none"} disabled={!selectedClientId} onValueChange={value => setSelectedOpportunityId(value === "none" ? undefined : Number(value))}><SelectTrigger className="h-9 text-xs"><SelectValue placeholder={selectedClientId ? "选择商机" : "请先选择客户"} /></SelectTrigger><SelectContent><SelectItem value="none">不关联商机</SelectItem>{(opportunities as any[]).map((item: any) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}</SelectContent></Select></div><p className="sm:col-span-2 text-[10px] leading-4 text-slate-500">关联商机后，历史材料按该商机筛选；下一次生成只参考人工标记的采用状态和客户反馈，并始终标为待验证上下文。</p></div>
-        <div>
-          <label className="text-sm font-medium mb-2 block">输出类型</label>
-          <div className="grid grid-cols-3 gap-2">
-            {(["方案类", "弹药类", "话术类"] as const).map(cat => (
-              <button key={cat} onClick={() => setCategory(cat)}
-                className={`p-3 rounded-lg border text-sm font-medium transition-all text-left ${category === cat ? categoryConfig[cat].color + " border-current" : "border-border hover:border-muted-foreground"}`}>
-                <div className="font-semibold">{categoryConfig[cat].label}</div>
-                <div className="text-xs opacity-70 mt-0.5">{categoryConfig[cat].desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label className="text-sm font-medium mb-1 block">需求描述 *</label>
-          <Textarea rows={5} value={prompt} onChange={e => setPrompt(e.target.value)} placeholder={placeholders[category]} />
-        </div>
-        <div>
-          <label className="text-sm font-medium mb-1 block">目标联系人（可选）</label>
-          <Input value={targetContact} onChange={e => setTargetContact(e.target.value)} placeholder="例：IT总监 / 安全负责人 / CTO" />
-        </div>
-        <div>
-          <label className="text-sm font-medium mb-2 block">
-            参考产品文档（可选，{selectedDocIds.length > 0 ? `已选 ${selectedDocIds.length} 份` : "未选择则使用通用知识"}）
-          </label>
-          {(docs as any[]).length === 0 ? (
-            <p className="text-xs text-muted-foreground">暂无文档，请先在"产品文档仓库"上传</p>
-          ) : (
-            <div className="space-y-1 max-h-36 overflow-y-auto border rounded-lg p-2">
-              {(docs as any[]).map((doc) => (
-                <label key={doc.id} className="flex items-center gap-2 p-1.5 rounded hover:bg-muted cursor-pointer text-sm">
-                  <input type="checkbox" checked={selectedDocIds.includes(doc.id)} onChange={() => toggleDoc(doc.id)} className="rounded" />
-                  <span className="flex-1 truncate">{doc.title}</span>
-                  {doc.productLine && <Badge variant="secondary" className="text-xs shrink-0">{doc.productLine}</Badge>}
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-        <Button onClick={handleGenerate} disabled={generating || !prompt.trim()} className="w-full gap-2" size="lg">
-          {generating ? <Spinner className="h-4 w-4" /> : <Wand2 className="h-4 w-4" />}
-          {generating ? "AI 生成中..." : "生成内容"}
-        </Button>
-      </div>
-
-      <div className="space-y-4">
-        {generating && (
-          <div className="flex flex-col items-center justify-center h-64 gap-3 border rounded-lg bg-muted/30">
-            <Spinner className="h-8 w-8 text-primary" />
-            <p className="text-sm text-muted-foreground">AI 正在生成{categoryConfig[category].label}...</p>
-          </div>
-        )}
-        {result && !generating && (
-          <div className="border rounded-lg overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium truncate">{result.title}</span>
-                <Badge variant="outline" className="text-xs shrink-0">{category}</Badge>
-              </div>
-              <button onClick={handleCopy} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors p-1 rounded shrink-0">
-                {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                {copied ? "已复制" : "复制"}
-              </button>
-            </div>
-            <div className="p-4 max-h-[500px] overflow-y-auto prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown>{result.content}</ReactMarkdown>
-            </div>
-          </div>
-        )}
-        {!result && !generating && (
-          <div className="flex flex-col items-center justify-center h-64 gap-3 border rounded-lg border-dashed text-muted-foreground">
-            <Bot className="h-12 w-12 opacity-20" />
-            <p className="text-sm">填写需求后点击"生成内容"</p>
-          </div>
-        )}
-        <div className="border rounded-lg overflow-hidden">
-          <button onClick={() => setHistoryOpen(v => !v)} className="w-full flex items-center justify-between px-4 py-2.5 bg-muted/30 hover:bg-muted/50 transition-colors text-sm font-medium">
-            <span>历史生成记录（{(history as any[]).length}）</span>
-            {historyOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
-          {historyOpen && (
-            <div className="divide-y max-h-64 overflow-y-auto">
-              {(history as any[]).length === 0 ? (
-                <p className="text-xs text-muted-foreground p-4 text-center">暂无历史记录</p>
-              ) : (
-                (history as any[]).map((h) => (
-                  <div key={h.id} className="p-3 hover:bg-muted/30 group">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs shrink-0">{h.category}</Badge>
-                        <span className="text-sm truncate">{h.title}</span>
-                        <Badge variant={h.adoptionStatus === "已采用" ? "default" : h.adoptionStatus === "未采用" ? "secondary" : "outline"} className="text-[10px] shrink-0">{h.adoptionStatus || "待确认"}</Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">{h.prompt}</p>
-                      {h.opportunityId && <p className="mt-1 text-[10px] text-primary/80">商机 #{h.opportunityId} · 此处置记录仅供后续方案待验证参考</p>}
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <button onClick={() => setResult({ id: h.id, content: h.generatedContent, title: h.title })} className="text-xs text-primary hover:underline">查看</button>
-                      <Select value={h.adoptionStatus || "待确认"} onValueChange={value => outcomeMut.mutate({ id: h.id, adoptionStatus: value as "待确认" | "已采用" | "未采用", customerFeedback: feedbackById[h.id] ?? h.customerFeedback ?? undefined })}><SelectTrigger className="h-7 w-24 text-[10px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="待确认">待确认</SelectItem><SelectItem value="已采用">已采用</SelectItem><SelectItem value="未采用">未采用</SelectItem></SelectContent></Select>
-                      <Input value={feedbackById[h.id] ?? h.customerFeedback ?? ""} onChange={event => setFeedbackById(prev => ({ ...prev, [h.id]: event.target.value }))} onBlur={() => { const feedback = feedbackById[h.id]; if (feedback !== undefined && feedback !== (h.customerFeedback || "")) outcomeMut.mutate({ id: h.id, adoptionStatus: h.adoptionStatus || "待确认", customerFeedback: feedback }); }} placeholder="客户反馈（可选）" className="h-7 min-w-40 flex-1 text-[10px]" />
-                      <button onClick={() => deleteMut.mutate({ id: h.id })} className="text-muted-foreground hover:text-destructive p-1">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── 报价工具 Tab ────────────────────────────────────────────────────────────
 
 type CartItem = {
@@ -1374,36 +1174,20 @@ function QuoteToolTab() {
 // ─── 主页面 ──────────────────────────────────────────────────────────────────
 
 export default function Arsenal() {
-  const [location] = useLocation();
-  const params = new URLSearchParams(location.split("?")[1] || "");
-  const contextClientId = Number(params.get("clientId"));
-  const weaponContext: WeaponContext | undefined = Number.isFinite(contextClientId) && contextClientId > 0 ? {
-    clientId: contextClientId,
-    opportunityId: Number(params.get("opportunityId")) || undefined,
-    clientName: params.get("clientName") || undefined,
-    opportunityName: params.get("opportunity") || undefined,
-    stage: params.get("stage") || undefined,
-    product: params.get("product") || undefined,
-    competitor: params.get("competitor") || undefined,
-    focus: params.get("focus") || undefined,
-  } : undefined;
-  const initialTab = params.get("tab") === "ai" ? "ai" : "docs";
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">武器库</h1>
-        <p className="text-muted-foreground text-sm mt-1">产品文档管理 · 成功案例库 · 上下文化 AI 方案定制 · 智能报价工具</p>
+        <p className="text-muted-foreground text-sm mt-1">产品文档管理 · 成功案例库 · 智能报价工具</p>
       </div>
-      <Tabs key={initialTab} defaultValue={initialTab} className="space-y-4">
-        <TabsList className="grid grid-cols-4 w-full max-w-4xl">
+      <Tabs defaultValue="docs" className="space-y-4">
+        <TabsList className="grid w-full max-w-3xl grid-cols-3">
           <TabsTrigger value="docs" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" /> 产品文档</TabsTrigger>
           <TabsTrigger value="cases" className="gap-1.5 text-xs"><BookOpen className="h-3.5 w-3.5" /> 成功案例库</TabsTrigger>
-          <TabsTrigger value="ai" className="gap-1.5 text-xs"><Bot className="h-3.5 w-3.5" /> AI方案定制</TabsTrigger>
           <TabsTrigger value="quote" className="gap-1.5 text-xs"><Calculator className="h-3.5 w-3.5" /> 报价工具</TabsTrigger>
         </TabsList>
         <TabsContent value="docs"><ProductDocsTab /></TabsContent>
         <TabsContent value="cases"><CaseStudiesTab /></TabsContent>
-        <TabsContent value="ai"><div className="mb-4 rounded-lg border border-cyan-400/25 bg-cyan-400/[0.06] px-4 py-3 text-xs leading-5 text-slate-300"><span className="font-semibold text-cyan-100">建议在「商机作战室 → 行动任务」中使用。</span> 该入口会自动注入商机的 MEDDPICC、Deal Map、竞争和已确认历史处置，生成质量更高；此处保留为无明确商机时的通用备用入口。</div><AIArsenalTab weaponContext={weaponContext} /></TabsContent>
         <TabsContent value="quote"><QuoteToolTab /></TabsContent>
       </Tabs>
     </div>

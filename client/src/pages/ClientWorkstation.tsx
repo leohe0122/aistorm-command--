@@ -428,6 +428,51 @@ function AccountMapPanel({ clientId }: { clientId: number }) {
   </section>;
 }
 
+function ClientKnockMaterialGenerator({ client }: { client: any }) {
+  const [category, setCategory] = useState<"方案类" | "弹药类" | "话术类">("方案类");
+  const [prompt, setPrompt] = useState("");
+  const [result, setResult] = useState<{ id: number; content: string; title: string } | null>(null);
+  const generateMutation = trpc.arsenalAI.generate.useMutation({
+    onSuccess: (data) => {
+      setResult(data);
+      toast.success("敲门材料已生成并保存到武器库历史");
+    },
+    onError: (error) => toast.error(`敲门材料生成失败：${error.message}`),
+  });
+  const generate = () => {
+    if (!prompt.trim()) {
+      toast.warning("请描述本次拜访目标或客户当前最关注的议题");
+      return;
+    }
+    generateMutation.mutate({
+      category,
+      prompt: prompt.trim(),
+      clientId: client.id,
+      title: `${client.name} · 0→1 敲门材料 · ${category}`,
+    });
+  };
+
+  return (
+    <section className="mx-5 mb-5 rounded-xl border border-violet-400/25 bg-violet-400/[0.045] p-4 lg:mx-7 lg:mb-7">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-violet-100"><Sparkles className="h-4 w-4" />生成敲门材料</div>
+          <p className="mt-1 text-xs leading-5 text-slate-400">适用于建图/进门阶段，基于客户痛点与关系覆盖生成敲门材料。进入商机后请在商机作战室生成上下文化内容。</p>
+        </div>
+        <span className="w-fit rounded-full border border-violet-400/25 bg-violet-400/10 px-2 py-1 text-[10px] font-semibold text-violet-200">0→1 · {client.name}</span>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {(["方案类", "弹药类", "话术类"] as const).map(item => (
+          <Button key={item} size="sm" variant={category === item ? "default" : "outline"} onClick={() => setCategory(item)} className={cn("h-8 text-xs", category === item ? "bg-violet-500 text-white hover:bg-violet-400" : "border-violet-400/25 text-violet-100 hover:bg-violet-400/10")}>{item}</Button>
+        ))}
+      </div>
+      <Textarea value={prompt} onChange={event => setPrompt(event.target.value)} placeholder={`描述“${client.name}”本次拜访目标或当前最关注的议题。未入库的客户意图会被标为待验证，不会被写成事实。`} className="mt-3 min-h-[88px] resize-y border-slate-700 bg-slate-950/55 text-xs" />
+      <div className="mt-3 flex justify-end"><Button onClick={generate} disabled={generateMutation.isPending || !prompt.trim()} className="gap-1.5 bg-violet-500 text-white hover:bg-violet-400"><Sparkles className="h-3.5 w-3.5" />{generateMutation.isPending ? "生成中…" : "生成敲门材料"}</Button></div>
+      {result && <div className="mt-4 overflow-hidden rounded-lg border border-violet-400/20 bg-slate-950/60"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-violet-400/15 px-3 py-2"><div className="text-xs font-medium text-violet-100">{result.title}</div><span className="rounded border border-violet-400/20 px-1.5 py-0.5 text-[10px] text-violet-200">{category}</span></div><div className="prose prose-invert prose-sm max-w-none p-4 text-xs"><ReactMarkdown>{result.content}</ReactMarkdown></div><div className="flex justify-end border-t border-violet-400/15 px-3 py-3"><Button size="sm" variant="outline" disabled className="h-8 border-violet-400/25 text-xs text-violet-100 disabled:opacity-100">已保存到武器库历史</Button></div></div>}
+    </section>
+  );
+}
+
 export default function ClientWorkstation() {
   const [, params] = useRoute("/clients/:clientId");
   const [, setLocation] = useLocation();
@@ -512,6 +557,7 @@ export default function ClientWorkstation() {
             <div className="flex min-w-0 gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-400/10 text-cyan-200"><Building2 className="h-6 w-6" /></div><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h1 className="text-2xl font-semibold tracking-tight text-slate-50">{client.name}</h1><span className="rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-200">客户作战台</span></div><p className="text-sm text-slate-400">{[client.industry, client.country, client.stage].filter(Boolean).join(" · ")}</p><p className="mt-2 text-xs text-slate-500">最后有效客户对话：{latestMeeting ? formatDate(latestMeeting.meetingDate) : "暂无入库拜访记录"}</p></div></div>
             <div className="flex flex-col items-end gap-3"><div className="flex gap-2"><PreVisitInsightButton client={client} /><Button variant="outline" size="sm" className="text-purple-300 border-purple-500/30 hover:bg-purple-500/10" onClick={handleCoachSelfCheck}><Sparkles className="h-3.5 w-3.5 mr-1" />AI 自检</Button></div><div className="grid grid-cols-3 gap-2 sm:min-w-[330px]"><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-cyan-200">{contacts.length}</div><div className="text-[10px] text-slate-500">关键人</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-amber-200">{activeOpportunities.length}</div><div className="text-[10px] text-slate-500">在打商机</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-emerald-200">{meetings.length}</div><div className="text-[10px] text-slate-500">入库对话</div></div></div></div>
           </div>{/* AI Coach fact backfill */}{showCoachSelfCheck && <div className="mt-4 rounded-xl border border-purple-500/30 bg-purple-950/20 p-4"><div className="flex items-center justify-between mb-1"><span className="text-sm font-medium text-purple-300 flex items-center gap-1.5"><Sparkles className="h-4 w-4" /> AI 事实补录引导</span><button onClick={() => setShowCoachSelfCheck(false)} className="text-muted-foreground hover:text-foreground text-sm">&times;</button></div><p className="mb-3 text-xs text-slate-400">这不是让你填写主观判断。请只补录可回溯的客户原话、日期、关键人或材料来源；补录后 AI 才会重新判断。</p>{coachBackfillItems ? coachBackfillItems.length ? <div className="space-y-2">{coachBackfillItems.map((item, index) => <div key={`${item.target}-${index}`} className="rounded-lg border border-purple-400/15 bg-slate-950/35 p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-sm font-medium text-slate-100">{item.title}</p><p className="mt-1 text-xs leading-5 text-slate-400"><span className="text-purple-200">需有证据：</span>{item.evidenceRequired}</p><p className="mt-1 text-xs text-slate-500">录入提示：{item.captureHint}</p></div><Button size="sm" variant="outline" className="shrink-0 border-purple-500/30 text-purple-200 hover:bg-purple-500/10" onClick={() => openFactCapture(item.target)}>去补录事实</Button></div></div>)}</div> : <div className="rounded-lg border border-dashed border-slate-700 px-3 py-4 text-xs text-slate-400">当前没有可生成的补录引导。请先记录一条客户对话或检查已有事实。</div> : <div className="text-xs text-muted-foreground">正在根据已入库事实生成补录清单...</div>}</div>}
+          {client.stage !== "进入商机" && <ClientKnockMaterialGenerator client={client} />}
           <ProductCoverageBar clientId={clientId} />
         </header>
 

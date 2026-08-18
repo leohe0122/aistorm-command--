@@ -976,3 +976,9 @@
 - [x] 在商机内展示生成内容，并支持保存到武器库历史和经人工确认转为 SAM POD 任务
 - [x] 在武器库 AI 方案定制页说明商机作战室为上下文感知的优先入口
 - [x] 完成回归、生产验证与 GitHub 同步
+
+## AI 作战材料入口最终分层
+- [ ] 从 Arsenal 移除 AI 方案定制 Tab，使武器库仅保留产品文档、成功案例库和报价工具
+- [ ] 在 ClientWorkstation 嵌入 0→1 敲门材料生成，自动传入 clientId 而不传 opportunityId
+- [ ] 保持 OpportunityRoom actions 中的 1→N 赢单材料生成，自动传入 clientId 与 opportunityId 并可转 POD
+- [ ] 完成登录态截图核验、回归、生产验证与 GitHub 同步
