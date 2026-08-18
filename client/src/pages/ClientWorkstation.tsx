@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { KeyContactsPanel, ProductCoverageBar } from "./BattleMap";
+import PreVisitInsightButton from "@/components/PreVisitInsightButton";
 
 const CUSTOMER_STAGES = ["建图", "进门", "定痛", "找人", "进入商机"];
 
@@ -452,7 +453,7 @@ export default function ClientWorkstation() {
         <header className="overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-950/65 shadow-[0_18px_55px_rgba(0,0,0,0.2)] backdrop-blur-sm">
           <div className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-start lg:justify-between lg:px-7 lg:py-6">
             <div className="flex min-w-0 gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-400/10 text-cyan-200"><Building2 className="h-6 w-6" /></div><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h1 className="text-2xl font-semibold tracking-tight text-slate-50">{client.name}</h1><span className="rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-200">客户作战台</span></div><p className="text-sm text-slate-400">{[client.industry, client.country, client.stage].filter(Boolean).join(" · ")}</p><p className="mt-2 text-xs text-slate-500">最后有效客户对话：{latestMeeting ? formatDate(latestMeeting.meetingDate) : "暂无入库拜访记录"}</p></div></div>
-            <div className="grid grid-cols-3 gap-2 sm:min-w-[330px]"><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-cyan-200">{contacts.length}</div><div className="text-[10px] text-slate-500">关键人</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-amber-200">{activeOpportunities.length}</div><div className="text-[10px] text-slate-500">在打商机</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-emerald-200">{meetings.length}</div><div className="text-[10px] text-slate-500">入库对话</div></div></div>
+            <div className="flex flex-col items-end gap-3"><PreVisitInsightButton client={client} /><div className="grid grid-cols-3 gap-2 sm:min-w-[330px]"><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-cyan-200">{contacts.length}</div><div className="text-[10px] text-slate-500">关键人</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-amber-200">{activeOpportunities.length}</div><div className="text-[10px] text-slate-500">在打商机</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-emerald-200">{meetings.length}</div><div className="text-[10px] text-slate-500">入库对话</div></div></div></div>
           </div>
           <ProductCoverageBar clientId={clientId} />
         </header>

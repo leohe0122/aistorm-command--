@@ -878,7 +878,7 @@
 ## 后续功能与导航收敛队列（在原生研判完成后执行）
 - [x] 将 ActionCommand 的行动建议并入客户作战台任务区域并移除独立入口
 - [x] 删除 QuickReview 独立入口，将其 0→1/1→N Review 能力并入客户/商机作战台
-- [ ] 将 AIInsights 重定位为客户作战台内的“拜访前洞察”入口并移除主导航
+- [x] 将 AIInsights 重定位为客户作战台内的“拜访前洞察”入口并移除主导航
 - [ ] 将 OpportunityPrediction 降级为商机作战室内的 AI 预测展开区域
 - [ ] 将 IntelRadar 缩减为客户作战台内的外部事件信号，RSS 整合进 DailyBriefing
 - [ ] 在商机作战室加入“生成武器”直达 Arsenal 的入口

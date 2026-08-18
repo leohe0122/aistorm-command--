@@ -20,7 +20,16 @@ describe("作战工作流入口收敛", () => {
     expect(workstation).toContain('client.stage !== "进入商机" && <ClientRelationshipReview');
   });
 
-  it("不再注册或展示独立行动指令与快速 Review 入口", () => {
+  it("将拜访前洞察保留在客户作战台，并继续支持 1-Pager 与策略回写", () => {
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
+    const insightEntry = projectFile("client/src/components/PreVisitInsightButton.tsx");
+    expect(workstation).toContain("<PreVisitInsightButton client={client} />");
+    expect(insightEntry).toContain("trpc.insights.generate.useMutation");
+    expect(insightEntry).toContain("trpc.insights.applyStrategy.useMutation");
+    expect(insightEntry).toContain("生成拜访前洞察");
+  });
+
+  it("不再注册或展示独立行动指令、快速 Review 与洞察入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");
     expect(app).not.toContain('path="/action-command"');
@@ -29,5 +38,8 @@ describe("作战工作流入口收敛", () => {
     expect(app).not.toContain('path="/quick-review"');
     expect(app).not.toContain('import QuickReview');
     expect(layout).not.toContain('path: "/quick-review"');
+    expect(app).not.toContain('path="/ai-insights"');
+    expect(app).not.toContain('import AIInsights');
+    expect(layout).not.toContain('path: "/ai-insights"');
   });
 });

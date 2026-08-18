@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import AIStormLogo from "@/components/AIStormLogo";
 import { cn } from "@/lib/utils";
 import {
-  Map, Radio, FileText, Users, MessageSquare,
+  Map, Radio, Users, MessageSquare,
   ChevronRight, Database, Bell, Crosshair, LogOut, LayoutDashboard, Settings, Plus
 } from "lucide-react";
 import { UserCog, KeyRound } from "lucide-react";
@@ -18,7 +18,6 @@ const navItems = [
   { path: "/dashboard", label: "AD 指挥台", icon: LayoutDashboard, desc: "Portfolio Review 看板" },
   { path: "/battle-map", label: "战场地图", icon: Map, desc: "MEDDPICC看板" },
   { path: "/intel-radar", label: "客户情报雷达", icon: Radio, desc: "信号监控与解读" },
-  { path: "/ai-insights", label: "AI洞察简报", icon: FileText, desc: "拜访前客户洞察 1-Pager" },
   { path: "/meeting-minutes", label: "拜访作战日志", icon: MessageSquare, desc: "拜访录入·AI解析·更新战场" },
   { path: "/pod-center", label: "POD协同中枢", icon: Users, desc: "角色任务视图" },
   { path: "/arsenal", label: "武器库 Arsenal", icon: Crosshair, desc: "产品文档·AI方案·竞品阻击包" },
