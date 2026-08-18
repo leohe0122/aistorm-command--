@@ -304,6 +304,46 @@ function DealBattleTools({ client, opportunity, contacts }: { client: any; oppor
   </section>;
 }
 
+function OpportunityMaterialGenerator({ client, opportunity }: { client: any; opportunity: any }) {
+  const [, navigate] = useLocation();
+  const [category, setCategory] = useState<"方案类" | "弹药类" | "话术类">("方案类");
+  const [prompt, setPrompt] = useState("");
+  const [result, setResult] = useState<{ id: number; content: string; title: string } | null>(null);
+  const generateMutation = trpc.arsenalAI.generate.useMutation({
+    onSuccess: (data) => {
+      setResult(data);
+      toast.success("作战材料已生成并自动保存到武器库历史");
+    },
+    onError: (error) => toast.error(`作战材料生成失败：${error.message}`),
+  });
+  const taskMutation = trpc.pod.addTask.useMutation({
+    onSuccess: () => {
+      toast.success("作战材料已转为 SAM POD 任务，请在协同页确认执行");
+      navigate(`/pod-center?oppId=${opportunity.id}&oppName=${encodeURIComponent(opportunity.name)}`);
+    },
+    onError: (error) => toast.error(`创建 POD 任务失败：${error.message}`),
+  });
+  const materialTitle = result ? (result.content.split("\n").map(line => line.replace(/^#+\s*/, "").trim()).find(Boolean) || result.title).slice(0, 80) : "";
+  const categoryLabels: Record<typeof category, string> = { "方案类": "方案类", "弹药类": "弹药类", "话术类": "话术类" };
+  const generate = () => {
+    if (!prompt.trim()) { toast.warning("请描述针对当前商机的材料需求"); return; }
+    generateMutation.mutate({
+      category,
+      prompt: prompt.trim(),
+      clientId: client.id,
+      opportunityId: opportunity.id,
+      title: `${client.name} · ${opportunity.name} · ${category}`,
+    });
+  };
+  return <section className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.05] p-4">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex items-center gap-2 text-sm font-semibold text-cyan-100"><Sparkles className="h-4 w-4" />AI 作战材料生成</div><p className="mt-1 text-xs leading-5 text-slate-400">已自动注入当前商机的 MEDDPICC、Deal Map、竞争与已确认历史处置；数据不足会保留为待验证假设。</p></div><Badge variant="outline" className="w-fit border-cyan-400/30 text-cyan-200">{client.name} · {opportunity.name}</Badge></div>
+    <div className="mt-4 flex flex-wrap gap-2">{(["方案类", "弹药类", "话术类"] as const).map(item => <Button key={item} size="sm" variant={category === item ? "default" : "outline"} onClick={() => setCategory(item)} className={cn("h-8 text-xs", category === item ? "bg-cyan-500 text-slate-950 hover:bg-cyan-400" : "border-cyan-400/25 text-cyan-100 hover:bg-cyan-400/10")}>{categoryLabels[item]}</Button>)}</div>
+    <Textarea value={prompt} onChange={event => setPrompt(event.target.value)} placeholder={`描述你希望为“${opportunity.name}”生成的${category}。例如：围绕当前最弱 MEDDPICC 维度，形成可供客户审核的材料。`} className="mt-3 min-h-[92px] resize-y border-slate-700 bg-slate-950/55 text-xs" />
+    <div className="mt-3 flex justify-end"><Button onClick={generate} disabled={generateMutation.isPending || !prompt.trim()} className="gap-1.5 bg-cyan-500 text-slate-950 hover:bg-cyan-400"><Sparkles className="h-3.5 w-3.5" />{generateMutation.isPending ? "生成中…" : "生成作战材料"}</Button></div>
+    {result && <div className="mt-4 rounded-lg border border-cyan-400/20 bg-slate-950/60"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-400/15 px-3 py-2"><div className="text-xs font-medium text-cyan-100">{result.title}</div><Badge variant="outline" className="border-cyan-400/25 text-[10px] text-cyan-200">{category}</Badge></div><div className="prose prose-invert prose-sm max-w-none p-4 text-xs"><ReactMarkdown>{result.content}</ReactMarkdown></div><div className="flex flex-wrap justify-end gap-2 border-t border-cyan-400/15 px-3 py-3"><Button size="sm" variant="outline" onClick={() => toast.success("本次生成已自动保存到武器库历史") } className="h-8 border-slate-600 text-xs text-slate-200">保存到武器库历史</Button><Button size="sm" onClick={() => taskMutation.mutate({ clientId: client.id, opportunityId: opportunity.id, assignedRole: "SAM", sourceType: "manual", title: `[AI作战材料] ${materialTitle}`, description: `来源：AI ${category} · 武器库历史 #${result.id}\n\n${result.content}` })} disabled={taskMutation.isPending} className="h-8 gap-1.5 bg-cyan-500 text-xs text-slate-950 hover:bg-cyan-400">{taskMutation.isPending ? "创建中…" : "转为 POD 任务"}</Button></div></div>}
+  </section>;
+}
+
 function ActionWorkspace({ clientId, opportunityId, initialReviewId }: { clientId: number; opportunityId: number; initialReviewId?: number | null }) {
   const utils = trpc.useUtils();
   const { data: podTasks = [], isLoading } = trpc.pod.listByOpportunity.useQuery({ opportunityId });
@@ -357,6 +397,7 @@ function ActionWorkspace({ clientId, opportunityId, initialReviewId }: { clientI
     {reviewTasks.length > 0 && <section className="rounded-xl border border-violet-400/25 bg-violet-400/[0.045] p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold text-violet-100">上次 Review 行动闭环</p><p className="mt-1 text-xs text-slate-400">只统计由已持久化 Review 生成的任务；手工任务不计入，避免虚高。</p></div><Badge variant="outline" className="border-violet-400/35 text-violet-200">{completedReviewTasks}/{reviewTasks.length} 已完成 · {Math.round((completedReviewTasks / reviewTasks.length) * 100)}%</Badge></div></section>}
     {deployRecs.length > 0 && <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4"><div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-amber-300"><UsersRound className="h-4 w-4" />调兵入场建议</div><p className="mb-3 text-[11px] leading-5 text-amber-100/70">系统仅根据当前阶段、MEDDPICC 与已分配角色生成建议；点击后填入任务，仍需由负责人确认创建。</p><div className="space-y-2">{deployRecs.map((rec) => <div key={`${rec.role}-${rec.title}`} className="flex flex-col gap-2 rounded-lg border border-amber-400/15 bg-slate-950/45 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="text-xs font-medium text-amber-100">{rec.role} · {rec.title}</div><p className="mt-1 text-[11px] leading-5 text-slate-400">{rec.description}</p></div><Button size="sm" variant="outline" className="h-8 shrink-0 border-amber-500/30 text-xs text-amber-200 hover:bg-amber-500/10" onClick={() => { setForm({ title: rec.title, description: rec.description, role: rec.role, dueDate: "" }); toast.success(`已填入 ${rec.role} 任务，请确认后创建`); }}>一键填入</Button></div>)}</div></section>}
     <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4"><div className="text-sm font-semibold text-slate-100">行动闭环</div><p className="mt-1 text-xs leading-5 text-slate-500">AI 的建议必须由人审核并显式创建为任务；来源 Review、责任角色和完成状态均可追溯，但系统不自动代替团队执行。</p></div>
+    {currentClient && opp && <OpportunityMaterialGenerator client={currentClient} opportunity={opp} />}
     <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.05] p-4"><div className="mb-3 flex items-center gap-2 text-sm font-medium text-cyan-100"><Plus className="h-4 w-4" />新建商机行动</div><div className="grid gap-3 lg:grid-cols-[1fr_140px_160px]"><Input value={form.title} onChange={event => setForm(prev => ({ ...prev, title: event.target.value }))} placeholder="例如：确认两个最终用户部门汇报时间" className="border-slate-700 bg-slate-950/60 text-xs" /><Select value={form.role} onValueChange={value => setForm(prev => ({ ...prev, role: value as any }))}><SelectTrigger className="h-9 border-slate-700 bg-slate-950/60 text-xs"><SelectValue /></SelectTrigger><SelectContent>{roleOptions.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select><Input type="date" value={form.dueDate} onChange={event => setForm(prev => ({ ...prev, dueDate: event.target.value }))} className="border-slate-700 bg-slate-950/60 text-xs" /></div><Textarea value={form.description} onChange={event => setForm(prev => ({ ...prev, description: event.target.value }))} placeholder="完成标准、依赖条件或来自 AI Review 的事实依据" className="mt-3 min-h-[80px] resize-y border-slate-700 bg-slate-950/60 text-xs" /><div className="mt-3 flex justify-end"><Button onClick={() => createMutation.mutate({ clientId, opportunityId, assignedRole: form.role, title: form.title, description: form.description || undefined, dueDate: form.dueDate || undefined })} disabled={!form.title.trim() || createMutation.isPending} className="gap-1.5"><Plus className="h-3.5 w-3.5" />{createMutation.isPending ? "创建中…" : "创建任务"}</Button></div></div>
     <div className="space-y-2">{isLoading ? <div className="py-8 text-center text-xs text-slate-500"><Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" />加载任务…</div> : tasks.length === 0 ? <div className="rounded-xl border border-dashed border-slate-700 px-4 py-9 text-center text-xs text-slate-500">暂无该商机的行动任务。请将已审核的建议转化为明确的责任事项。</div> : tasks.map((task: any) => { const sourceReview = task.sourceReviewId ? sourceReviewById.get(task.sourceReviewId) : null; return <article key={task.id} className="flex flex-col gap-3 rounded-xl border border-slate-700/60 bg-slate-950/55 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0 flex-1"><div className="mb-1 flex flex-wrap items-center gap-2"><span className="text-sm font-medium text-slate-100">{task.title}</span><span className="rounded border border-cyan-300/20 bg-cyan-400/10 px-1.5 py-0.5 text-[10px] text-cyan-200">{task.assignedRole}</span><span className={cn("rounded px-1.5 py-0.5 text-[10px]", task.taskStatus === "done" ? "bg-emerald-400/10 text-emerald-200" : "bg-slate-700/50 text-slate-400")}>{task.taskStatus === "done" ? "已完成" : task.taskStatus === "in_progress" ? "进行中" : "待处理"}</span></div>{task.description && <p className="text-xs leading-5 text-slate-500">任务依据：{task.description}</p>}<div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-600"><span>截止：{formatDate(task.dueDate)}</span>{task.sourceReviewId ? <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] text-violet-200 hover:bg-violet-400/10" onClick={() => setExpandedReviewId(expandedReviewId === task.sourceReviewId ? null : task.sourceReviewId)}>查看来源 Review #{task.sourceReviewId}</Button> : null}</div>{expandedReviewId === task.sourceReviewId ? <div className="prose prose-invert prose-sm mt-3 max-w-none rounded-lg border border-violet-400/20 bg-violet-400/[0.04] p-3"><p className="!mb-2 text-xs text-violet-200">来源：{sourceReview ? `${formatDate(sourceReview.createdAt)} 的 ${sourceReview.reviewType} Review` : "加载来源 Review…"}</p>{sourceReview ? <ReactMarkdown>{sourceReview.content}</ReactMarkdown> : null}</div> : null}</div>{task.taskStatus !== "done" && <Button size="sm" variant="outline" onClick={() => statusMutation.mutate({ id: task.id, taskStatus: "done" })} disabled={statusMutation.isPending} className="h-8 shrink-0 gap-1.5 border-emerald-400/25 text-xs text-emerald-200 hover:bg-emerald-400/10"><CheckCircle2 className="h-3.5 w-3.5" />标记完成</Button>}</article>; })}</div>
   </div>;

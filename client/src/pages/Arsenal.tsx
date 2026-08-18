@@ -1403,7 +1403,7 @@ export default function Arsenal() {
         </TabsList>
         <TabsContent value="docs"><ProductDocsTab /></TabsContent>
         <TabsContent value="cases"><CaseStudiesTab /></TabsContent>
-        <TabsContent value="ai"><AIArsenalTab weaponContext={weaponContext} /></TabsContent>
+        <TabsContent value="ai"><div className="mb-4 rounded-lg border border-cyan-400/25 bg-cyan-400/[0.06] px-4 py-3 text-xs leading-5 text-slate-300"><span className="font-semibold text-cyan-100">建议在「商机作战室 → 行动任务」中使用。</span> 该入口会自动注入商机的 MEDDPICC、Deal Map、竞争和已确认历史处置，生成质量更高；此处保留为无明确商机时的通用备用入口。</div><AIArsenalTab weaponContext={weaponContext} /></TabsContent>
         <TabsContent value="quote"><QuoteToolTab /></TabsContent>
       </Tabs>
     </div>

@@ -165,6 +165,18 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain("激活属地资源与商务通路");
   });
 
+  it("将 AI 作战材料生成设为商机行动区主入口，并保留武器库的上下文优先提示", () => {
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    const arsenal = projectFile("client/src/pages/Arsenal.tsx");
+    expect(opportunityRoom).toContain("AI 作战材料生成");
+    expect(opportunityRoom).toContain("trpc.arsenalAI.generate.useMutation");
+    expect(opportunityRoom).toContain("opportunityId: opportunity.id");
+    expect(opportunityRoom).toContain("保存到武器库历史");
+    expect(opportunityRoom).toContain("转为 POD 任务");
+    expect(opportunityRoom).toContain('sourceType: "manual"');
+    expect(arsenal).toContain("建议在「商机作战室 → 行动任务」中使用");
+  });
+
   it("让竞品反制任务、POD 来源 Review 深链与本周闭环率形成可解释的产品化闭环", () => {
     const routers = projectFile("server/routers.ts");
     const schema = projectFile("drizzle/schema.ts");

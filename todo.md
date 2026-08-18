@@ -1,6 +1,6 @@
 # T100 专项 AI 作战指挥系统 TODO
 
-## Demo.html 截图逐页校对（当前进行中）
+## Demo.html 截图逐页校对（历史归档，旧 Demo 已下线）
 - [x] Slide 1：登录界面 ✅
 - [x] Slide 2：管理困境信息图 ✅
 - [x] Slide 3：7大方法论体系 + 战场地图拼接 ✅
@@ -964,6 +964,15 @@
 - [x] 从 Arsenal 主 Tab 与内容装配彻底移除 Champion 弹药和竞品 Kill Sheet，仅保留商机作战室行动区入口
 
 ## Claude 审核建议最终验收
-- [ ] 截图核验 Arsenal 仅显示产品文档、成功案例库、AI方案定制、报价工具四个 Tab
+- [x] 截图核验 Arsenal 仅显示产品文档、成功案例库、AI方案定制、报价工具四个 Tab
 - [x] 验证 ActionWorkspace 的 deployRecs 不再为空数组，并覆盖 Champion、Economic Buyer、POC/SA 与属地 RSM 事实规则
 - [x] 验证 AI 指挥台 Analytics 同时呈现本周与本月 Review 闭环率及低于 60% 预警
+
+## 审核文字残留修复
+- [x] 将武器库导航描述从“产品文档·AI方案·竞品阻击包”更新为“产品文档·AI方案·报价工具”
+
+## 商机内嵌 AI 作战材料生成
+- [x] 在 OpportunityRoom actions 区提供方案类、弹药类、话术类的 AI 材料生成入口并自动传入客户和商机 ID
+- [x] 在商机内展示生成内容，并支持保存到武器库历史和经人工确认转为 SAM POD 任务
+- [x] 在武器库 AI 方案定制页说明商机作战室为上下文感知的优先入口
+- [x] 完成回归、生产验证与 GitHub 同步
