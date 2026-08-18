@@ -1880,6 +1880,29 @@ AI质疑层规则（内嵌在以上各节中执行）：
       });
       const reviewContent = String(res.choices[0].message.content || "");
       await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
+      // Command 3.0: Extract role-based actions from review and create actionItems
+      try {
+        const actionSection = reviewContent.split(/##\s*\d+\.\s*本周行动分工/i)[1] || "";
+        const adMatch = actionSection.match(/\*\*AD[：:]\*\*\s*(.+)/);
+        const samMatch = actionSection.match(/\*\*SAM[：:]\*\*\s*(.+)/);
+        const saMatch = actionSection.match(/\*\*SA[：:]\*\*\s*(.+)/);
+        const { podTasks } = await import("../drizzle/schema");
+        const { eq: eqFn2 } = await import("drizzle-orm");
+        const roleActions = [
+          { role: "AD", action: adMatch?.[1]?.trim() },
+          { role: "SAM", action: samMatch?.[1]?.trim() },
+          { role: "SA", action: saMatch?.[1]?.trim() },
+        ].filter(r => r.action && r.action.length > 3);
+        if (db) for (const ra of roleActions) {
+          await db.insert(podTasks).values({
+            clientId: input.clientId,
+            opportunityId: input.opportunityId,
+            assignedRole: ra.role as any,
+            title: ra.action!.slice(0, 100),
+            description: "来自 1→N AI Review 的分角色行动建议",
+          });
+        }
+      } catch (_) { /* non-blocking */ }
       return { content: reviewContent, stage: opp.stage, daysInStage, stagnationRisk, championStatus };
     }),
 
@@ -6910,6 +6933,68 @@ ${input.extractedText.slice(0, 4000)}
           .where(eq(opportunities.id, input.opportunityId));
         return { success: true };
       }),
+  }),
+
+  // ── SA 技术定标工作台 ─────────────────────────────────────────────────────
+  sa: router({
+    getTechReadiness: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number(),
+    })).mutation(async ({ input }) => {
+      const client = await getClientById(input.clientId);
+      const meddpiccData = await getMeddpiccByClientId(input.clientId);
+      const { keyContacts, opportunities: oppsTable } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const contacts = await db.select().from(keyContacts).where(eq(keyContacts.clientId, input.clientId));
+      const techBuyer = contacts.find((c: any) => c.buyingRole === "技术决策人" || c.title?.includes("CTO") || c.title?.includes("技术"));
+      const opp = (await db.select().from(oppsTable).where(eq(oppsTable.id, input.opportunityId)))[0] as any;
+      const d1Score = (meddpiccData as any)?.decisionCriteriaScore ?? 0;
+      const d1Evidence = (meddpiccData as any)?.decisionCriteriaNotes || "未填写";
+      const competitor = opp?.competitors || "未知";
+      const prompt = `当前商机技术定标阶段数据：\n\nMEDDPICC决策标准（D1）：${d1Score}/100，依据：${d1Evidence}\n技术决策人：${techBuyer?.name || "未找到"}，立场：${(techBuyer as any)?.relationship || "未知"}\n主要竞品：${competitor}\n商机阶段：${opp?.stage || "未知"}\n客户：${client?.name || "未知"}\n\n作为SA，请给出：\n1. 本阶段技术定标的最高风险（一句话，基于D1分数和技术决策人状态）\n2. POC/技术演示的最优设计建议（针对已知决策标准的弱点）\n3. 需要向SAM/AD申请的支持（具体资源）\n4. 竞品技术对比的核心差异化论点（一条，针对已录入竞品）\n\n数据不足时明确说明，不要编造技术参数。`;
+      const res = await invokeLLM({
+        model: "gpt-5-mini",
+        maxCompletionTokens: 400,
+        messages: [
+          { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
+      });
+      return { content: String(res.choices?.[0]?.message?.content || "数据不足，暂不判断") };
+    }),
+  }),
+
+  // ── RSM 属地工作台 ─────────────────────────────────────────────────────
+  rsm: router({
+    getLocalActionPlan: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number(),
+    })).mutation(async ({ input }) => {
+      const client = await getClientById(input.clientId);
+      const meddpiccData = await getMeddpiccByClientId(input.clientId);
+      const { opportunities: oppsTable, keyContacts } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const opp = (await db.select().from(oppsTable).where(eq(oppsTable.id, input.opportunityId)))[0] as any;
+      const contacts = await db.select().from(keyContacts).where(eq(keyContacts.clientId, input.clientId));
+      const hasProcurement = contacts.some((c: any) => (c.title || "").includes("采购") || (c.title || "").includes("法务") || c.buyingRole === "采购决策人");
+      const d2Score = (meddpiccData as any)?.decisionProcessScore ?? 0;
+      const pScore = (meddpiccData as any)?.paperProcessScore ?? 0;
+      const pEvidence = (meddpiccData as any)?.paperProcessNotes || "未填写";
+      const prompt = `属地RSM在以下商机中的协同任务分析：\n\n客户：${client?.name || "未知"}，商机阶段：${opp?.stage || "未知"}\nMEDDPICC决策流程（D2）：${d2Score}/100\nMEDDPICC采购流程（P）：${pScore}/100\nP维度评分依据：${pEvidence}\n是否有采购/法务联系人：${hasProcurement ? "是" : "否"}\n属地渠道：${(client as any)?.rsmPartner || "未登记"}\n\n请给RSM生成本周属地协同任务（最多3条）：\n1. 招投标/框架协议推进：当前最紧急的一步\n2. 渠道协调：是否需要拉入本地渠道？何时？为什么？\n3. 属地关系：有哪个属地人脉可以协助推进决策流程？\n\n只基于上述事实，不编造关系或流程细节。`;
+      const res = await invokeLLM({
+        model: "gpt-5-mini",
+        maxCompletionTokens: 300,
+        messages: [
+          { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
+      });
+      return { content: String(res.choices?.[0]?.message?.content || "数据不足，暂不判断") };
+    }),
   }),
 
 });

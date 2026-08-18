@@ -906,8 +906,8 @@
 - [x] 1-A SAM 拜访后结论卡：LLM 同步分析 Win 进展/MEDDPICC 建议/下次优先/风险预警，前端弹窗可采纳
 - [x] 1-B SAM 首页分支渲染：按 podRole 显示"我的战场快照"而非 AD 看板
 - [x] 1-C SAM AI Coach 自检：客户作战台内按需生成 3 个自我检测问题
-- [ ] 2-A/2-B SA 技术定标工作台：sa.getTechReadiness 接口 + PodCenter SA 角色视图
-- [ ] 3-A/3-B RSM 属地工作台：rsm.getLocalActionPlan 接口 + PodCenter RSM 角色视图
-- [ ] 4-A 商机作战室调兵入场：按阶段自动推荐 SA/RSM/SAM 介入并一键创建角色任务
-- [ ] 4-B Deal Review 后角色分工确认：LLM 提取分角色行动并创建 actionItems
-- [ ] 数据库迁移：meetingMinutes.aiPostAnalysis / opportunities.assignedSaId+Name / actionItems.sourceReviewId
+- [x] 2-A/2-B SA 技术定标工作台：sa.getTechReadiness 接口 + PodCenter SA 角色视图
+- [x] 3-A/3-B RSM 属地工作台：rsm.getLocalActionPlan 接口 + PodCenter RSM 角色视图
+- [x] 4-A 商机作战室调兵入场：按阶段自动推荐 SA/RSM/SAM 介入并一键创建角色任务
+- [x] 4-B Deal Review 后角色分工确认：LLM 提取分角色行动并创建 actionItems
+- [x] 数据库迁移：meetingMinutes.aiPostAnalysis / opportunities.assignedSaId+Name / actionItems.sourceReviewId
