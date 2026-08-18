@@ -355,6 +355,7 @@ export async function getPodTasksByRole(role: "AD" | "SAM" | "SA" | "RSM"): Prom
       completedAt: podTasks.completedAt,
       createdAt: podTasks.createdAt,
       sourceActionId: podTasks.sourceActionId,
+      sourceReviewId: podTasks.sourceReviewId,
       priority: podTasks.priority,
       taskType: podTasks.taskType,
       opportunityId: podTasks.opportunityId,

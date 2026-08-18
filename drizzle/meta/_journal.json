@@ -281,6 +281,13 @@
       "when": 1787033419070,
       "tag": "0039_demonic_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1787037402666,
+      "tag": "0040_long_alex_power",
+      "breakpoints": true
     }
   ]
 }

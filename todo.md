@@ -922,3 +922,13 @@
 ## 角色原生化后续边界（已确认）
 - [x] 为 SA 与 RSM 建设主动式角色首页，优先呈现本周需其介入的商机与 AI 任务，而非仅增加 POD 被动过滤
 - [x] 将 SAM AI 自检转化为带字段指向和来源要求的事实补录引导；不把 SAM 主观回答直接写入 Review 事实层
+
+## Review→行动→复盘闭环增强
+- [x] 将 1→N Deal Review 扩展为 AD/SAM/SA/RSM 四角色 JSON Schema 行动，并可靠创建对应 POD 任务
+- [x] 为 POD 任务呈现来源 Review 链接和对应事实片段，确保行动可追溯
+- [x] 在后续 Deal Review 中计算并呈现上次 Review 任务的闭环率，而不增加低价值状态时间线
+
+## Review→行动→复盘闭环增强
+- [x] 将 1→N Deal Review 扩展为 AD/SAM/SA/RSM 四角色 JSON Schema 行动，并可靠创建对应 POD 任务
+- [x] 为 POD 任务呈现来源 Review 链接和对应事实片段，确保行动可追溯
+- [x] 在后续 Deal Review 中计算并呈现上次 Review 任务的闭环率，而不增加低价值状态时间线

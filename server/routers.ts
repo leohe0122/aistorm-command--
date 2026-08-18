@@ -1865,6 +1865,7 @@ ${isProposalStage ? `
 **AD：** [1个优先行动]
 **SAM：** [1个优先行动]
 **SA：** [1个优先行动]
+**RSM：** [仅在采购流程、属地渠道或本地关系存在可验证缺口时给出1个行动；否则写“数据不足，暂不安排”]
 
 AI质疑层规则（内嵌在以上各节中执行）：
 - 某维度自评≥70但评分依据少于30字：在该维度后标注⚠️ 评分依据不足，置信度已下调
@@ -1875,7 +1876,7 @@ AI质疑层规则（内嵌在以上各节中执行）：
       const dealDiag = await getDealDiagnosticContext(input.clientId, input.opportunityId);
       const enrichedDealPrompt = `${prompt}${dealDiag}
 
-请严格按 JSON Schema 返回，不要在 JSON 外输出任何文字。将上方要求的完整 Markdown Review 放入 reviewContent 字段；roleActions 只保留基于已有事实可执行的 AD、SAM、SA 行动（最多每个角色一项）。没有可验证行动时返回空数组，绝不能为了填满角色而编造任务。`;
+请严格按 JSON Schema 返回，不要在 JSON 外输出任何文字。将上方要求的完整 Markdown Review 放入 reviewContent 字段；roleActions 只保留基于已有事实可执行的 AD、SAM、SA、RSM 行动（最多每个角色一项）。没有可验证行动时返回空数组，绝不能为了填满角色而编造任务。`;
       const res = await invokeLLM({
         model: "gpt-5-mini",
         maxCompletionTokens: 1800,
@@ -1894,7 +1895,7 @@ AI质疑层规则（内嵌在以上各节中执行）：
                   items: {
                     type: "object",
                     properties: {
-                      role: { type: "string", enum: ["AD", "SAM", "SA"] },
+                      role: { type: "string", enum: ["AD", "SAM", "SA", "RSM"] },
                       title: { type: "string", description: "不超过 100 字的可执行任务标题" },
                       description: { type: "string", description: "任务的事实依据、完成标准或协作依赖" },
                     },
@@ -1911,18 +1912,18 @@ AI质疑层规则（内嵌在以上各节中执行）：
       });
       const rawReview = String(res.choices[0].message.content || "");
       let reviewContent = rawReview;
-      let roleActions: Array<{ role: "AD" | "SAM" | "SA"; title: string; description: string }> = [];
+      let roleActions: Array<{ role: "AD" | "SAM" | "SA" | "RSM"; title: string; description: string }> = [];
       let actionTaskError: string | null = null;
       try {
         const structured = JSON.parse(rawReview);
         reviewContent = String(structured.reviewContent || "数据不足，暂不判断。");
         roleActions = Array.isArray(structured.roleActions)
-          ? structured.roleActions.filter((action: any) => ["AD", "SAM", "SA"].includes(action?.role) && typeof action?.title === "string" && action.title.trim().length > 3)
+          ? structured.roleActions.filter((action: any) => ["AD", "SAM", "SA", "RSM"].includes(action?.role) && typeof action?.title === "string" && action.title.trim().length > 3)
           : [];
       } catch {
         actionTaskError = "AI Review 未返回可验证的结构化角色行动；本次未自动创建 POD 任务。";
       }
-      await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
+      const reviewId = await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
       let createdRoleTaskCount = 0;
       let skippedRoleTaskCount = 0;
       if (!actionTaskError) try {
@@ -1946,6 +1947,7 @@ AI质疑层规则（内嵌在以上各节中执行）：
             assignedRole: action.role,
             title: normalizedTitle,
             description: action.description.trim().slice(0, 500) || "来自 1→N AI Review 的分角色行动建议",
+            sourceReviewId: reviewId || null,
           });
           createdRoleTaskCount += 1;
         }
@@ -1958,6 +1960,7 @@ AI质疑层规则（内嵌在以上各节中执行）：
         daysInStage,
         stagnationRisk,
         championStatus,
+        reviewId: reviewId || null,
         roleTaskCreation: {
           requested: roleActions.length,
           created: createdRoleTaskCount,
@@ -2205,6 +2208,15 @@ ${contactStances || "暂无关键人数据"}
         if (!latestByType[key]) latestByType[key] = r;
       }
       return Object.values(latestByType);
+    }),
+    // 仅供任务来源追溯：按 Review ID 批量读取已持久化的原始 Review，不混入其他客户/商机的记录。
+    getByIds: protectedProcedure.input(z.object({ ids: z.array(z.number().int().positive()).max(30) })).query(async ({ input }) => {
+      if (input.ids.length === 0) return [];
+      const db = await getDb();
+      if (!db) return [];
+      const { aiReviews } = await import("../drizzle/schema");
+      const { inArray } = await import("drizzle-orm");
+      return db.select().from(aiReviews).where(inArray(aiReviews.id, input.ids));
     }),
     // Review 改进闭环：与上次 Review 对比的变化摘要
     getReviewDelta: protectedProcedure.input(z.object({

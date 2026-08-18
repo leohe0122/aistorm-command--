@@ -105,6 +105,19 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain("roleTaskReceipt");
   });
 
+  it("将 RSM 纳入 1→N Review 的结构化行动，并让 Review 生成的任务可追溯且可计算闭环率", () => {
+    const routers = projectFile("server/routers.ts");
+    const schema = projectFile("drizzle/schema.ts");
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    expect(routers).toContain('enum: ["AD", "SAM", "SA", "RSM"]');
+    expect(routers).toContain("sourceReviewId: reviewId || null");
+    expect(routers).toContain("getByIds: protectedProcedure");
+    expect(schema).toContain('sourceReviewId: int("sourceReviewId")');
+    expect(opportunityRoom).toContain("上次 Review 行动闭环");
+    expect(opportunityRoom).toContain("查看来源 Review");
+    expect(opportunityRoom).toContain("任务依据：");
+  });
+
   it("在 ESM 服务端路径中不使用 CommonJS require，避免 SAM AI 自检与原生刷新出现运行时异常", () => {
     const routers = projectFile("server/routers.ts");
     expect(routers).not.toContain("require(");
