@@ -90,11 +90,14 @@ function AIWarJudgement({
   const latestReview = reviews.find((review: any) => review.opportunityId === opportunityId && review.reviewType === "1toN") as any;
   const [generatedReview, setGeneratedReview] = useState("");
   const [roleTaskReceipt, setRoleTaskReceipt] = useState<{ requested: number; created: number; skipped: number; error: string | null } | null>(null);
+  const [reviewRunStatus, setReviewRunStatus] = useState<{ state: "idle" | "loading" | "success" | "error"; message?: string }>({ state: "idle" });
   const [forecastOpen, setForecastOpen] = useState(false);
   const reviewMutation = trpc.insights.reviewOneToN.useMutation({
+    onMutate: () => setReviewRunStatus({ state: "loading", message: "正在读取已入库事实、生成结构化 Review 并回写当前商机…" }),
     onSuccess: (result: any) => {
-      setGeneratedReview(result.content);
+      setGeneratedReview(String(result.content || ""));
       setRoleTaskReceipt(result.roleTaskCreation ?? null);
+      setReviewRunStatus({ state: "success", message: "AI Review 已生成并写入当前商机。" });
       utils.insights.getLatestReviews.invalidate({ clientId });
       utils.pod.listByOpportunity.invalidate({ opportunityId });
       const receipt = result.roleTaskCreation;
@@ -102,7 +105,11 @@ function AIWarJudgement({
       else if (receipt?.created > 0) toast.success(`AI 作战判断已生成，并创建 ${receipt.created} 条角色任务`);
       else toast.success("AI 作战判断已基于当前系统事实生成；未发现新增的可验证角色任务");
     },
-    onError: (error) => toast.error(`AI 作战判断生成失败：${error.message}`),
+    onError: (error) => {
+      const message = `AI 作战判断生成失败：${error.message}`;
+      setReviewRunStatus({ state: "error", message: `${message} 本次未保存 Review。` });
+      toast.error(message);
+    },
   });
 
   const evidenceCount = meetings.length + contacts.length + signals.length + OPPORTUNITY_MEDDPICC_FIELDS.filter(key => Number(meddpicc?.[key]) > 0).length;
@@ -142,6 +149,10 @@ function AIWarJudgement({
         <div className="bg-slate-950/60 p-4">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/70">判断</div>
           <p className="text-sm leading-6 text-slate-100">{judgement}</p>
+          {reviewRunStatus.state !== "idle" && <div className={cn("mt-3 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs leading-5", reviewRunStatus.state === "loading" ? "border-cyan-400/25 bg-cyan-400/[0.06] text-cyan-100" : reviewRunStatus.state === "success" ? "border-emerald-400/25 bg-emerald-400/[0.06] text-emerald-100" : "border-rose-400/25 bg-rose-400/[0.06] text-rose-100")} role="status">
+            {reviewRunStatus.state === "loading" ? <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" /> : reviewRunStatus.state === "success" ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+            <span>{reviewRunStatus.message}</span>
+          </div>}
           {content && <div className="prose prose-invert prose-sm mt-3 max-w-none border-t border-cyan-200/10 pt-3 text-xs leading-6 text-slate-300 prose-headings:text-cyan-100 prose-strong:text-slate-100"><ReactMarkdown>{content}</ReactMarkdown></div>}
           {roleTaskReceipt && <div className={cn("mt-3 rounded-lg border px-3 py-2.5 text-xs leading-5", roleTaskReceipt.error ? "border-amber-400/25 bg-amber-400/[0.06] text-amber-100" : "border-emerald-400/25 bg-emerald-400/[0.06] text-emerald-100")}><div className="font-semibold">角色任务创建回执</div>{roleTaskReceipt.error ? <p className="mt-1">{roleTaskReceipt.error}</p> : <p className="mt-1">本次从结构化 Review 读取 {roleTaskReceipt.requested} 条任务；已创建 {roleTaskReceipt.created} 条，因相同角色与标题已存在而跳过 {roleTaskReceipt.skipped} 条。请在“行动任务”页确认责任与完成标准。</p>}</div>}
           {!content && hasEvidence && <p className="mt-3 text-xs leading-5 text-slate-500">尚未生成 AI Review。点击右上角按钮后，系统将基于本商机已有事实生成完整判断；生成结果需由负责人审核后才能转化为任务。</p>}

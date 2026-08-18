@@ -105,6 +105,19 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain("roleTaskReceipt");
   });
 
+  it("不保存空的 1→N AI Review，并向商机作战室明确回传生成、成功或失败状态", () => {
+    const routers = projectFile("server/routers.ts");
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    expect(routers).toContain("maxCompletionTokens: 5200");
+    expect(routers).toContain('reasoning: { effort: "low" }');
+    expect(routers).toContain("AI Review 未返回可保存内容");
+    expect(routers).toContain("本次未写入 Review");
+    expect(routers).toContain("extractJSON(rawReview)");
+    expect(opportunityRoom).toContain("reviewRunStatus");
+    expect(opportunityRoom).toContain("AI Review 已生成并写入当前商机");
+    expect(opportunityRoom).toContain("本次未保存 Review");
+  });
+
   it("将 RSM 纳入 1→N Review 的结构化行动，并让 Review 生成的任务可追溯且可计算闭环率", () => {
     const routers = projectFile("server/routers.ts");
     const schema = projectFile("drizzle/schema.ts");

@@ -1879,7 +1879,9 @@ AI质疑层规则（内嵌在以上各节中执行）：
 请严格按 JSON Schema 返回，不要在 JSON 外输出任何文字。将上方要求的完整 Markdown Review 放入 reviewContent 字段；roleActions 只保留基于已有事实可执行的 AD、SAM、SA、RSM 行动（最多每个角色一项）。没有可验证行动时返回空数组，绝不能为了填满角色而编造任务。`;
       const res = await invokeLLM({
         model: "gpt-5-mini",
-        maxCompletionTokens: 1800,
+        // 1→N Review 需要完整诊断和角色行动；较低 token 上限会导致无正文可回写。
+        maxCompletionTokens: 5200,
+        reasoning: { effort: "low" },
         messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedDealPrompt }],
         response_format: {
           type: "json_schema",
@@ -1910,18 +1912,31 @@ AI质疑层规则（内嵌在以上各节中执行）：
           },
         },
       });
-      const rawReview = String(res.choices[0].message.content || "");
+      const rawReview = String(res.choices[0].message.content || "").trim();
+      if (!rawReview) {
+        const finishReason = res.choices[0]?.finish_reason || "未知";
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message: `AI Review 未返回可保存内容（完成状态：${finishReason}）。本次未写入 Review，请稍后重试。`,
+        });
+      }
       let reviewContent = rawReview;
       let roleActions: Array<{ role: "AD" | "SAM" | "SA" | "RSM"; title: string; description: string }> = [];
       let actionTaskError: string | null = null;
       try {
-        const structured = JSON.parse(rawReview);
+        const structured = JSON.parse(extractJSON(rawReview));
         reviewContent = String(structured.reviewContent || "数据不足，暂不判断。");
         roleActions = Array.isArray(structured.roleActions)
           ? structured.roleActions.filter((action: any) => ["AD", "SAM", "SA", "RSM"].includes(action?.role) && typeof action?.title === "string" && action.title.trim().length > 3)
           : [];
       } catch {
         actionTaskError = "AI Review 未返回可验证的结构化角色行动；本次未自动创建 POD 任务。";
+      }
+      if (!reviewContent.trim()) {
+        throw new TRPCError({
+          code: "BAD_GATEWAY",
+          message: "AI Review 返回为空，本次未写入 Review，请稍后重试。",
+        });
       }
       const reviewId = await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
       let createdRoleTaskCount = 0;
