@@ -302,6 +302,13 @@
       "when": 1787043664489,
       "tag": "0042_wooden_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1787073977390,
+      "tag": "0043_spicy_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

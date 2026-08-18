@@ -296,4 +296,27 @@ describe("作战工作流入口收敛", () => {
     expect(app).not.toContain('import IntelRadar');
     expect(layout).not.toContain('path: "/intel-radar"');
   });
+
+  it("以单次严格 JSON 提取拜访全量信号，并只在 SAM 确认后写入事实表", () => {
+    const routers = projectFile("server/routers.ts");
+    const schema = projectFile("drizzle/schema.ts");
+    const guidance = projectFile("server/aiNativeGuidance.ts");
+    const meetingMinutes = projectFile("client/src/pages/MeetingMinutes.tsx");
+    const confirmationCard = projectFile("client/src/components/FullSignalConfirmationCard.tsx");
+    expect(routers).toContain("extractFullSignals: protectedProcedure");
+    expect(routers).toContain("confirmFullSignals: protectedProcedure");
+    expect(routers).toContain('name: "full_meeting_signals"');
+    expect(routers).toContain("FULL_MEETING_SIGNALS_RESPONSE_SCHEMA");
+    expect(routers).toContain("normalizeFullMeetingSignals");
+    expect(routers).toContain("aiFullSignalsConfirmedKeys");
+    expect(schema).toContain('aiFullSignals: json("aiFullSignals")');
+    expect(schema).toContain('aiFullSignalsConfirmedKeys: json("aiFullSignalsConfirmedKeys")');
+    expect(guidance).toContain("数据不足，暂不判断");
+    expect(guidance).toContain("STAGE_REQUIREMENTS");
+    expect(meetingMinutes).toContain("trpc.meetings.extractFullSignals.useMutation");
+    expect(meetingMinutes).toContain("AI 拜访后事实确认");
+    expect(confirmationCard).toContain("本次拜访收获");
+    expect(confirmationCard).toContain("确认并写入");
+    expect(confirmationCard).toContain("你无需理解 MEDDPICC、3 Why 或 Win 公式");
+  });
 });

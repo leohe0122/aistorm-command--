@@ -8,6 +8,17 @@ export const AI_NATIVE_GUIDANCE_VERSION = "ai-native-guidance-v1";
 export const MEDDPICC_CODES = ["M", "E", "D1", "D2", "P", "I", "C1", "C2"] as const;
 export type MeddpiccCode = (typeof MEDDPICC_CODES)[number];
 
+export const MEDDPICC_FIELD_MAP: Record<MeddpiccCode, { score: string; notes: string }> = {
+  M: { score: "metricsScore", notes: "metricsNotes" },
+  E: { score: "economicBuyerScore", notes: "economicBuyerNotes" },
+  D1: { score: "decisionCriteriaScore", notes: "decisionCriteriaNotes" },
+  D2: { score: "decisionProcessScore", notes: "decisionProcessNotes" },
+  P: { score: "paperProcessScore", notes: "paperProcessNotes" },
+  I: { score: "implicatePainScore", notes: "implicatePainNotes" },
+  C1: { score: "championScore", notes: "championNotes" },
+  C2: { score: "competitionScore", notes: "competitionNotes" },
+};
+
 export const STAGE_REQUIREMENTS = {
   "需求挖掘": [
     { key: "I", label: "I 痛点牵连", question: "这个问题影响了哪个部门的哪位负责人？他上次提到这个问题时说了什么？" },
@@ -29,6 +40,7 @@ export const STAGE_REQUIREMENTS = {
 } as const;
 
 export type FullMeetingSignals = {
+  meetingSummary: string;
   meddpiccUpdates: Array<{
     dim: MeddpiccCode;
     suggestedScore: 0 | 25 | 50 | 75 | 100;
@@ -69,6 +81,7 @@ export const FULL_MEETING_SIGNALS_RESPONSE_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
+    meetingSummary: { type: "string" },
     meddpiccUpdates: {
       type: "array",
       items: {
@@ -125,13 +138,14 @@ export const FULL_MEETING_SIGNALS_RESPONSE_SCHEMA = {
     },
     nextBestAction: { type: "string" },
   },
-  required: ["meddpiccUpdates", "contactDiscoveries", "competitorMentions", "timeSignals", "threeWhyUpdates", "winFactorAlerts", "nextBestAction"],
+  required: ["meetingSummary", "meddpiccUpdates", "contactDiscoveries", "competitorMentions", "timeSignals", "threeWhyUpdates", "winFactorAlerts", "nextBestAction"],
 } as const;
 
 export function normalizeFullMeetingSignals(value: unknown): FullMeetingSignals {
   const raw = (value && typeof value === "object" ? value : {}) as Record<string, any>;
   const safeArray = (input: unknown) => Array.isArray(input) ? input : [];
   return {
+    meetingSummary: typeof raw.meetingSummary === "string" && raw.meetingSummary.trim() ? raw.meetingSummary.trim() : "数据不足，暂不判断",
     meddpiccUpdates: safeArray(raw.meddpiccUpdates).filter((item: any) => MEDDPICC_CODES.includes(item?.dim) && [0, 25, 50, 75, 100].includes(Number(item?.suggestedScore)) && String(item?.evidence || "").trim()).map((item: any) => ({ dim: item.dim as MeddpiccCode, suggestedScore: Number(item.suggestedScore) as 0 | 25 | 50 | 75 | 100, evidence: String(item.evidence).trim(), confidence: (["high", "medium", "low"].includes(item.confidence) ? item.confidence : "low") as "high" | "medium" | "low" })),
     contactDiscoveries: safeArray(raw.contactDiscoveries).filter((item: any) => String(item?.name || "").trim() && String(item?.evidence || "").trim()).map((item: any) => ({ name: String(item.name).trim(), title: item.title == null || !String(item.title).trim() ? null : String(item.title).trim(), buyingRole: ["经济决策人", "技术决策人", "用户决策人", "Champion", "内线", "反对者", "未知"].includes(item.buyingRole) ? item.buyingRole : "未知", attitude: ["支持", "中立", "反对", "未知"].includes(item.attitude) ? item.attitude : "未知", evidence: String(item.evidence).trim() })),
     competitorMentions: safeArray(raw.competitorMentions).filter((item: any) => String(item?.competitorName || "").trim() && String(item?.context || "").trim()).map((item: any) => ({ competitorName: String(item.competitorName).trim(), context: String(item.context).trim(), threatLevel: ["high", "medium", "low"].includes(item.threatLevel) ? item.threatLevel : "low" })),

@@ -327,6 +327,21 @@ export const meetingMinutes = mysqlTable("meeting_minutes", {
     nextMeetingPriority: string;
     riskWarning: string | null;
   }>(),
+  /** AI 原生拜访解析：一次提取的全量信号；业务事实仅在 SAM 确认后写入目标表。 */
+  aiFullSignals: json("aiFullSignals").$type<{
+    version: string;
+    generatedAt: string;
+    meetingSummary: string;
+    meddpiccUpdates: Array<{ dim: string; suggestedScore: number; evidence: string; confidence: string }>;
+    contactDiscoveries: Array<{ name: string; title: string | null; buyingRole: string; attitude: string; evidence: string }>;
+    competitorMentions: Array<{ competitorName: string; context: string; threatLevel: string }>;
+    timeSignals: Array<{ type: string; description: string; date: string | null }>;
+    threeWhyUpdates: { whyChange: string | null; whyNow: string | null; whyUs: string | null };
+    winFactorAlerts: Array<{ factor: string; alert: string; severity: string }>;
+    nextBestAction: string;
+  }>(),
+  /** 已被人工确认的全量信号项目键；仅用于 UI 回执，不能替代目标事实表。 */
+  aiFullSignalsConfirmedKeys: json("aiFullSignalsConfirmedKeys").$type<string[]>(),
 });
 
 export type MeetingMinute = typeof meetingMinutes.$inferSelect;

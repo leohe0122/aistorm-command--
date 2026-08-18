@@ -17,6 +17,7 @@ import { Streamdown } from "streamdown";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Swords } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import FullSignalConfirmationCard, { type FullSignals } from "@/components/FullSignalConfirmationCard";
 
 // Kill Sheet match panel shown when competitors are detected in meeting log
 function KillSheetMatchPanel({ competitorNames }: { competitorNames: string[] }) {
@@ -182,9 +183,15 @@ export default function MeetingMinutes() {
     riskWarning: string | null;
   } | null>(null);
   const [showPostMeetingCard, setShowPostMeetingCard] = useState(false);
+  const [fullSignalReview, setFullSignalReview] = useState<{ meetingId: number; signals: FullSignals; confirmedKeys: string[] } | null>(null);
+  const [showFullSignalReview, setShowFullSignalReview] = useState(false);
 
   const { data: clients = [] } = trpc.clients.list.useQuery();
   const { data: meetings = [], refetch } = trpc.meetings.listByClient.useQuery(
+    { clientId: selectedClientId! },
+    { enabled: !!selectedClientId }
+  );
+  const { data: clientOpportunities = [] } = trpc.opportunities.listByClient.useQuery(
     { clientId: selectedClientId! },
     { enabled: !!selectedClientId }
   );
@@ -389,6 +396,25 @@ export default function MeetingMinutes() {
     onError: () => { toast.error("生成失败，请重试"); setGenerating(false); },
   });
 
+  const extractFullSignals = trpc.meetings.extractFullSignals.useMutation({
+    onSuccess: (data) => {
+      refetch();
+      setExpandedId(data.id);
+      setLatestMeetingId(data.id);
+      setFullSignalReview({ meetingId: data.id, signals: data.signals, confirmedKeys: [] });
+      setShowFullSignalReview(true);
+      setKeyPoints("");
+      setTranscriptText("");
+      setUploadedFileName("");
+      setGenerating(false);
+      toast.success("AI 已完成拜访信号提取，请确认真正发生的客户事实");
+    },
+    onError: (error) => {
+      setGenerating(false);
+      toast.error(`AI 信号提取失败：${error.message}`);
+    },
+  });
+
   const handleGenerate = () => {
     if (!selectedClientId) { toast.error("请先选择客户"); return; }
     if (!keyPoints.trim() && !transcriptText.trim()) {
@@ -396,7 +422,7 @@ export default function MeetingMinutes() {
       return;
     }
     setGenerating(true);
-    generate.mutate({
+    extractFullSignals.mutate({
       clientId: selectedClientId,
       clientName: selectedClient?.name || "",
       meetingDate,
@@ -620,7 +646,7 @@ export default function MeetingMinutes() {
                 disabled={!selectedClientId || (!keyPoints.trim() && !transcriptText.trim()) || generating}
               >
                 <Sparkles className="w-4 h-4" />
-                {generating ? "AI 解析中..." : "生成拜访作战日志"}
+                {generating ? "AI 正在提取客户事实…" : "让 AI 提取本次拜访收获"}
               </Button>
 
               {/* Progress indicator shown while generating */}
@@ -633,15 +659,15 @@ export default function MeetingMinutes() {
                   <div className="space-y-1.5 pl-6">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                      <span>生成结构化拜访纪要（约 20-40 秒）</span>
+                      <span>从记录中提取客户原话、关键人、时间与竞争事实</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
-                      <span>提取 MEDDPICC 更新建议</span>
+                      <span>定位可确认的商机证据与客户改变原因</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
-                      <span>识别竞品 & 生成策略建议</span>
+                      <span>生成下一次最需要验证的问题</span>
                     </div>
                   </div>
                   <p className="text-[11px] text-muted-foreground pl-6">请勿关闭页面，解析完成后自动展示结果</p>
@@ -977,6 +1003,25 @@ export default function MeetingMinutes() {
           )}
         </div>
       </div>
+      <Dialog open={showFullSignalReview} onOpenChange={setShowFullSignalReview}>
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5 text-cyan-400" />AI 拜访后事实确认</DialogTitle></DialogHeader>
+          {fullSignalReview && selectedClientId && <FullSignalConfirmationCard
+            clientId={selectedClientId}
+            meetingId={fullSignalReview.meetingId}
+            signals={fullSignalReview.signals}
+            opportunities={clientOpportunities as any[]}
+            initialConfirmed={fullSignalReview.confirmedKeys}
+            onDone={(confirmedKeys) => {
+              setFullSignalReview(current => current ? { ...current, confirmedKeys } : current);
+              utils.meddpicc.get.invalidate({ clientId: selectedClientId });
+              utils.opportunities.listByClient.invalidate({ clientId: selectedClientId });
+              utils.clients.list.invalidate();
+              refetch();
+            }}
+          />}
+        </DialogContent>
+      </Dialog>
       {/* AI 复盘建议弹窗 */}
       <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
         <DialogContent className="max-w-lg">

@@ -14,6 +14,7 @@ import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../sha
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
+import { AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -2927,6 +2928,132 @@ ${knowledgeNote}`;
     listByClient: publicProcedure.input(z.object({ clientId: z.number() })).query(({ input }) =>
       getMeetingsByClientId(input.clientId)
     ),
+    /**
+     * AI 原生 P0：一条拜访输入只触发一次严格 JSON Schema 解析。
+     * 解析结果先存入会议记录，任何客户/商机事实都必须由 SAM 在前端确认后才写入。
+     */
+    extractFullSignals: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      clientName: z.string(),
+      meetingDate: z.string(),
+      visitType: z.string().optional(),
+      attendees: z.string().optional(),
+      keyPoints: z.string(),
+      transcriptText: z.string().optional(),
+      contactType: z.enum(["formal_meeting", "dinner_meeting", "phone_call", "video_call", "instant_message", "event", "customer_initiated"]).optional(),
+      initiatedBy: z.enum(["sam", "customer", "mutual"]).optional(),
+    })).mutation(async ({ input }) => {
+      const sourceText = input.transcriptText
+        ? `【会议原文】\n${input.transcriptText}\n\n【SAM 补充】\n${input.keyPoints}`
+        : `【SAM 记录】\n${input.keyPoints}`;
+      const accountContext = await getAccountDiagnosticContext(input.clientId);
+      const prompt = `你现在是 SAM 的拜访后作战引导助手。SAM 只负责如实记录发生了什么；你必须从以下记录中一次性提取可验证事实，供 SAM 确认。\n\n客户：${input.clientName}\n日期：${input.meetingDate}\n拜访类型：${input.visitType || "拜访"}\n参会人：${input.attendees || "数据不足"}\n接触方式：${input.contactType || "数据不足"}\n发起方：${input.initiatedBy || "数据不足"}\n\n${sourceText}\n\n${accountContext}\n\n【严格规则】\n1. 只提取记录中明确出现或可逐字定位的客户事实；禁止猜测客户意图、预算、人物立场或竞争态势。\n2. 没有明确证据的数组返回空数组，字段无法确认则返回 null；不要为了填满字段而创作。\n3. suggestedScore 只能是 0/25/50/75/100，且 evidence 必须包含原话或可回溯表述。\n4. 关键人角色只在记录明确说明其决策职责或行为时填写；否则为“未知”。\n5. nextBestAction 必须是 SAM 下一次要验证的一件事，不能是产品推销动作。\n6. meetingSummary 用不超过120字概括本次已确认事实与未确认边界。\n7. 按给定 JSON Schema 返回，JSON 外不得输出任何文字。`;
+      const result = await invokeLLM({
+        model: "gpt-5-mini",
+        maxCompletionTokens: 2200,
+        reasoning: { effort: "low" },
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
+        response_format: { type: "json_schema", json_schema: { name: "full_meeting_signals", strict: true, schema: FULL_MEETING_SIGNALS_RESPONSE_SCHEMA } },
+      });
+      const raw = getLLMTextContent(result.choices[0]?.message.content);
+      if (!raw) throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回可确认的拜访信号。本次未保存，请稍后重试。" });
+      let parsed: unknown;
+      try { parsed = JSON.parse(extractJSON(raw)); } catch { throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 返回格式无效。本次未保存，请稍后重试。" }); }
+      const signals = normalizeFullMeetingSignals(parsed);
+      const aiMinutes = `## 拜访作战日志\n\n${signals.meetingSummary}\n\n### 下一步需验证\n${signals.nextBestAction}`;
+      const id = await insertMeeting({
+        clientId: input.clientId, meetingDate: new Date(input.meetingDate), visitType: input.visitType,
+        attendees: input.attendees, keyPoints: input.keyPoints, transcriptText: input.transcriptText,
+        aiMinutes, contactType: input.contactType, initiatedBy: input.initiatedBy, entrySource: "manual",
+      });
+      const db = await getDb();
+      if (db && id) {
+        const { meetingMinutes } = await import("../drizzle/schema");
+        await db.update(meetingMinutes).set({ aiFullSignals: { version: AI_NATIVE_GUIDANCE_VERSION, generatedAt: new Date().toISOString(), ...signals }, aiFullSignalsConfirmedKeys: [] }).where(eq(meetingMinutes.id, id));
+      }
+      setImmediate(() => triggerSingleClientRefresh(input.clientId));
+      return { id, signals };
+    }),
+    /** 人工确认后才将选择的信号沉淀到对应事实表；未确认项目只保留在原拜访记录中。 */
+    confirmFullSignals: protectedProcedure.input(z.object({
+      meetingId: z.number(), clientId: z.number(), opportunityId: z.number().optional(), confirmedKeys: z.array(z.string()).min(1),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { meetingMinutes, keyContacts, opportunityMeddpicc, threeWhy, competitionMap, intelligenceSignals } = await import("../drizzle/schema");
+      const [meeting] = await db.select().from(meetingMinutes).where(eq(meetingMinutes.id, input.meetingId)).limit(1);
+      if (!meeting || meeting.clientId !== input.clientId) throw new TRPCError({ code: "NOT_FOUND", message: "未找到对应拜访记录" });
+      const signals = normalizeFullMeetingSignals((meeting as any).aiFullSignals);
+      const selected = new Set(input.confirmedKeys);
+      const applied: string[] = [];
+      const confirmedBefore = new Set(Array.isArray((meeting as any).aiFullSignalsConfirmedKeys) ? (meeting as any).aiFullSignalsConfirmedKeys : []);
+
+      for (const item of signals.meddpiccUpdates) {
+        const key = `meddpicc:${item.dim}`;
+        if (!selected.has(key) || confirmedBefore.has(key)) continue;
+        const fields = MEDDPICC_FIELD_MAP[item.dim];
+        const score = item.suggestedScore / 25;
+        const note = `[拜访 #${meeting.id} · ${new Date(meeting.meetingDate).toLocaleDateString("zh-CN")}] ${item.evidence}`;
+        if (input.opportunityId) {
+          const [existing] = await db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1);
+          const values = { [fields.score]: score, [fields.notes]: note, updatedAt: new Date() } as any;
+          if (existing) await db.update(opportunityMeddpicc).set(values).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId));
+          else await db.insert(opportunityMeddpicc).values({ opportunityId: input.opportunityId, clientId: input.clientId, ...values });
+        } else {
+          await upsertMeddpicc(input.clientId, { [fields.score]: score, [fields.notes]: note } as any);
+        }
+        applied.push(key);
+      }
+
+      for (let index = 0; index < signals.contactDiscoveries.length; index += 1) {
+        const item = signals.contactDiscoveries[index]; const key = `contact:${index}`;
+        if (!selected.has(key) || confirmedBefore.has(key)) continue;
+        const existingContacts = await db.select().from(keyContacts).where(eq(keyContacts.clientId, input.clientId));
+        const matched = existingContacts.find((contact: any) => contact.name === item.name);
+        const buyingRoleMap: Record<string, any> = { "用户决策人": "用户影响者", "内线": "内部线人", "反对者": "阻碍者" };
+        const values = { title: item.title || undefined, buyingRole: buyingRoleMap[item.buyingRole] || item.buyingRole, stance: item.attitude, notes: `[拜访 #${meeting.id}] ${item.evidence}` } as any;
+        if (matched) await db.update(keyContacts).set(values).where(eq(keyContacts.id, matched.id));
+        else await insertContact({ clientId: input.clientId, name: item.name, influence: item.buyingRole === "Champion" ? "Champion候选" : "影响者", relationship: "已接触", ...values } as any);
+        applied.push(key);
+      }
+
+      for (let index = 0; index < signals.timeSignals.length; index += 1) {
+        const item = signals.timeSignals[index]; const key = `time:${index}`;
+        if (!selected.has(key) || confirmedBefore.has(key)) continue;
+        await db.insert(intelligenceSignals).values({
+          clientId: input.clientId,
+          opportunityId: input.opportunityId || null,
+          rawSignal: item.date ? `${item.description}（时间：${item.date}）` : item.description,
+          signalType: "其他",
+          aiInterpretation: `[拜访 #${meeting.id}] 经 SAM 确认的${item.type === "deadline" ? "截止期" : item.type === "budget_cycle" ? "预算周期" : "触发事件"}事实。`,
+          aiRecommendation: "在下一次客户沟通中继续确认时间节点的负责人、影响范围与不可逆后果。",
+          urgency: item.type === "deadline" ? "高" : "中",
+        });
+        applied.push(key);
+      }
+
+      if (input.opportunityId) {
+        for (let index = 0; index < signals.competitorMentions.length; index += 1) {
+          const item = signals.competitorMentions[index]; const key = `competitor:${index}`;
+          if (!selected.has(key) || confirmedBefore.has(key)) continue;
+          await db.insert(competitionMap).values({ clientId: input.clientId, opportunityId: input.opportunityId, competitorType: item.competitorName, controlPoints: item.context, riskScore: item.threatLevel === "high" ? 5 : item.threatLevel === "medium" ? 3 : 1, nextStep: "继续核验竞品影响的决策标准" });
+          applied.push(key);
+        }
+        const whyUpdates: Record<string, string> = {};
+        if (selected.has("threewhy:change") && signals.threeWhyUpdates.whyChange) { whyUpdates.whyChangeClaim = signals.threeWhyUpdates.whyChange; whyUpdates.whyChangeEvidence = `[拜访 #${meeting.id}] ${signals.threeWhyUpdates.whyChange}`; applied.push("threewhy:change"); }
+        if (selected.has("threewhy:now") && signals.threeWhyUpdates.whyNow) { whyUpdates.whyNowClaim = signals.threeWhyUpdates.whyNow; whyUpdates.whyNowEvidence = `[拜访 #${meeting.id}] ${signals.threeWhyUpdates.whyNow}`; applied.push("threewhy:now"); }
+        if (selected.has("threewhy:us") && signals.threeWhyUpdates.whyUs) { whyUpdates.whyUsClaim = signals.threeWhyUpdates.whyUs; whyUpdates.whyUsEvidence = `[拜访 #${meeting.id}] ${signals.threeWhyUpdates.whyUs}`; applied.push("threewhy:us"); }
+        if (Object.keys(whyUpdates).length) {
+          const [existing] = await db.select().from(threeWhy).where(eq(threeWhy.opportunityId, input.opportunityId)).limit(1);
+          if (existing) await db.update(threeWhy).set({ ...whyUpdates, updatedAt: new Date() }).where(eq(threeWhy.opportunityId, input.opportunityId));
+          else await db.insert(threeWhy).values({ clientId: input.clientId, opportunityId: input.opportunityId, ...whyUpdates });
+        }
+      }
+      const nextKeys = Array.from(new Set<string>((Array.from(confirmedBefore) as string[]).concat(applied)));
+      await db.update(meetingMinutes).set({ aiFullSignalsConfirmedKeys: nextKeys }).where(eq(meetingMinutes.id, input.meetingId));
+      setImmediate(() => triggerSingleClientRefresh(input.clientId));
+      return { applied, confirmedKeys: nextKeys };
+    }),
     generate: publicProcedure.input(z.object({
       clientId: z.number(),
       clientName: z.string(),
