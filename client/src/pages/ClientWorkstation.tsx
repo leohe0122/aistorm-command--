@@ -444,6 +444,19 @@ export default function ClientWorkstation() {
   const { data: products = [] } = trpc.products.listActive.useQuery();
   const { data: emailUser } = trpc.emailAuth.me.useQuery();
 
+  // Command 3.0: AI Coach self-check
+  const [showCoachSelfCheck, setShowCoachSelfCheck] = useState(false);
+  const [coachQuestions, setCoachQuestions] = useState<string | null>(null);
+  const samSelfCheck = trpc.adCommand.samSelfCheck.useMutation({
+    onSuccess: (result: any) => setCoachQuestions(result.content),
+    onError: () => { toast.error("AI 自检生成失败"); setCoachQuestions(null); },
+  });
+  const handleCoachSelfCheck = () => {
+    setShowCoachSelfCheck(true);
+    setCoachQuestions(null);
+    samSelfCheck.mutate({ clientId });
+  };
+
   const addTask = trpc.pod.addTask.useMutation({
     onSuccess: () => utils.pod.listByClient.invalidate({ clientId }),
   });
@@ -487,8 +500,8 @@ export default function ClientWorkstation() {
         <header className="overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-950/65 shadow-[0_18px_55px_rgba(0,0,0,0.2)] backdrop-blur-sm">
           <div className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-start lg:justify-between lg:px-7 lg:py-6">
             <div className="flex min-w-0 gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-400/10 text-cyan-200"><Building2 className="h-6 w-6" /></div><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h1 className="text-2xl font-semibold tracking-tight text-slate-50">{client.name}</h1><span className="rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-200">客户作战台</span></div><p className="text-sm text-slate-400">{[client.industry, client.country, client.stage].filter(Boolean).join(" · ")}</p><p className="mt-2 text-xs text-slate-500">最后有效客户对话：{latestMeeting ? formatDate(latestMeeting.meetingDate) : "暂无入库拜访记录"}</p></div></div>
-            <div className="flex flex-col items-end gap-3"><PreVisitInsightButton client={client} /><div className="grid grid-cols-3 gap-2 sm:min-w-[330px]"><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-cyan-200">{contacts.length}</div><div className="text-[10px] text-slate-500">关键人</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-amber-200">{activeOpportunities.length}</div><div className="text-[10px] text-slate-500">在打商机</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-emerald-200">{meetings.length}</div><div className="text-[10px] text-slate-500">入库对话</div></div></div></div>
-          </div>
+            <div className="flex flex-col items-end gap-3"><div className="flex gap-2"><PreVisitInsightButton client={client} /><Button variant="outline" size="sm" className="text-purple-300 border-purple-500/30 hover:bg-purple-500/10" onClick={handleCoachSelfCheck}><Sparkles className="h-3.5 w-3.5 mr-1" />AI 自检</Button></div><div className="grid grid-cols-3 gap-2 sm:min-w-[330px]"><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-cyan-200">{contacts.length}</div><div className="text-[10px] text-slate-500">关键人</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-amber-200">{activeOpportunities.length}</div><div className="text-[10px] text-slate-500">在打商机</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-lg font-semibold text-emerald-200">{meetings.length}</div><div className="text-[10px] text-slate-500">入库对话</div></div></div></div>
+          </div>{/* AI Coach Self-Check */}{showCoachSelfCheck && <div className="mt-4 rounded-xl border border-purple-500/30 bg-purple-950/20 p-4"><div className="flex items-center justify-between mb-3"><span className="text-sm font-medium text-purple-300 flex items-center gap-1.5"><Sparkles className="h-4 w-4" /> AI 自检问题</span><button onClick={() => setShowCoachSelfCheck(false)} className="text-muted-foreground hover:text-foreground text-sm">&times;</button></div>{coachQuestions ? <div className="space-y-2 text-sm text-slate-300"><ReactMarkdown>{coachQuestions}</ReactMarkdown></div> : <div className="text-xs text-muted-foreground">生成中...</div>}</div>}
           <ProductCoverageBar clientId={clientId} />
         </header>
 

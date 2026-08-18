@@ -174,6 +174,61 @@ export function AICommandCenter() {
 
   if (dashboardLoading) return <div className="space-y-4 p-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-52 rounded-xl" /><Skeleton className="h-52 rounded-xl" /></div>;
 
+  // Command 3.0: SAM role-specific view
+  const userRole = (me as any)?.podRole || "AD";
+  const isSam = userRole === "SAM";
+  const samName = (me as any)?.name || "";
+  const myClients = isSam ? ((dashboard as any)?.clients ?? []).filter((c: any) => c.assignedSamName === samName) : [];
+  const myRecommendations = isSam ? recommendations.filter(r => r.assignedRole === "SAM" && r.status === "pending") : [];
+
+  if (isSam) {
+    return (
+      <main className="space-y-5 p-4 md:p-6">
+        <header className="flex flex-col gap-3 rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950/40 to-slate-950/30 p-5">
+          <div className="flex items-center gap-2"><Target className="h-5 w-5 text-emerald-300" /><h1 className="text-xl font-bold">我的战场快照</h1></div>
+          <p className="mt-1 text-sm text-muted-foreground">你负责的 {myClients.length} 户客户 · AI 已为你排好今日优先行动</p>
+        </header>
+        {myRecommendations.length > 0 && (
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold text-emerald-300 flex items-center gap-1.5"><Sparkles className="h-4 w-4" /> AI 今日优先行动</h2>
+            {myRecommendations.slice(0, 3).map(item => (
+              <article key={item.id} className="rounded-xl border border-border/70 bg-card p-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="font-medium text-sm">{item.title}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{item.aiConclusion}</div>
+                  </div>
+                  <Badge variant="outline" className={URGENCY_STYLE[item.urgency]}>{item.urgency}</Badge>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <Button size="sm" variant="outline" onClick={() => onNavigate(item)}>进入客户</Button>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+        <section className="grid gap-3 md:grid-cols-2">
+          {myClients.map((client: any) => {
+            const rec = recommendationForClient(client.id);
+            const weakest = client.meddpiccDetails ? Object.entries(client.meddpiccDetails).sort(([,a],[,b]) => Number(a) - Number(b))[0] : null;
+            return (
+              <article key={client.id} className="rounded-xl border border-border/60 bg-card p-4 hover:border-emerald-500/40 transition-colors cursor-pointer" onClick={() => navigate(`/clients/${client.id}`)}>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-medium">{client.name}</span>
+                  <Badge variant="outline" className="text-xs">{client.stage}</Badge>
+                </div>
+                {weakest && <div className="text-xs text-red-400 mb-1">最弱维度：{weakest[0]} = {String(weakest[1])}/100</div>}
+                {rec && <div className="text-xs text-emerald-400 mt-1 truncate">AI：{rec.aiConclusion}</div>}
+                {!rec && <div className="text-xs text-muted-foreground mt-1">暂无 AI 行动建议</div>}
+              </article>
+            );
+          })}
+          {myClients.length === 0 && <div className="col-span-2 text-center text-muted-foreground py-8">暂无分配客户</div>}
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="space-y-5 p-4 md:p-6">
       <header className="flex flex-col gap-3 rounded-2xl border border-cyan-500/20 bg-gradient-to-r from-cyan-950/40 to-slate-950/30 p-5 md:flex-row md:items-center md:justify-between">

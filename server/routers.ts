@@ -5832,6 +5832,32 @@ ${input.aiSuggestion}
       const content = String(response.choices?.[0]?.message?.content || '').trim() || '数据不足，暂不判断。请补充客户对话或关键人证据后重试。';
       return { content, samName: input.samName, clientCount: samClients.length };
     }),
+    samSelfCheck: protectedProcedure.input(z.object({ clientId: z.number() })).mutation(async ({ input }) => {
+      const client = await getClientById(input.clientId);
+      const meddpiccData = await getMeddpiccByClientId(input.clientId);
+      const m = meddpiccData as any;
+      const champScore = m?.championScore ?? 0;
+      const ebScore = m?.economicBuyerScore ?? 0;
+      const painScore = m?.implicatePainScore ?? 0;
+      const prompt = `为负责客户"${client?.name || "未知"}"（阶段：${client?.stage || "未知"}）的SAM生成3个自检问题。
+当前MEDDPICC：Champion=${champScore}/100, EB=${ebScore}/100, Pain=${painScore}/100
+
+问题要求：
+- 每个问题针对当前最弱的Win因子
+- 问题必须是SAM能用一句话回答的事实性问题
+- 如果SAM无法回答，说明该维度证据不足
+
+直接输出3个问题，每个一行，前面加序号。不要解释框架。`;
+      const res = await invokeLLM({
+        model: "gpt-5-mini",
+        maxCompletionTokens: 200,
+        messages: [
+          { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
+      });
+      return { content: String(res.choices?.[0]?.message?.content || "暂无法生成自检问题") };
+    }),
   }),
   // ── AD 指挥台聚合接口 ─────────────────────────────────────────────────────
   dashboard: router({
