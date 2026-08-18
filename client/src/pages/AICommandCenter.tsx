@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { AlertTriangle, BarChart3, CheckCircle2, ChevronRight, Clock3, RefreshCw, Sparkles, Target, Users, Zap } from "lucide-react";
+import { AlertTriangle, BarChart3, CheckCircle2, ChevronRight, Clock3, MapPinned, RefreshCw, Sparkles, Target, Users, Wrench, Zap } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ type CommandRecommendation = {
   dueDate: Date | string | null;
   status: "pending" | "confirmed" | "skipped" | "completed";
   podTaskId: number | null;
+  fingerprint?: string;
 };
 
 const URGENCY_STYLE: Record<string, string> = {
@@ -51,6 +53,9 @@ function RecommendationCard({ item, onConfirm, onSkip, onNavigate }: {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className={`border ${URGENCY_STYLE[item.urgency]}`}>{item.urgency}</Badge>
+            <Badge variant="outline" className={item.fingerprint?.startsWith("native-") ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-200" : "border-slate-500/35 text-slate-400"}>
+              {item.fingerprint?.startsWith("native-") ? "AI 原生研判" : "规则触发"}
+            </Badge>
             <h3 className="text-sm font-semibold text-foreground">{item.title}</h3>
           </div>
           <p className="mt-1 text-sm text-foreground/90">{item.aiConclusion}</p>
@@ -98,8 +103,13 @@ export function AICommandCenter() {
   const [, navigate] = useLocation();
   const [view, setView] = useState<"command" | "boards" | "analytics" | "coach">("command");
   const [didRefresh, setDidRefresh] = useState(false);
+  const [globalExpanded, setGlobalExpanded] = useState(false);
   const { data: dashboard, isLoading: dashboardLoading } = trpc.dashboard.summary.useQuery();
   const { data: me } = trpc.emailAuth.me.useQuery();
+  const userRole = (me as any)?.podRole || "AD";
+  const isSam = userRole === "SAM";
+  const isSaOrRsm = userRole === "SA" || userRole === "RSM";
+  const roleWorkbenchQuery = trpc.roleWorkbench.getMyDashboard.useQuery(undefined, { enabled: isSaOrRsm });
   const recommendationsQuery = trpc.adCommand.list.useQuery(undefined, { refetchInterval: 60_000 });
   const utils = trpc.useUtils();
   const refresh = trpc.adCommand.refresh.useMutation({
@@ -114,6 +124,18 @@ export function AICommandCenter() {
     onSuccess: () => { toast.success("已记录为本轮不采纳"); utils.adCommand.list.invalidate(); },
     onError: (error) => toast.error(error.message),
   });
+  const [coachAnalyses, setCoachAnalyses] = useState<Record<string, string>>({});
+  const [coachLoadingSam, setCoachLoadingSam] = useState<string | null>(null);
+  const samCoachReview = trpc.adCommand.samCoachReview.useMutation({
+    onSuccess: (result) => {
+      setCoachAnalyses((current) => ({ ...current, [result.samName]: result.content }));
+      setCoachLoadingSam(null);
+    },
+    onError: (error) => {
+      setCoachLoadingSam(null);
+      toast.error(error.message || "SAM 教练分析生成失败");
+    },
+  });
 
   useEffect(() => {
     if (!didRefresh && !refresh.isPending && !dashboardLoading) refresh.mutate();
@@ -123,7 +145,9 @@ export function AICommandCenter() {
 
   const recommendations = (recommendationsQuery.data ?? []) as CommandRecommendation[];
   const pending = recommendations.filter(item => item.status === "pending");
-  const today = pending.filter(item => item.kind === "today_action" || item.kind === "sam_coaching").slice(0, 3);
+  const globalBattlefield = pending.find(item => !item.clientId && item.fingerprint?.includes("-summary"))
+    ?? recommendations.find(item => !item.clientId && item.fingerprint?.includes("-summary"));
+  const today = pending.filter(item => (item.kind === "today_action" || item.kind === "sam_coaching") && item.id !== globalBattlefield?.id).slice(0, 3);
   const anomalies = pending.filter(item => item.kind === "anomaly");
   const approvals = pending.filter(item => item.kind === "pending_approval");
   const allVisible = [...today, ...anomalies, ...approvals];
@@ -134,6 +158,7 @@ export function AICommandCenter() {
   const onNavigate = (item: CommandRecommendation) => {
     if (item.clientId && item.opportunityId) navigate(`/clients/${item.clientId}/opportunities/${item.opportunityId}`);
     else if (item.clientId) navigate(`/clients/${item.clientId}`);
+    else navigate("/battle-map");
   };
 
   const zeroToOne = ((dashboard as any)?.zeroToOneBoard ?? []) as any[];
@@ -152,6 +177,85 @@ export function AICommandCenter() {
   const samWarningByName = useMemo(() => new Map(samWarnings.map(item => [item.name, item])), [samWarnings]);
 
   if (dashboardLoading) return <div className="space-y-4 p-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-52 rounded-xl" /><Skeleton className="h-52 rounded-xl" /></div>;
+
+  // Command 3.0: SAM role-specific view
+  const samName = (me as any)?.name || "";
+  const myClients = isSam ? ((dashboard as any)?.clients ?? []).filter((c: any) => c.assignedSamName === samName) : [];
+  const myRecommendations = isSam ? recommendations.filter(r => r.assignedRole === "SAM" && r.status === "pending") : [];
+
+  if (isSam) {
+    return (
+      <main className="space-y-5 p-4 md:p-6">
+        <header className="flex flex-col gap-3 rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950/40 to-slate-950/30 p-5">
+          <div className="flex items-center gap-2"><Target className="h-5 w-5 text-emerald-300" /><h1 className="text-xl font-bold">我的战场快照</h1></div>
+          <p className="mt-1 text-sm text-muted-foreground">你负责的 {myClients.length} 户客户 · AI 已为你排好今日优先行动</p>
+        </header>
+        {myRecommendations.length > 0 && (
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold text-emerald-300 flex items-center gap-1.5"><Sparkles className="h-4 w-4" /> AI 今日优先行动</h2>
+            {myRecommendations.slice(0, 3).map(item => (
+              <article key={item.id} className="rounded-xl border border-border/70 bg-card p-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="font-medium text-sm">{item.title}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{item.aiConclusion}</div>
+                  </div>
+                  <Badge variant="outline" className={URGENCY_STYLE[item.urgency]}>{item.urgency}</Badge>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <Button size="sm" variant="outline" onClick={() => onNavigate(item)}>进入客户</Button>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+        <section className="grid gap-3 md:grid-cols-2">
+          {myClients.map((client: any) => {
+            const rec = recommendationForClient(client.id);
+            const weakest = client.meddpiccDetails ? Object.entries(client.meddpiccDetails).sort(([,a],[,b]) => Number(a) - Number(b))[0] : null;
+            return (
+              <article key={client.id} className="rounded-xl border border-border/60 bg-card p-4 hover:border-emerald-500/40 transition-colors cursor-pointer" onClick={() => navigate(`/clients/${client.id}`)}>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-medium">{client.name}</span>
+                  <Badge variant="outline" className="text-xs">{client.stage}</Badge>
+                </div>
+                {weakest && <div className="text-xs text-red-400 mb-1">最弱维度：{weakest[0]} = {String(weakest[1])}/100</div>}
+                {rec && <div className="text-xs text-emerald-400 mt-1 truncate">AI：{rec.aiConclusion}</div>}
+                {!rec && <div className="text-xs text-muted-foreground mt-1">暂无 AI 行动建议</div>}
+              </article>
+            );
+          })}
+          {myClients.length === 0 && <div className="col-span-2 text-center text-muted-foreground py-8">暂无分配客户</div>}
+        </section>
+      </main>
+    );
+  }
+
+  if (isSaOrRsm) {
+    const workbench = roleWorkbenchQuery.data as any;
+    const roleLabel = userRole === "SA" ? "SA 技术定标工作台" : "RSM 属地推进工作台";
+    const roleDescription = userRole === "SA"
+      ? "仅展示已分配给你的商机；AI 聚焦技术决策人、验收标准与 POC 证据缺口。"
+      : "仅展示你负责客户下的活跃商机；AI 聚焦采购流程、属地渠道与关系推进证据。";
+    const icon = userRole === "SA" ? <Wrench className="h-5 w-5 text-violet-300" /> : <MapPinned className="h-5 w-5 text-amber-300" />;
+    const items = workbench?.workItems ?? [];
+    return (
+      <main className="space-y-5 p-4 md:p-6">
+        <header className="rounded-2xl border border-violet-500/20 bg-gradient-to-r from-violet-950/35 to-slate-950/30 p-5">
+          <div className="flex items-center gap-2">{icon}<h1 className="text-xl font-bold">{roleLabel}</h1></div>
+          <p className="mt-1 text-sm text-muted-foreground">{roleDescription}</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            {[["我的活跃商机", workbench?.summary?.activeDealCount ?? 0], ["需本周处理", workbench?.summary?.urgentDealCount ?? 0], ["待办任务", workbench?.summary?.openTaskCount ?? 0]].map(([label, value]) => <div key={String(label)} className="rounded-lg border border-white/10 bg-black/10 px-3 py-2"><p className="text-[11px] text-muted-foreground">{label}</p><p className="mt-1 text-xl font-semibold text-foreground">{value}</p></div>)}
+          </div>
+        </header>
+        {roleWorkbenchQuery.isLoading ? <div className="grid gap-3 md:grid-cols-2"><Skeleton className="h-40 rounded-xl" /><Skeleton className="h-40 rounded-xl" /></div> : null}
+        {!roleWorkbenchQuery.isLoading && items.length === 0 ? <section className="rounded-2xl border border-dashed bg-card p-10 text-center"><p className="font-medium">当前没有已分配给你的活跃商机</p><p className="mt-2 text-sm text-muted-foreground">系统不会把未分配商机或主观判断当成你的任务。请由 AD/SAM 在商机作战室完成角色分配或调兵入场。</p></section> : null}
+        <section className="grid gap-3 lg:grid-cols-2">
+          {items.map((item: any) => <article key={item.opportunityId} className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm"><div className="flex gap-3"><div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${item.isUrgent ? "border-amber-500/35 bg-amber-500/10 text-amber-200" : "border-violet-500/35 bg-violet-500/10 text-violet-200"}`}>{item.isUrgent ? <AlertTriangle className="h-4 w-4" /> : icon}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-sm font-semibold">{item.clientName} · {item.opportunityName}</h2><Badge variant="outline">{item.stage || "阶段待定义"}</Badge>{item.isUrgent ? <Badge variant="outline" className="border-amber-500/35 text-amber-200">需本周处理</Badge> : <Badge variant="outline" className="border-emerald-500/35 text-emerald-200">持续经营</Badge>}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{item.diagnostic}</p><p className="mt-3 text-xs text-foreground/80">已分配待办：{item.assignedTaskCount} 条{item.assignedTaskCount > 0 ? ` · ${item.tasks.map((task: any) => task.title).join("；")}` : " · 暂无明细任务，请进入作战室确认下一动作"}</p><div className="mt-3 flex gap-2"><Button size="sm" variant="outline" onClick={() => navigate(`/clients/${item.clientId}/opportunities/${item.opportunityId}`)}>进入商机作战室</Button></div></div></div></article>)}
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="space-y-5 p-4 md:p-6">
@@ -177,6 +281,14 @@ export function AICommandCenter() {
       </nav>
 
       {view === "command" && <>
+        {globalBattlefield ? <section className="rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-950/35 to-cyan-950/20 p-4">
+          <button className="flex w-full items-start gap-3 text-left" onClick={() => setGlobalExpanded(value => !value)}>
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-violet-200" />
+            <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-violet-100">本周全局战场研判</p><Badge variant="outline" className={globalBattlefield.fingerprint?.startsWith("native-") ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-200" : "border-slate-500/35 text-slate-400"}>{globalBattlefield.fingerprint?.startsWith("native-") ? "AI 原生研判" : "规则触发"}</Badge></div><p className="mt-1 text-sm text-foreground/90">{globalBattlefield.aiConclusion}</p></div>
+            <span className="text-xs text-muted-foreground">{globalExpanded ? "收起 ▲" : "展开详情 ▼"}</span>
+          </button>
+          {globalExpanded ? <div className="mt-4 grid gap-3 border-t border-violet-500/20 pt-4 md:grid-cols-3">{globalBattlefield.facts.filter(fact => fact.label !== "快照指纹").map((fact, index) => <div key={index} className="rounded-lg bg-background/30 p-3"><p className="text-xs font-medium text-violet-200">{fact.label}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{fact.value}</p></div>)}</div> : null}
+        </section> : null}
         <section className="grid gap-4 xl:grid-cols-3">
           <div className="xl:col-span-2 rounded-2xl border border-cyan-500/25 bg-card p-4">
             <div className="mb-4 flex items-center justify-between"><div><p className="text-sm font-semibold text-cyan-200">AI 今日指令</p><p className="text-xs text-muted-foreground">最多三条；确认后自动进入 AD/POD 作战任务。</p></div><Badge variant="outline">待确认 {today.length}</Badge></div>
@@ -205,7 +317,7 @@ export function AICommandCenter() {
         <div className="md:col-span-4 rounded-2xl border bg-card p-5 text-sm text-muted-foreground"><BarChart3 className="mb-2 h-5 w-5 text-cyan-300" />漏斗、MEDDPICC 雷达、拜访频率等详细数据保留为按需分析，不再占用 AD 的决策首屏。</div>
       </section>}
 
-      {view === "coach" && <section className="rounded-2xl border bg-card p-4"><div className="mb-4 flex items-center gap-2"><Users className="h-4 w-4 text-emerald-300" /><div><p className="text-sm font-semibold">SAM 教练</p><p className="text-xs text-muted-foreground">识别跨客户重复出现的能力模式，而不是孤立评价个人。</p></div></div><div className="grid gap-3 md:grid-cols-2">{samWarnings.map(sam => <div key={sam.name} className="rounded-xl border border-border/70 p-4"><p className="font-semibold">{sam.name}</p><p className="mt-1 text-sm text-muted-foreground">负责 {sam.total} 个客户，其中 {sam.gaps} 个存在 Champion 证据缺口。</p><Button className="mt-3" size="sm" variant="outline" onClick={() => setView("boards")}>查看相关客户</Button></div>)}</div></section>}
+      {view === "coach" && <section className="rounded-2xl border bg-card p-4"><div className="mb-4 flex items-center gap-2"><Users className="h-4 w-4 text-emerald-300" /><div><p className="text-sm font-semibold">SAM 教练</p><p className="text-xs text-muted-foreground">按需生成、不持久化；分析只使用已入库的客户、拜访与 Champion 事实。</p></div></div><div className="grid gap-3 md:grid-cols-2">{samWarnings.map(sam => <div key={sam.name} className="rounded-xl border border-border/70 p-4"><p className="font-semibold">{sam.name}</p><p className="mt-1 text-sm text-muted-foreground">负责 {sam.total} 个客户，其中 {sam.gaps} 个存在 Champion 证据缺口。</p><div className="mt-3 flex gap-2"><Button size="sm" variant="outline" disabled={coachLoadingSam === sam.name} onClick={() => { setCoachLoadingSam(sam.name); samCoachReview.mutate({ samName: sam.name }); }}>{coachLoadingSam === sam.name ? <><RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />生成中</> : coachAnalyses[sam.name] ? "刷新教练分析" : "生成教练分析"}</Button><Button size="sm" variant="ghost" onClick={() => setView("boards")}>查看相关客户</Button></div>{coachAnalyses[sam.name] ? <div className="prose prose-invert prose-sm mt-4 max-w-none rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3"><ReactMarkdown>{coachAnalyses[sam.name]}</ReactMarkdown></div> : null}</div>)}</div></section>}
     </main>
   );
 }

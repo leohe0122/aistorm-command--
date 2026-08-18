@@ -6,15 +6,9 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { RoleProvider } from "./contexts/RoleContext";
 import CommandLayout from "./components/CommandLayout";
 import BattleMap from "./pages/BattleMap";
-import IntelRadar from "./pages/IntelRadar";
-import QuickReview from "./pages/QuickReview";
-import ActionCommand from "./pages/ActionCommand";
-import AIInsights from "./pages/AIInsights";
 import ChampionAmmo from "./pages/ChampionAmmo";
 import PodCenter from "./pages/PodCenter";
 import MeetingMinutes from "./pages/MeetingMinutes";
-import OpportunityPrediction from "./pages/OpportunityPrediction";
-import CrmIntegration from "./pages/CrmIntegration";
 import DailyBriefing from "./pages/DailyBriefing";
 import Arsenal from "./pages/Arsenal";
 import ADDashboard from "./pages/ADDashboard";
@@ -132,15 +126,9 @@ function Router() {
         <Route path="/battle-map" component={BattleMap} />
         <Route path="/clients/:clientId/opportunities/:opportunityId" component={OpportunityRoom} />
         <Route path="/clients/:clientId" component={ClientWorkstation} />
-        <Route path="/intel-radar" component={IntelRadar} />
-        <Route path="/quick-review" component={QuickReview} />
-        <Route path="/action-command" component={ActionCommand} />
-        <Route path="/ai-insights" component={AIInsights} />
         <Route path="/champion-ammo" component={ChampionAmmo} />
         <Route path="/pod-center" component={PodCenter} />
         <Route path="/meeting-minutes" component={MeetingMinutes} />
-        <Route path="/prediction" component={OpportunityPrediction} />
-        <Route path="/crm" component={CrmIntegration} />
         <Route path="/daily-briefing" component={DailyBriefing} />
         <Route path="/settings" component={SystemSettings} />
         <Route path="/arsenal" component={Arsenal} />

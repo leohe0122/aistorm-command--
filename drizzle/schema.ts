@@ -9,6 +9,7 @@ import {
   float,
   boolean,
   tinyint,
+  decimal,
 } from "drizzle-orm/mysql-core";
 
 /**
@@ -260,6 +261,8 @@ export const actionItems = mysqlTable("action_items", {
   taskType: mysqlEnum("taskType", ["external_sales", "internal_resource"]).default("external_sales"), // 对外销售 vs 内部资源协调
   opportunityId: int("opportunityId"),  // 关联子商机（可选）
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  /** 来源于哪次 Deal Review（用于追溯） */
+  sourceReviewId: int("sourceReviewId"),
 });
 
 export type ActionItem = typeof actionItems.$inferSelect;
@@ -317,6 +320,13 @@ export const meetingMinutes = mysqlTable("meeting_minutes", {
   contactType: mysqlEnum("contactType", ["formal_meeting", "dinner_meeting", "phone_call", "video_call", "instant_message", "event", "customer_initiated"]).default("formal_meeting"),
   initiatedBy: mysqlEnum("initiatedBy", ["sam", "customer", "mutual"]).default("sam"),
   entrySource: mysqlEnum("entrySource", ["manual", "feishu_miaoji", "whatsapp_quick", "feishu_bot"]).default("manual"),
+  /** AI 拜访后结论卡（Win进展/MEDDPICC建议/下次优先/风险预警） */
+  aiPostAnalysis: json("aiPostAnalysis").$type<{
+    winProgress: string;
+    meddpiccUpdates: Array<{ dim: string; label: string; suggestedScore: number; reason: string }>;
+    nextMeetingPriority: string;
+    riskWarning: string | null;
+  }>(),
 });
 
 export type MeetingMinute = typeof meetingMinutes.$inferSelect;
@@ -340,6 +350,8 @@ export const podTasks = mysqlTable("pod_tasks", {
   taskType: mysqlEnum("taskType", ["external_sales", "internal_resource"]).default("external_sales"), // 对外销售 vs 内部资源协调
   opportunityId: int("opportunityId"),  // 关联子商机（可选）
   taskStatus: mysqlEnum("taskStatus", ["pending", "in_progress", "done"]).default("pending").notNull(), // 看板状态
+  /** 任务由哪一条 AI Review 生成；仅记录可追溯来源，不替代完成状态。 */
+  sourceReviewId: int("sourceReviewId"),
 });
 
 export type PodTask = typeof podTasks.$inferSelect;
@@ -760,6 +772,9 @@ export const opportunities = mysqlTable("opportunities", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   /** 当前商机子阶段开始时间（每次阶段推进时更新）。用于计算商机停滞天数。 */
   stageChangedAt: timestamp("stageChangedAt").defaultNow().notNull(),
+  /** 负责SA */
+  assignedSaId: int("assignedSaId"),
+  assignedSaName: varchar("assignedSaName", { length: 100 }),
 });
 export type Opportunity = typeof opportunities.$inferSelect;
 export type InsertOpportunity = typeof opportunities.$inferInsert;
@@ -799,6 +814,138 @@ export const opportunityMeddpicc = mysqlTable("opportunity_meddpicc", {
 });
 export type OpportunityMeddpicc = typeof opportunityMeddpicc.$inferSelect;
 export type InsertOpportunityMeddpicc = typeof opportunityMeddpicc.$inferInsert;
+
+/** Command 2.0：0→1 Account Map 的战略视图（每客户一条）。 */
+export const accountOverview = mysqlTable("account_overview", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull().unique(),
+  strategicFitScore: int("strategicFitScore"),
+  potentialScore: int("potentialScore"),
+  relationshipScore: int("relationshipScore"),
+  whitespaceScore: int("whitespaceScore"),
+  execPriorityScore: int("execPriorityScore"),
+  strategy12m: text("strategy12m"),
+  strategy24m: text("strategy24m"),
+  strategy36m: text("strategy36m"),
+  aiOpportunity: text("aiOpportunity"),
+  cyberOpportunity: text("cyberOpportunity"),
+  ictOpportunity: text("ictOpportunity"),
+  triggerEvents: text("triggerEvents"),
+  vendorVision: varchar("vendorVision", { length: 50 }),
+  annualSuccessKPI: text("annualSuccessKPI"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AccountOverview = typeof accountOverview.$inferSelect;
+export type InsertAccountOverview = typeof accountOverview.$inferInsert;
+
+/** Command 2.0：客户多层关系覆盖（0→1 Account Map）。 */
+export const relationshipCoverage = mysqlTable("relationship_coverage", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull(),
+  coverageLevel: varchar("coverageLevel", { length: 100 }),
+  targetPerson: varchar("targetPerson", { length: 100 }),
+  ourCoverer: varchar("ourCoverer", { length: 100 }),
+  strengthScore: int("strengthScore"),
+  lastInteraction: timestamp("lastInteraction"),
+  hasExecMeeting: boolean("hasExecMeeting").default(false),
+  stance: varchar("stance", { length: 50 }),
+  gapJudgment: varchar("gapJudgment", { length: 20 }),
+  nextAction: text("nextAction"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type RelationshipCoverage = typeof relationshipCoverage.$inferSelect;
+export type InsertRelationshipCoverage = typeof relationshipCoverage.$inferInsert;
+
+/** Command 2.0：商机级三 Why 与 Challenger Reframe 事实（1→N Deal Map）。 */
+export const threeWhy = mysqlTable("three_why", {
+  id: int("id").autoincrement().primaryKey(),
+  opportunityId: int("opportunityId").notNull().unique(),
+  clientId: int("clientId").notNull(),
+  whyChangeClaim: text("whyChangeClaim"),
+  whyChangePain: text("whyChangePain"),
+  whyChangeConsequence: text("whyChangeConsequence"),
+  whyChangeEvidence: text("whyChangeEvidence"),
+  whyChangeScore: int("whyChangeScore"),
+  whyNowClaim: text("whyNowClaim"),
+  whyNowTrigger: text("whyNowTrigger"),
+  whyNowEvidence: text("whyNowEvidence"),
+  whyNowScore: int("whyNowScore"),
+  whyUsClaim: text("whyUsClaim"),
+  whyUsDifferentiator: text("whyUsDifferentiator"),
+  whyUsEvidence: text("whyUsEvidence"),
+  whyUsScore: int("whyUsScore"),
+  challengerTeach: text("challengerTeach"),
+  challengerTailor: text("challengerTailor"),
+  challengerControl: text("challengerControl"),
+  reframeEvidence: text("reframeEvidence"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ThreeWhy = typeof threeWhy.$inferSelect;
+export type InsertThreeWhy = typeof threeWhy.$inferInsert;
+
+/** Command 2.0：商机痛点、量化基线与商业价值明细（1→N Deal Map）。 */
+export const painMetrics = mysqlTable("pain_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  opportunityId: int("opportunityId").notNull(),
+  clientId: int("clientId").notNull(),
+  painType: varchar("painType", { length: 100 }),
+  painStatement: text("painStatement"),
+  affectedSponsor: varchar("affectedSponsor", { length: 100 }),
+  currentBaseline: text("currentBaseline"),
+  targetImprovement: text("targetImprovement"),
+  valueLogic: text("valueLogic"),
+  timeframe: varchar("timeframe", { length: 50 }),
+  annualValue: int("annualValue"),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }),
+  evidenceStrength: varchar("evidenceStrength", { length: 50 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type PainMetric = typeof painMetrics.$inferSelect;
+export type InsertPainMetric = typeof painMetrics.$inferInsert;
+
+/** Command 2.0：商机竞争与 No Decision 地图（1→N Deal Map）。 */
+export const competitionMap = mysqlTable("competition_map", {
+  id: int("id").autoincrement().primaryKey(),
+  opportunityId: int("opportunityId").notNull(),
+  clientId: int("clientId").notNull(),
+  competitorType: varchar("competitorType", { length: 100 }),
+  controlPoints: text("controlPoints"),
+  customerSupporter: varchar("customerSupporter", { length: 100 }),
+  strengths: text("strengths"),
+  weaknesses: text("weaknesses"),
+  attackVector: text("attackVector"),
+  counterAction: text("counterAction"),
+  riskScore: int("riskScore"),
+  owner: varchar("owner", { length: 100 }),
+  nextStep: text("nextStep"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type CompetitionMap = typeof competitionMap.$inferSelect;
+export type InsertCompetitionMap = typeof competitionMap.$inferInsert;
+
+/** Command 2.0：商机重资源投入 Go/No-Go 门控（1→N Deal Map）。 */
+export const goNoGo = mysqlTable("go_no_go", {
+  id: int("id").autoincrement().primaryKey(),
+  opportunityId: int("opportunityId").notNull().unique(),
+  gate1StrategicFit: int("gate1StrategicFit").default(0).notNull(),
+  gate2PainVerified: int("gate2PainVerified").default(0).notNull(),
+  gate3ChampionExists: int("gate3ChampionExists").default(0).notNull(),
+  gate4EBClear: int("gate4EBClear").default(0).notNull(),
+  gate5ValueQuantified: int("gate5ValueQuantified").default(0).notNull(),
+  gate6CriteriaWinnable: int("gate6CriteriaWinnable").default(0).notNull(),
+  gate7ProcessClear: int("gate7ProcessClear").default(0).notNull(),
+  gate8CompDefensible: int("gate8CompDefensible").default(0).notNull(),
+  gate9DeliveryOK: int("gate9DeliveryOK").default(0).notNull(),
+  gate10ROIJustified: int("gate10ROIJustified").default(0).notNull(),
+  managerOverride: varchar("managerOverride", { length: 20 }),
+  overrideReason: text("overrideReason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type GoNoGo = typeof goNoGo.$inferSelect;
+export type InsertGoNoGo = typeof goNoGo.$inferInsert;
 
 /**
  * 竞品阻击包（Kill Sheets）

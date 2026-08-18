@@ -851,8 +851,89 @@
 - [x] 验证旧 Demo URL 不再提供重构前的误导性内容（生产返回 410 下线响应）
 - [x] 移除全部左侧导航、系统设置和页面内的 Demo 分发/管理按钮与路由
 - [x] 移除 Demo 令牌数据库调用与相关后端接口，保留非 Demo 的真实系统功能
+- [x] 清理项目根目录遗留的旧 Demo 生成、截图替换与演示重建脚本；后续不再执行任何 Demo 操作
 
-## 商机作战材料闭环
-- [x] 将已录入的竞品反制动作转为经人工确认的 POD 任务，并保留商机与竞争事实来源
-- [x] 为商机方案生成记录采用/未采用状态及客户反馈，并在下次生成时仅作为待验证上下文参考
-- [x] 完成回归、生产验证与 GitHub 同步
+## LLM 原生 AD 指挥研判
+- [x] 审计规则建议、全局 Review 和 SAM 教练 LLM 逻辑的可复用边界
+- [x] 对新生成的客户级与商机级建议调用 LLM，输出方法论判断和 AD 具体动作
+- [x] 每周接入一次全局战场研判与 AD 本周三件行动
+- [x] 为 SAM 教练卡增加按需生成、非持久化的 LLM 教练分析
+- [x] 完成成本控制、回归测试、生产验收与 GitHub 同步
+
+## 全局研判导航语义修复
+- [x] 将“本周全局战场研判”卡片与单一客户解绑，并跳转战场地图
+
+## 生产部署启动诊断
+- [x] 增加不依赖数据库的 `/__startup` 启动探针与最早期启动环境日志
+- [x] 在生产启动脚本显式校验 `dist/` 构建产物存在
+- [x] 触发完整构建—部署并根据启动探针恢复生产域名（生产 dashboard 与 AD 指挥接口已恢复 200）
+
+## LLM 原生全量战场研判升级
+- [x] 审计原生快照所需的客户、拜访、购买信号、MEDDPICC 与商机事实数据
+- [x] 实现 `adNativeAnalysis` 全量战场快照、结构化 LLM 输出与事实校验
+- [x] 将 AD 刷新改为周度/重大事实增量触发的 LLM 主引擎，规则仅作失败兜底
+- [x] 展示可折叠全局战场判断条及 AI 原生/规则来源徽章
+- [x] 完成双轨观察、成本控制、生产验收与 GitHub 同步
+
+## 后续功能与导航收敛队列（在原生研判完成后执行）
+- [x] 将 ActionCommand 的行动建议并入客户作战台任务区域并移除独立入口
+- [x] 删除 QuickReview 独立入口，将其 0→1/1→N Review 能力并入客户/商机作战台
+- [x] 将 AIInsights 重定位为客户作战台内的“拜访前洞察”入口并移除主导航
+- [x] 将 OpportunityPrediction 降级为商机作战室内的 AI 预测展开区域
+- [x] 将 IntelRadar 缩减为客户作战台内的外部事件信号，RSS 整合进 DailyBriefing
+- [x] 在商机作战室加入“生成武器”直达 Arsenal 的入口
+- [x] 将 CRM 集成降级至系统设置，将 POD 中枢降为次级任务汇总入口
+- [x] 收敛主导航至 AD 指挥台、战场地图、拜访作战日志、POD 协同、武器库和每日情报简报
+
+## Command 2.0 升级（v2.0）
+- [x] 审计现有原生研判、Review、方法论字段和 HKT 真实数据的差距，锁定第一批可交付边界
+- [x] 新建统一销售方法论层，并让全部关键服务端 LLM 调用使用同一系统提示词与事实约束
+- [x] 扩展全量战场原生研判：以 Win 公式、Account Map 与 Deal Map 识别风险，规则仅作失败兜底
+- [x] 改写 0→1 Review、1→N Deal Review、SAM 教练、规则兜底研判与 MEDDPICC 真实性提示
+- [x] 建立 Account Map、关系覆盖、3 Why、Pain & Metrics、竞争态势、Go/No-Go 数据模型及接口
+- [x] 在客户作战台与商机作战室呈现 Account Map、覆盖矩阵、3 Why、商业价值和 Go/No-Go
+- [x] 校准 Command 2.0 六项导航语义、完成 HKT 真实事实验收、生产发布与 GitHub 同步
+- [x] 将 SALES_METHODOLOGY_SYSTEM_PROMPT 注入 routers.ts 中全部 LLM 调用点（31 处），消除独立 prompt 的事实约束不一致
+- [x] 为高频场景（拜访前洞察、会议纪要解析、0→1 Review、1→N Review、Win Strategy）追加 Account/Deal Map 诊断层上下文注入
+- [x] 为高频场景（拜访前洞察、会议纪要解析、0→1 Review、1→N Review、Win Strategy）追加 Account/Deal Map 诊断层上下文注入
+- [x] 修复 Deal Health 硬编码 null：在原生快照和 1→N Review 中实际计算 11 维加权分数
+- [x] 事件驱动自动刷新：拜访日志提交、购买信号录入、Go/No-Go 保存、MEDDPICC 变化后非阻塞触发单客户原生研判
+- [x] 拜访前洞察注入 6 张表上下文：3 Why、Pain 年度价值、Go/No-Go 门控状态和最弱门控
+- [x] MEDDPICC 录入时的 AI 证据挑战：Champion/EB ≥75 时 LLM 验证并返回挑战结论
+- [x] Challenger Reframe 由 LLM 检测替换关键词匹配
+
+## Command 3.0 角色原生化
+- [x] 1-A SAM 拜访后结论卡：LLM 同步分析 Win 进展/MEDDPICC 建议/下次优先/风险预警，前端弹窗可采纳
+- [x] 1-B SAM 首页分支渲染：按 podRole 显示"我的战场快照"而非 AD 看板
+- [x] 1-C SAM AI Coach 自检：客户作战台内按需生成 3 个自我检测问题
+- [x] 2-A/2-B SA 技术定标工作台：sa.getTechReadiness 接口 + PodCenter SA 角色视图
+- [x] 3-A/3-B RSM 属地工作台：rsm.getLocalActionPlan 接口 + PodCenter RSM 角色视图
+- [x] 4-A 商机作战室调兵入场：按阶段自动推荐 SA/RSM/SAM 介入并一键创建角色任务
+- [x] 4-B Deal Review 后角色分工确认：LLM 提取分角色行动并创建 actionItems
+- [x] 数据库迁移：meetingMinutes.aiPostAnalysis / opportunities.assignedSaId+Name / actionItems.sourceReviewId
+
+## Command 3.0 Deal Review 行动闭环强化
+- [x] 用 JSON Schema 结构化输出替代 1→N Review 的 Markdown 正则角色行动解析
+- [x] 在商机作战室明确展示本次 Review 创建的角色任务数量与失败原因
+
+## 运行时缺陷修复
+- [x] 修复 SAM AI 自检 mutation 的 `require is not defined` ESM 运行时异常，并完成回归与生产验证
+
+## 角色原生化后续边界（已确认）
+- [x] 为 SA 与 RSM 建设主动式角色首页，优先呈现本周需其介入的商机与 AI 任务，而非仅增加 POD 被动过滤
+- [x] 将 SAM AI 自检转化为带字段指向和来源要求的事实补录引导；不把 SAM 主观回答直接写入 Review 事实层
+
+## Review→行动→复盘闭环增强
+- [x] 将 1→N Deal Review 扩展为 AD/SAM/SA/RSM 四角色 JSON Schema 行动，并可靠创建对应 POD 任务
+- [x] 为 POD 任务呈现来源 Review 链接和对应事实片段，确保行动可追溯
+- [x] 在后续 Deal Review 中计算并呈现上次 Review 任务的闭环率，而不增加低价值状态时间线
+
+## Review→行动→复盘闭环增强
+- [x] 将 1→N Deal Review 扩展为 AD/SAM/SA/RSM 四角色 JSON Schema 行动，并可靠创建对应 POD 任务
+- [x] 为 POD 任务呈现来源 Review 链接和对应事实片段，确保行动可追溯
+- [x] 在后续 Deal Review 中计算并呈现上次 Review 任务的闭环率，而不增加低价值状态时间线
+
+## 武器库作战上下文整合
+- [x] 为 AI 方案定制注入 SALES_METHODOLOGY_SYSTEM_PROMPT 与可选商机的 Deal Map 事实上下文
+- [x] 在商机作战室嵌入 Champion 突破话术与轻量竞品对比卡
+- [x] 将武器库导航收敛为仓库型能力，并完成回归、生产验证与 GitHub 同步

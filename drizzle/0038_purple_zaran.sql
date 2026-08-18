@@ -1,0 +1,122 @@
+CREATE TABLE `account_overview` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`clientId` int NOT NULL,
+	`strategicFitScore` int,
+	`potentialScore` int,
+	`relationshipScore` int,
+	`whitespaceScore` int,
+	`execPriorityScore` int,
+	`strategy12m` text,
+	`strategy24m` text,
+	`strategy36m` text,
+	`aiOpportunity` text,
+	`cyberOpportunity` text,
+	`ictOpportunity` text,
+	`triggerEvents` text,
+	`vendorVision` varchar(50),
+	`annualSuccessKPI` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `account_overview_id` PRIMARY KEY(`id`),
+	CONSTRAINT `account_overview_clientId_unique` UNIQUE(`clientId`)
+);
+--> statement-breakpoint
+CREATE TABLE `competition_map` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`opportunityId` int NOT NULL,
+	`clientId` int NOT NULL,
+	`competitorType` varchar(100),
+	`controlPoints` text,
+	`customerSupporter` varchar(100),
+	`strengths` text,
+	`weaknesses` text,
+	`attackVector` text,
+	`counterAction` text,
+	`riskScore` int,
+	`owner` varchar(100),
+	`nextStep` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `competition_map_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `go_no_go` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`opportunityId` int NOT NULL,
+	`gate1StrategicFit` int NOT NULL DEFAULT 0,
+	`gate2PainVerified` int NOT NULL DEFAULT 0,
+	`gate3ChampionExists` int NOT NULL DEFAULT 0,
+	`gate4EBClear` int NOT NULL DEFAULT 0,
+	`gate5ValueQuantified` int NOT NULL DEFAULT 0,
+	`gate6CriteriaWinnable` int NOT NULL DEFAULT 0,
+	`gate7ProcessClear` int NOT NULL DEFAULT 0,
+	`gate8CompDefensible` int NOT NULL DEFAULT 0,
+	`gate9DeliveryOK` int NOT NULL DEFAULT 0,
+	`gate10ROIJustified` int NOT NULL DEFAULT 0,
+	`managerOverride` varchar(20),
+	`overrideReason` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `go_no_go_id` PRIMARY KEY(`id`),
+	CONSTRAINT `go_no_go_opportunityId_unique` UNIQUE(`opportunityId`)
+);
+--> statement-breakpoint
+CREATE TABLE `pain_metrics` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`opportunityId` int NOT NULL,
+	`clientId` int NOT NULL,
+	`painType` varchar(100),
+	`painStatement` text,
+	`affectedSponsor` varchar(100),
+	`currentBaseline` text,
+	`targetImprovement` text,
+	`valueLogic` text,
+	`timeframe` varchar(50),
+	`annualValue` int,
+	`confidence` decimal(3,2),
+	`evidenceStrength` varchar(50),
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `pain_metrics_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `relationship_coverage` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`clientId` int NOT NULL,
+	`coverageLevel` varchar(100),
+	`targetPerson` varchar(100),
+	`ourCoverer` varchar(100),
+	`strengthScore` int,
+	`lastInteraction` timestamp,
+	`hasExecMeeting` boolean DEFAULT false,
+	`stance` varchar(50),
+	`gapJudgment` varchar(20),
+	`nextAction` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `relationship_coverage_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `three_why` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`opportunityId` int NOT NULL,
+	`clientId` int NOT NULL,
+	`whyChangeClaim` text,
+	`whyChangePain` text,
+	`whyChangeConsequence` text,
+	`whyChangeEvidence` text,
+	`whyChangeScore` int,
+	`whyNowClaim` text,
+	`whyNowTrigger` text,
+	`whyNowEvidence` text,
+	`whyNowScore` int,
+	`whyUsClaim` text,
+	`whyUsDifferentiator` text,
+	`whyUsEvidence` text,
+	`whyUsScore` int,
+	`challengerTeach` text,
+	`challengerTailor` text,
+	`challengerControl` text,
+	`reframeEvidence` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `three_why_id` PRIMARY KEY(`id`),
+	CONSTRAINT `three_why_opportunityId_unique` UNIQUE(`opportunityId`)
+);

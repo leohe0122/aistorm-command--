@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   Bell, CheckCircle2, RefreshCw, Save, Info, Send,
-  ToggleLeft, ToggleRight, Clock, Webhook
+  ToggleLeft, ToggleRight, Clock, Webhook, ExternalLink, Newspaper, Rss
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,8 @@ export default function DailyBriefing() {
   const [latestBriefing, setLatestBriefing] = useState<{ content: string; today: string } | null>(null);
 
   const { data: configs = [], isLoading, refetch } = trpc.systemConfig.getAll.useQuery();
+  const { data: rssSources = [] } = trpc.rss.listSources.useQuery();
+  const { data: complianceItems = [], isLoading: complianceLoading, refetch: refetchCompliance } = trpc.rss.fetchComplianceNews.useQuery({ limit: 8 });
   const triggerBriefing = (trpc.insights as any).triggerDailyBriefing.useMutation();
 
   const setConfig = trpc.systemConfig.set.useMutation({
@@ -259,6 +261,12 @@ export default function DailyBriefing() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="bg-card border border-border rounded-xl p-4">
+            <div className="mb-3 flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Rss className="h-4 w-4 text-violet-300" />RSS 外部情报摘要</div><p className="mt-1 text-xs leading-5 text-muted-foreground">自动和手动简报都会读取已启用的“合规政策”RSS源。条目只作为待核验外部情报，不会被自动写为客户事实。</p></div><Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => refetchCompliance()} disabled={complianceLoading}><RefreshCw className={cn("h-3 w-3", complianceLoading && "animate-spin")} />刷新</Button></div>
+            <div className="mb-3 flex items-center gap-2 text-[10px] text-muted-foreground"><span className="rounded border border-violet-400/20 bg-violet-400/[0.08] px-1.5 py-0.5 text-violet-200">{rssSources.filter((source: any) => source.isActive && ((source.tags as string[]) || []).includes("合规政策")).length} 个启用源</span><span>RSS配置在系统设置中维护。</span></div>
+            {complianceLoading ? <div className="flex min-h-24 items-center justify-center text-xs text-muted-foreground"><RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />正在读取外部情报…</div> : complianceItems.length === 0 ? <div className="rounded-lg border border-dashed border-border px-3 py-5 text-center text-xs text-muted-foreground">暂无可用合规 RSS 条目；简报会如实省略“外部情报观察”。</div> : <div className="space-y-2">{(complianceItems as any[]).slice(0, 5).map((item, index) => <article key={`${item.link}-${index}`} className="rounded-lg border border-border bg-muted/10 p-3"><div className="flex items-start gap-2"><Newspaper className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-300" /><div className="min-w-0 flex-1"><div className="line-clamp-2 text-xs font-medium leading-5 text-foreground">{item.title}</div><div className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-muted-foreground"><span>{item.source}</span>{item.pubDate && <span>{new Date(item.pubDate).toLocaleDateString("zh-CN")}</span>}</div></div>{item.link && <a href={item.link} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-primary" title="打开原文"><ExternalLink className="h-3.5 w-3.5" /></a>}</div></article>)}</div>}
           </div>
 
           {/* Briefing Preview */}

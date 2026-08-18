@@ -8,8 +8,12 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
+import { buildDailyBriefingPrompt, getComplianceRssDigest } from "./dailyBriefingRss";
+import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildDealMapDiagnosticLayer } from "./salesMethodology";
+import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
+import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -47,7 +51,6 @@ import { saveAiReview, getLatestReviewsByClient, getLatestReviewByType } from ".
 import { getClientMetrics, upsertClientMetrics } from "./db";
 import { getAllCaseStudies, getCaseStudiesByIndustry, insertCaseStudy, updateCaseStudy, deleteCaseStudy } from "./db";
 import { eq } from "drizzle-orm";
-import { SALES_METHODOLOGY_SYSTEM_PROMPT } from "./salesMethodology";
 
 async function loadCustomerReadiness(clientId: number) {
   const db = await getDb();
@@ -322,8 +325,7 @@ export const appRouter = router({
         ? `最近拜访（${new Date((lastVisit as any).meetingDate).toLocaleDateString('zh-CN')}）：${((lastVisit as any).aiMinutes || (lastVisit as any).keyPoints || '').slice(0, 200)}`
         : '暂无拜访记录';
       const clientStage = (clientData as any)?.stage || '未知阶段';
-      const prompt = `你是一位顶级企业销售战略顾问，专注于网络安全行业。
-请根据以下信息，为销售团队建议最佳的「敲门砖话题」和「安全切入点」，用于拜访 ${input.clientName}（${input.industry || '企业'}）的高层。
+      const prompt = `请根据以下信息，为销售团队建议最佳的「敲门砖话题」和「安全切入点」，用于拜访 ${input.clientName}（${input.industry || '企业'}）的高层。
 
 【客户当前阶段】
 ${clientStage}
@@ -351,9 +353,12 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
   "securityAngle": "具体的安全切入点（1-2句，结合客户痛点和我们的产品能力，不超过50字）",
   "reasoning": "建议理由（2-3句，说明为什么选这个敲门砖和切入点，引用了哪些情报或产品能力；如引用了待核实数据，必须注明来源）"
 }`;
+      // Inject Account Map diagnostic context if available
+      const accountDiag = await getAccountDiagnosticContext(input.clientId);
+      const enrichedPrompt = prompt + accountDiag;
       const result = await invokeLLM({
         model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedPrompt }],
       });
       const textContent = result.choices[0]?.message?.content;
       const text = typeof textContent === 'string' ? textContent : JSON.stringify(textContent);
@@ -445,6 +450,33 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
           console.error("[MEDDPICC] Failed to save snapshot:", err);
         });
       }
+      // AI Evidence Challenge: when Champion or EB ≥75, verify with LLM
+      let aiChallenge: string | null = null;
+      const champScore = Number(data.championScore ?? 0);
+      const ebScore = Number(data.economicBuyerScore ?? 0);
+      if (champScore >= 75 || ebScore >= 75) {
+        try {
+          const meetings = await getMeetingsByClientId(clientId);
+          const recentSummary = meetings.slice(0, 3).map((m: any) => (m.aiMinutes || m.keyPoints || "").slice(0, 200)).join("\n") || "暂无拜访记录";
+          const dimension = champScore >= 75 ? "Champion" : "Economic Buyer";
+          const score = champScore >= 75 ? champScore : ebScore;
+          const evidence = champScore >= 75 ? (data.championNotes || "未填写") : (data.economicBuyerNotes || "未填写");
+          const challengeRes = await invokeLLM({
+            model: "gpt-5-mini",
+            messages: [
+              { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+              { role: "user", content: `${dimension}评分被录入为${score}/100。\nChampion的三个验证条件：(1)影响力（能推动EB）(2)个人动机（为什么他要帮我们）(3)实际行动（做了什么具体推动行为）。\n最近3次拜访摘要：${recentSummary}\n已录入的评分依据：${evidence}\n\n请在20字内判断：这个评分有足够的事实支撑吗？如果没有，指出哪个条件缺失。只输出判断结论，不解释框架。` }
+            ],
+            maxCompletionTokens: 100,
+          });
+          aiChallenge = String(challengeRes.choices?.[0]?.message?.content || "").trim() || null;
+        } catch (e) {
+          console.warn("[Command2] AI evidence challenge failed:", e);
+        }
+      }
+      // Event-driven: non-blocking refresh after MEDDPICC score change
+      setImmediate(() => triggerSingleClientRefresh(clientId));
+      return { aiChallenge };
     }),
     history: publicProcedure.input(z.object({ clientId: z.number(), weeks: z.number().default(4) })).query(async ({ input }) => {
       return getMeddpiccHistory(input.clientId, input.weeks);
@@ -541,6 +573,8 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
         occurredAt: new Date(input.occurredAt),
         createdBy: ctx.user.name || ctx.user.email || "已登录用户",
       });
+      // Event-driven: non-blocking refresh after new purchase signal
+      setImmediate(() => triggerSingleClientRefresh(input.clientId));
       return { id: (result as any).insertId };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
@@ -567,8 +601,7 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
       opportunityId: z.number().optional().nullable(),
     })).mutation(async ({ input }) => {
       // AI analyze the signal
-      const prompt = `你是一位顶级企业销售情报分析师，专注于网络安全行业的大客户销售。
-
+      const prompt = `
 客户：${input.clientName}（${input.industry || "科技企业"}）
 原始信号：${input.rawSignal}
 
@@ -582,7 +615,7 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
 
       const res = await invokeLLM({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -669,8 +702,7 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
         `- ${c.name}（${c.industry || "未知行业"}，当前阶段：${c.stage}）`
       ).join("\n");
 
-      const prompt = `你是一位企业级安全销售情报分析师。
-
+      const prompt = `
 情报信号：
 类型：${signal.signalType}
 紧急度：${signal.urgency}
@@ -696,7 +728,7 @@ ${candidateList}
 
       const res = await invokeLLM({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const analysisContent = String(res.choices[0].message.content || "");
 
@@ -978,8 +1010,7 @@ ${candidateList}
           }).join("\n")
         : "暂无最新信号";
 
-      const prompt = `你是一位顶级企业销售教练，专注于网络安全行业的战略大客户销售。
-
+      const prompt = `
 客户：${input.clientName}（${input.industry || "科技企业"}）
 当前销售阶段：${input.stage}
 敲门砖话题：${input.hookTopic || "待定"}
@@ -1014,7 +1045,7 @@ ${signalsSummary}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -1156,8 +1187,7 @@ ${signalsSummary}
       meddpiccSummary: z.string().optional(),
       context: z.string().optional(), // e.g., "SA 需要确认 AI Pentest 能力"
     })).mutation(async ({ input }) => {
-      const prompt = `你是亚信安全 AIStorm 的销售团队内部协作指挥师。
-
+      const prompt = `
 客户：${input.clientName}
 当前销售阶段：${input.stage}
 MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
@@ -1187,7 +1217,7 @@ MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
 
       const res = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const parsed = JSON.parse(extractJSON(String(res.choices[0].message.content || '{}')));
       const tasks = (parsed.tasks || []).map((t: any) => ({
@@ -1298,8 +1328,7 @@ ${signalSummary}
       }
       // ─────────────────────────────────────────────────────────────────────
 
-      const prompt = `你是一位顶级企业销售战略顾问，专注于网络安全行业的C-Level高层拜访准备。
-
+      const prompt = `
 请为以下拜访生成一份《高层会面简报（1-Pager）》，格式为Markdown，内容必须具体、可直接使用，不得使用空泛语言。
 
 客户：${input.clientName}（${input.industry || "科技企业"}）
@@ -1332,7 +1361,7 @@ ${situationSnapshot}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
 
       const content = String(res.choices[0].message.content || "");
@@ -1353,9 +1382,9 @@ ${situationSnapshot}
 
 只返回JSON，不要其他文字。`;
         const sRes = await invokeLLM({
-          model: "gpt-4o-mini",
-          messages: [{ role: "user", content: strategyPrompt }],
-        });
+         model: "gpt-4o-mini",
+          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: strategyPrompt }],
+       });
         const sParsed = JSON.parse(extractJSON(String(sRes.choices[0].message.content || "{}")));
         hookTopicDraft = sParsed.hookTopic || "";
         securityAngleDraft = sParsed.securityAngle || "";
@@ -1483,6 +1512,37 @@ ${situationSnapshot}
       }
       // 所有接触均为正式会议检查
       const allFormal = contacts.every(c => (c as any).informalContactCount === 0 || (c as any).informalContactCount === null);
+      const executiveTitles = ["CEO", "CFO", "CIO", "CISO"];
+      const executiveCoverageCount = contacts.filter(contact => executiveTitles.some(title => `${contact.title || ""} ${contact.department || ""}`.toUpperCase().includes(title))).length;
+      const uncoveredPriorityLayers = Math.max(0, executiveTitles.length - executiveCoverageCount);
+      // Challenger Reframe: LLM detection instead of keyword matching
+      let reframeEvidence: string | null = null;
+      const latestMeetingContent = meetings[0] ? (meetings[0].aiMinutes || meetings[0].keyPoints || "").slice(0, 500) : "";
+      if (latestMeetingContent.length > 100) {
+        try {
+          const reframeCheck = await invokeLLM({
+            model: "gpt-5-mini",
+            maxCompletionTokens: 60,
+            messages: [
+              { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+              { role: "user", content: `以下拜访摘要中是否出现了 Challenger Reframe 迹象？\n（Reframe定义：SAM提出了客户之前没考虑过的风险视角，客户表达了认知改变）\n拜访内容：${latestMeetingContent}\n只回答 yes 或 no，再用10字说明依据。` }
+            ],
+          });
+          const checkResult = String(reframeCheck.choices?.[0]?.message?.content || "");
+          if (checkResult.toLowerCase().startsWith("yes")) {
+            reframeEvidence = `最近拜访检测到 Reframe 迹象：${checkResult.slice(3).trim()}`;
+          }
+        } catch (e) {
+          // Fallback to keyword match if LLM fails
+          const reframeMeeting = meetings.find((meeting: any) => `${meeting.aiMinutes || ""}${meeting.keyPoints || ""}`.includes("之前没这样想"));
+          if (reframeMeeting) reframeEvidence = `拜访记录 ${new Date(reframeMeeting.meetingDate).toLocaleDateString("zh-CN")} 出现客户认知重构表述`;
+        }
+      }
+      const accountMapBlock = buildAccountMapDiagnosticLayer({
+        executiveCoverageCount,
+        uncoveredPriorityLayers,
+        reframeEvidence,
+      });
       const contradictionBlock = contradictions.length > 0
         ? `\n【⚠️ AI一致性矛盾检测（${contradictions.length}项）】\n${contradictions.join("\n")}`
         : "\n【✅ AI一致性检测：未发现明显矛盾】";
@@ -1498,9 +1558,7 @@ ${situationSnapshot}
         `[${s.signalType}/${s.urgency}] ${s.rawSignal.slice(0, 100)}`
       ).join("\n");
 
-      const prompt = `你是一位大客户销售关系教练，专注于企业级安全产品的客户开发阶段（0→1）。
-你的工作是帮SAM判断关系走到哪一层，找出推进阻碍，给出加深信任的具体行动。
-不要给价值主张建议，不要给产品介绍建议。这个阶段的核心是人，不是产品。
+      const prompt = `针对企业级安全客户的 0→1 Account Map 阶段进行关系与认知诊断。这个阶段的核心是人，不是产品；不要给产品介绍或方案建议。
 
 当前客户阶段: ${stage}
 该阶段的退出标准: ${exitCriteria[stage] || "推进到下一阶段"}
@@ -1519,6 +1577,7 @@ ${recentSignals || "暂无情报信号"}
 
 当前MEDDPICC I维度（Identify Pain）得分: ${painScore}
 当前MEDDPICC C维度（Champion）得分: ${championScore}
+${accountMapBlock}
 
 SPIN话术阶段映射（供行动建议使用，不要在输出中解释框架）:
 当前阶段建议使用：${spinMapping[stage] || "综合运用SPIN提问"}
@@ -1562,9 +1621,12 @@ ${contradictionBlock}
 - 如果某项数据缺失，明确标注"缺少X数据，以下判断存在盲区"
 - 如果所有接触均为正式会议，必须在关系深度评估中标注：⚠️ 所有接触为正式场合，客户真实态度存在不确定性`;
 
+      // Inject Account Map diagnostic context for 0→1 Review
+      const reviewAccountDiag = await getAccountDiagnosticContext(input.clientId);
+      const enrichedReviewPrompt = prompt + reviewAccountDiag;
       const res = await invokeLLM({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        model: "gpt-5-mini",
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedReviewPrompt }],
       });
       const content = String(res.choices[0].message.content || "");
       await saveAiReview({ clientId: input.clientId, opportunityId: null, reviewType: "0to1", content, createdBy: null });
@@ -1727,9 +1789,11 @@ ${(baseline as any).roiSummary ? `ROI摘要已生成，可作为方案提案依�
       const contradiction1NBlock = contradictions1N.length > 0
         ? `\n【⚠️ AI一致性矛盾检测（${contradictions1N.length}项）】\n${contradictions1N.join("\n")}`
         : "\n【✅ AI一致性检测：未发现明显矛盾】";
+      const dealMapBlock = buildDealMapDiagnosticLayer({
+        competitorInfluencesCriteria: opp.competitorName ? `主竞品已登记为“${opp.competitorName}”；其是否影响 Decision Criteria：数据不足` : null,
+      });
 
-      const prompt = `你是一位MEDDPICC认证的销售战略顾问，专注于企业级安全产品的商机赢单。
-你的工作是识别商机漏洞、评估赢单风险、给出有数据支撑的下一步行动。
+      const prompt = `针对企业级安全客户的 1→N Deal Map 阶段进行赢单质量诊断。先识别 Win = Pain × Power × Champion × Value × Control 中最弱的因子，再给出有数据支撑的下一步行动。
 
 商机: ${opp.name}
 当前阶段: ${opp.stage}，在当前阶段已停留 ${daysInStage} 天（${stagnationRisk}，预警阈值：黄${threshold.yellow}天/红${threshold.red}天）
@@ -1754,6 +1818,7 @@ Blue Sheet内容:
 ${blueSheet}
 ${comCheck}
 ${contradiction1NBlock}
+${dealMapBlock}
 
 请按以下格式输出（格式固定，不得省略）:
 
@@ -1800,19 +1865,109 @@ ${isProposalStage ? `
 **AD：** [1个优先行动]
 **SAM：** [1个优先行动]
 **SA：** [1个优先行动]
+**RSM：** [仅在采购流程、属地渠道或本地关系存在可验证缺口时给出1个行动；否则写“数据不足，暂不安排”]
 
 AI质疑层规则（内嵌在以上各节中执行）：
 - 某维度自评≥70但评分依据少于30字：在该维度后标注⚠️ 评分依据不足，置信度已下调
 - 缺失数据维度：标注📭 数据不足，无法判断，建议优先填补
 - Champion评分高但无非正式接触：在Champion评估中标注⚠️ Political Will真实性待验证`;
 
+      // Inject Deal Map diagnostic context for 1→N Review
+      const dealDiag = await getDealDiagnosticContext(input.clientId, input.opportunityId);
+      const enrichedDealPrompt = `${prompt}${dealDiag}
+
+请严格按 JSON Schema 返回，不要在 JSON 外输出任何文字。将上方要求的完整 Markdown Review 放入 reviewContent 字段；roleActions 只保留基于已有事实可执行的 AD、SAM、SA、RSM 行动（最多每个角色一项）。没有可验证行动时返回空数组，绝不能为了填满角色而编造任务。`;
       const res = await invokeLLM({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        model: "gpt-5-mini",
+        maxCompletionTokens: 1800,
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedDealPrompt }],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "deal_review_with_role_actions",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                reviewContent: { type: "string", description: "完整的 Markdown 格式 1→N 商机 Review" },
+                roleActions: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      role: { type: "string", enum: ["AD", "SAM", "SA", "RSM"] },
+                      title: { type: "string", description: "不超过 100 字的可执行任务标题" },
+                      description: { type: "string", description: "任务的事实依据、完成标准或协作依赖" },
+                    },
+                    required: ["role", "title", "description"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["reviewContent", "roleActions"],
+              additionalProperties: false,
+            },
+          },
+        },
       });
-      const reviewContent = String(res.choices[0].message.content || "");
-      await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
-      return { content: reviewContent, stage: opp.stage, daysInStage, stagnationRisk, championStatus };
+      const rawReview = String(res.choices[0].message.content || "");
+      let reviewContent = rawReview;
+      let roleActions: Array<{ role: "AD" | "SAM" | "SA" | "RSM"; title: string; description: string }> = [];
+      let actionTaskError: string | null = null;
+      try {
+        const structured = JSON.parse(rawReview);
+        reviewContent = String(structured.reviewContent || "数据不足，暂不判断。");
+        roleActions = Array.isArray(structured.roleActions)
+          ? structured.roleActions.filter((action: any) => ["AD", "SAM", "SA", "RSM"].includes(action?.role) && typeof action?.title === "string" && action.title.trim().length > 3)
+          : [];
+      } catch {
+        actionTaskError = "AI Review 未返回可验证的结构化角色行动；本次未自动创建 POD 任务。";
+      }
+      const reviewId = await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
+      let createdRoleTaskCount = 0;
+      let skippedRoleTaskCount = 0;
+      if (!actionTaskError) try {
+        const { podTasks } = await import("../drizzle/schema");
+        const { and: andFn, eq: eqFn } = await import("drizzle-orm");
+        if (!db) throw new Error("数据库不可用");
+        for (const action of roleActions) {
+          const normalizedTitle = action.title.trim().slice(0, 100);
+          const existing = await db.select({ id: podTasks.id }).from(podTasks).where(andFn(
+            eqFn(podTasks.opportunityId, input.opportunityId),
+            eqFn(podTasks.assignedRole, action.role),
+            eqFn(podTasks.title, normalizedTitle),
+          ));
+          if (existing.length > 0) {
+            skippedRoleTaskCount += 1;
+            continue;
+          }
+          await db.insert(podTasks).values({
+            clientId: input.clientId,
+            opportunityId: input.opportunityId,
+            assignedRole: action.role,
+            title: normalizedTitle,
+            description: action.description.trim().slice(0, 500) || "来自 1→N AI Review 的分角色行动建议",
+            sourceReviewId: reviewId || null,
+          });
+          createdRoleTaskCount += 1;
+        }
+      } catch (error) {
+        actionTaskError = `角色任务创建失败：${error instanceof Error ? error.message : "未知错误"}`;
+      }
+      return {
+        content: reviewContent,
+        stage: opp.stage,
+        daysInStage,
+        stagnationRisk,
+        championStatus,
+        reviewId: reviewId || null,
+        roleTaskCreation: {
+          requested: roleActions.length,
+          created: createdRoleTaskCount,
+          skipped: skippedRoleTaskCount,
+          error: actionTaskError,
+        },
+      };
     }),
 
     // P1c: Buying Group 覆盖分析 — 权力路径分析 + Champion→EB路径完整性
@@ -1878,8 +2033,7 @@ AI质疑层规则（内嵌在以上各节中执行）：
         return `${c.name}（${c.buyingRole || c.relationship}）：非正式接触${informalCount}次，客户主动发起${customerInitCount}次，私信渠道[${channels.join("/") || "无"}]，关系深度[${depthLabel}]${lastInformal ? `，最近非正式接触${lastInformal}` : ""}`;
       }).join("\n") || "暂无关系深度数据";
 
-      const prompt = `你是一位专注于大客户Buying Group分析的销售战略顾问。
-
+      const prompt = `
 客户：${client.name}（${client.industry || "未知行业"}）
 当前阶段：${client.stage}
 
@@ -1928,7 +2082,7 @@ ${recentVisits || "暂无拜访记录"}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const reviewContent = String(res.choices[0].message.content || "");
       await saveAiReview({ clientId: input.clientId, opportunityId: null, reviewType: "buyingGroup", content: reviewContent, createdBy: null });
@@ -1977,8 +2131,7 @@ ${recentVisits || "暂无拜访记录"}
           : (olderCount > 0 ? `【历史拜访】共${olderCount}次历史拜访（暂无压缩叙事，本次生成后将自动保存）` : ''),
         recentTwo.length > 0 ? `【最近${recentTwo.length}次完整拜访记录（时间倒序）】\n${recentTwoLog}` : ''
       ].filter(Boolean).join("\n\n");
-      const prompt = `你是一位大客户销售教练，专注于分析客户关系演变趋势。
-客户：${client.name}（${client.industry || "未知行业"}）
+      const prompt = `客户：${client.name}（${client.industry || "未知行业"}）
 当前阶段：${client.stage}
 总拜访次数：${meetings.length}次
 拜访记录（滚动叙事架构）：
@@ -2011,7 +2164,7 @@ ${contactStances || "暂无关键人数据"}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const reviewContent = String(res.choices[0].message.content || "");
 
@@ -2055,6 +2208,15 @@ ${contactStances || "暂无关键人数据"}
         if (!latestByType[key]) latestByType[key] = r;
       }
       return Object.values(latestByType);
+    }),
+    // 仅供任务来源追溯：按 Review ID 批量读取已持久化的原始 Review，不混入其他客户/商机的记录。
+    getByIds: protectedProcedure.input(z.object({ ids: z.array(z.number().int().positive()).max(30) })).query(async ({ input }) => {
+      if (input.ids.length === 0) return [];
+      const db = await getDb();
+      if (!db) return [];
+      const { aiReviews } = await import("../drizzle/schema");
+      const { inArray } = await import("drizzle-orm");
+      return db.select().from(aiReviews).where(inArray(aiReviews.id, input.ids));
     }),
     // Review 改进闭环：与上次 Review 对比的变化摘要
     getReviewDelta: protectedProcedure.input(z.object({
@@ -2162,8 +2324,7 @@ ${contactStances || "暂无关键人数据"}
       const noChampionNames = noChampionIn1N.map(c => c.name).join('、') || '无';
       const noEBNames = noEBIn1N.map(c => c.name).join('、') || '无';
 
-      const prompt = `你是一位经验丰富的销售总监（AD），正在对整个销售团队的战场态势进行全局 Review。
-
+      const prompt = `
 以下是当前所有客户的战场数据摘要：
 
 【阶段漏斗分布】
@@ -2202,7 +2363,7 @@ ${clientLines}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const content = String(res.choices[0].message.content || "");
       return { content, clientCount: allClients.length, activeOppCount: activeOpps.length, stagnantCount: stagnantClients.length };
@@ -2294,7 +2455,7 @@ ${clientLines}
         return `- **${c.name}**（${c.stage}）MEDDPICC均分:${mAvg}% Champion:${hasChampion?'✓':'✗'} EB:${hasEB?'✓':'✗'} 拜访:${visitCountMap.get(c.id)??0}次 距上次:${daysSince!==null?daysSince+'天':'从未'} 活跃商机:${opps.filter(o=>o.status==='活跃').length}个`;
       }).join('\n');
 
-      const prompt = `你是一位经验丰富的销售总监（AD），正在对 SAM **${input.samName}** 进行教练 Review。
+      const prompt = `正在对 SAM **${input.samName}** 进行教练 Review。
 
 【${input.samName} 负责的客户概览】
 ${clientSummaryLines}
@@ -2336,7 +2497,7 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
 
       const res = await invokeLLM({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const content2 = String(res.choices[0].message.content || "");
       return {
@@ -2481,8 +2642,7 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
         { name: "C2（竞争态势）", score: meddpicc.competitionScore },
       ].sort((a, b) => a.score - b.score).slice(0, 3).map(d => `${d.name}：${d.score}分`).join("，") : "暂无评分";
 
-      const prompt = `你是一位销售总监（AD），正在对SAM进行Review。
-生成3个针对性问题，帮助AD判断SAM的数据录入是否真实、推进判断是否准确。
+      const prompt = `生成3个针对性问题，帮助AD判断SAM的数据录入是否真实、推进判断是否准确。
 问题必须是"只有真正做过这件事的人才能回答的"，不能是可以靠猜测回答的问题。
 
 当前阶段类型: ${input.stageType === "0to1" ? "0→1（客户开发阶段）" : "1→N（商机赢单阶段）"}
@@ -2510,7 +2670,7 @@ ${input.stageType === "0to1" ? `如果是0→1阶段，问题聚焦于：
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       return { content: String(res.choices[0].message.content || ""), stageType: input.stageType, clientName: client.name, stage };
     }),
@@ -2529,8 +2689,7 @@ ${input.stageType === "0to1" ? `如果是0→1阶段，问题聚焦于：
       const stageContext = is0to1
         ? `这是0→1阶段（当前：${client.stage}），核心是"人的问题"——关系建立、信任深度、真实信息获取。辅导重点应聚焦于：关系质量判断、非正式接触能力、Champion识别和培育方法。不要给产品或方案建议。`
         : `这是1→N阶段（当前：${client.stage}），核心是"赢单的问题"——商机健康度、Champion推动力、决策流程掌握。辅导重点应聚焦于：MEDDPICC薄弱维度补强、Champion行动力提升、竞争态势应对。`;
-      const prompt = `你是一位销售总监（AD），刚刚完成了对 SAM 的问询 Review。
-
+      const prompt = `
 客户：${client.name}（阶段：${client.stage}）
 Review类型：${stageLabel}
 阶段背景：${stageContext}
@@ -2554,7 +2713,7 @@ ${input.samAnswerNotes}
 注意：如果 SAM 回答记录为空或内容不足，直接说明"回答记录不足，无法生成有效辅导建议，建议补充记录后重试"。`;
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       return { content: String(res.choices[0].message.content || ""), stageType: input.stageType, stageLabel, clientStage: client.stage };
     }),
@@ -2597,8 +2756,9 @@ ${input.samAnswerNotes}
         const avgScore = meddpicc ? Math.round((meddpicc.metricsScore + meddpicc.economicBuyerScore + meddpicc.decisionCriteriaScore + meddpicc.decisionProcessScore + meddpicc.paperProcessScore + meddpicc.implicatePainScore + meddpicc.championScore + meddpicc.competitionScore) / 8) : 0;
         return { name: client.name, stage: client.stage, priority: client.priority, meddpiccScore: avgScore, opportunityScore: latestScore?.overallScore ?? null, riskLevel: latestScore?.riskLevel ?? null, recentSignalsCount: recentSignalsForClient.length, pendingTasksCount: pendingTasksForClient.length, topSignal: recentSignalsForClient[0]?.rawSignal?.slice(0, 100) ?? null };
       });
-      const prompt = `你是T100专项AI作战指挥系统的每日简报生成器。今天是${today}。\n\n以下是重点客户的当前状态数据：\n${JSON.stringify(clientSummaries, null, 2)}\n\n请生成一份简洁的每日战情简报，格式如下：\n1. 今日重点关注（1-2句话，指出最需要关注的客户和事项）\n2. 各客户状态速览（每户1行，包含：客户名 | 阶段 | MEDDPICC均分 | 待办任务数 | 关键提示）\n3. 今日建议行动（3条具体行动建议，指明负责角色AD/SAM/SA）\n\n要求：简洁专业，总字数不超过400字，使用中文。`;
-      const llmResult = await invokeLLM({ messages: [{ role: "user", content: prompt }] });
+      const rssDigest = await getComplianceRssDigest(5);
+      const prompt = buildDailyBriefingPrompt({ today, clientSummaries, rssDigest });
+      const llmResult = await invokeLLM({ messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }] });
       const briefing = typeof llmResult.choices[0]?.message?.content === "string" ? llmResult.choices[0].message.content : "";
       if (!briefing) return { ok: false, message: "AI 生成失败", briefing: "" };
       await notifyOwner({ title: `📊 每日战情简报 · ${today}`, content: briefing.slice(0, 2000) });
@@ -2647,8 +2807,7 @@ ${input.samAnswerNotes}
         : `\n\n⚠️ 知识来源说明：武器库暂无产品文档，本内容完全基于AI通用知识生成，请务必结合实际产品资料核实后再使用。`;
       let prompt = "";
       if (input.ammoType === "竞品对标") {
-        prompt = `你是一位网络安全行业资深竞争分析师。
-请为${input.clientName}的内部Champion（${input.championName}）生成一份《竞品对标分析》，用于其在内部推动立项时使用。
+        prompt = `请为${input.clientName}的内部Champion（${input.championName}）生成一份《竞品对标分析》，用于其在内部推动立项时使用。
 安全切入点：${input.securityAngle || "综合安全方案"}
 客户背景：${input.notes || "无"}
 
@@ -2669,8 +2828,7 @@ ${docsSection}
 （Champion向决策层推荐时可直接使用的3句话）
 ${knowledgeNote}`;
       } else if (input.ammoType === "合规风险量化") {
-        prompt = `你是一位网络安全合规风险专家。
-请为${input.clientName}的内部Champion（${input.championName}）生成一份《合规风险量化分析》，用于其在内部推动立项时使用。
+        prompt = `请为${input.clientName}的内部Champion（${input.championName}）生成一份《合规风险量化分析》，用于其在内部推动立项时使用。
 行业：${input.industry || "科技"}
 客户背景：${input.notes || "无"}
 
@@ -2691,8 +2849,7 @@ ${docsSection}
 （安全投入 vs. 潜在损失的对比，给出明确的投资回报比）
 ${knowledgeNote}`;
       } else {
-        prompt = `你是一位企业IT投资分析师。
-请为${input.clientName}的内部Champion（${input.championName}）生成一份《ROI测算初稿》，用于其在内部申请预算时使用。
+        prompt = `请为${input.clientName}的内部Champion（${input.championName}）生成一份《ROI测算初稿》，用于其在内部申请预算时使用。
 安全切入点：${input.securityAngle || "综合安全方案"}
 客户背景：${input.notes || "无"}
 
@@ -2718,7 +2875,7 @@ ${knowledgeNote}`;
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
 
       const content = String(res.choices[0].message.content || "");
@@ -2772,8 +2929,7 @@ ${knowledgeNote}`;
         ? `\n接触方式：${contactTypeLabel[input.contactType] || input.contactType}\n发起方：${initiatedByLabel[input.initiatedBy || "sam"] || input.initiatedBy}`
         : "";
 
-      const prompt = `你是一位专业的大客户销售顾问，擅长从拜访记录中提炼战略洞察，帮助销售团队推进大客户商机。
-
+      const prompt = `
 客户：${input.clientName}
 拜访日期：${input.meetingDate}
 拜访类型：${input.visitType || '拜访'}
@@ -2813,18 +2969,21 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
 ### 风险与注意事项
 （本次拜访发现的潜在风险或需要注意的信号）`;
 
+      // Inject Account Map diagnostic context for richer analysis
+      const meetingAccountDiag = await getAccountDiagnosticContext(input.clientId);
+      const enrichedMeetingPrompt = prompt + meetingAccountDiag;
       const res = await invokeLLM({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedMeetingPrompt }],
       });
       const aiMinutes = String(res.choices[0].message.content || "");
 
       // Calls 2/3/4 all depend on aiMinutes but are independent of each other — run in parallel
       const [meddpiccSuggestions, strategyResult, detectedCompetitors] = await Promise.all([
         // Call 2: extract structured MEDDPICC suggestions (using gpt-5-mini — JSON extraction task)
-        invokeLLM({
-          model: "gpt-4o-mini",
-          messages: [{ role: "user", content: `你是一位MEDDPICC销售方法论专家。根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以如下JSON格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n{"items": [\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]}\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点识别, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n必须返回JSON对象，key为items，value为数组。` }],
+       invokeLLM({
+         model: "gpt-4o-mini",
+          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: `根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以如下JSON格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n{"items": [\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]}\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点识别, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n必须返回JSON对象，key为items，value为数组。` }],
         }).then(r => {
           try {
             const parsed = JSON.parse(extractJSON(String(r.choices[0].message.content || "")));
@@ -2842,9 +3001,9 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         }).catch(() => [] as Array<{dim: string; label: string; suggestedScore: number; reason: string; confidence: string}>),
 
         // Call 3: extract hookTopic and securityAngle
-        invokeLLM({
-          model: "gpt-4o-mini",
-          messages: [{ role: "user", content: `你是一位大客户销售策略专家。根据以下拜访日志，提炼两个关键建议。\n\n拜访日志：\n${aiMinutes}\n\n请以JSON格式返回：\n{\n  "hookTopic": "基于本次拜访揭示的客户痛点和关注点，下次拜访最有效的敲门砖话题（一句话，具体、有针对性）",\n  "securityAngle": "基于客户痛点，建议的为信安全产品切入角度（具体产品线或解决方案）"\n}\n\n只返回JSON，不要其他文字。` }],
+       invokeLLM({
+         model: "gpt-4o-mini",
+          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: `根据以下拜访日志，提炼两个关键建议。\n\n拜访日志：\n${aiMinutes}\n\n请以JSON格式返回：\n{\n  "hookTopic": "基于本次拜访揭示的客户痛点和关注点，下次拜访最有效的敲门砖话题（一句话，具体、有针对性）",\n  "securityAngle": "基于客户痛点，建议的为信安全产品切入角度（具体产品线或解决方案）"\n}\n\n只返回JSON，不要其他文字。` }],
         }).then(r => {
           try {
             return JSON.parse(extractJSON(String(r.choices[0].message.content || "{}")));
@@ -2852,9 +3011,9 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         }).catch(() => ({})),
 
         // Call 4: detect competitor names
-        invokeLLM({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: `从以下会议记录中识别所有提到的竞品厂商名称。常见竞品包括：奇安信(QAX)、Palo Alto Networks、CrowdStrike、Fortinet、Check Point、深信服、天山信息、安恒天蹄、火眉安全、绣球网络、SentinelOne、Microsoft Defender、Trend Micro、Symantec、McAfee等。\n\n会议记录：\n${aiMinutes}\n\n请以JSON格式返回，只返回实际提到的竞品名称（如果没有提到竞品则返回空数组）：\n{ "competitors": ["QAX", "Palo Alto Networks"] }` }],
+       invokeLLM({
+         model: 'gpt-4o-mini',
+          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: 'user', content: `从以下会议记录中识别所有提到的竞品厂商名称。常见竞品包括：奇安信(QAX)、Palo Alto Networks、CrowdStrike、Fortinet、Check Point、深信服、天山信息、安恒天蹄、火眉安全、绣球网络、SentinelOne、Microsoft Defender、Trend Micro、Symantec、McAfee等。\n\n会议记录：\n${aiMinutes}\n\n请以JSON格式返回，只返回实际提到的竞品名称（如果没有提到竞品则返回空数组）：\n{ "competitors": ["QAX", "Palo Alto Networks"] }` }],
         }).then(r => {
           try {
             const p = JSON.parse(extractJSON(String(r.choices[0].message.content || '{}')));
@@ -2880,7 +3039,39 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         initiatedBy: input.initiatedBy,
         entrySource: "manual",
       });
-      return { id, aiMinutes, meddpiccSuggestions, hookTopicSuggestion, securityAngleSuggestion, detectedCompetitors };
+      // Event-driven: non-blocking single-client native refresh after meeting log saved
+      setImmediate(() => triggerSingleClientRefresh(input.clientId));
+      // SAM Post-Meeting Conclusion Card: synchronous LLM analysis
+      let postMeetingCard: any = null;
+      try {
+        const clientForCard = await getClientById(input.clientId);
+        const meddpiccForCard = await getMeddpiccByClientId(input.clientId);
+        const meddpiccSummaryCard = meddpiccForCard ? `Champion=${(meddpiccForCard as any).championScore}/100, EB=${(meddpiccForCard as any).economicBuyerScore}/100, Pain=${(meddpiccForCard as any).implicatePainScore}/100, Competition=${(meddpiccForCard as any).competitionScore}/100` : "暂无评分";
+        const championNameCard = (meddpiccForCard as any)?.championName || "未找到";
+        const cardRes = await invokeLLM({
+          model: "gpt-5-mini",
+          maxCompletionTokens: 600,
+          messages: [
+            { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+            { role: "user", content: `以下是刚录入的拜访记录。\n\n客户：${input.clientName}，阶段：${clientForCard?.stage || "未知"}\n拜访日期：${input.meetingDate}\n拜访内容：${aiMinutes || input.keyPoints}\n当前MEDDPICC：${meddpiccSummaryCard}\n当前Champion：${championNameCard}\n\n请输出以下四项（必须基于本次拜访内容，不得补充未提到的信息）：\n1. Win公式本次进展：Pain/Power/Champion/Value/Control中哪个因子有实质推进？引用原文。\n2. MEDDPICC建议更新：哪1-2个维度本次有新证据支持评分变化？新评分建议和理由（无新证据不建议变化）。\n3. 下次拜访最高优先任务（一件事）：基于当前最弱Win因子，下次必须验证或推进的一件事。\n4. 风险预警（如无风险可不填）：本次拜访是否出现No Decision信号、竞品动态或关系倒退迹象？\n\n以JSON返回：\n{"winProgress":"...","meddpiccUpdates":[{"dim":"C1","label":"Champion","suggestedScore":50,"reason":"..."}],"nextMeetingPriority":"...","riskWarning":"..." }` }
+          ],
+        });
+        const cardText = String(cardRes.choices?.[0]?.message?.content || "");
+        const jsonMatch = cardText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          postMeetingCard = JSON.parse(jsonMatch[0]);
+          // Persist to DB
+          const db = await getDb();
+          if (db && id) {
+            const { meetingMinutes: mm } = await import("../drizzle/schema");
+            const { eq } = await import("drizzle-orm");
+            await db.update(mm).set({ aiPostAnalysis: postMeetingCard }).where(eq(mm.id, id));
+          }
+        }
+      } catch (e) {
+        console.warn("[Command3] Post-meeting card generation failed:", e);
+      }
+      return { id, aiMinutes, meddpiccSuggestions, hookTopicSuggestion, securityAngleSuggestion, detectedCompetitors, postMeetingCard };
     }),
     quickLog: publicProcedure.input(z.object({
       clientId: z.number(),
@@ -3038,7 +3229,7 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         return `${c.name}(${c.stage}): MEDDPICC平均${avgScore}分, 本周新增信号${signals.length}条, 完成行动${completed.length}个, 待处理${pending.length}个, AI商机温度${latestScore ? latestScore.overallScore : '未评分'}`;
       }).join('\n');
 
-      const prompt = `你是一个企业级大客户销售作战参谋。以下是大湾区T100专项上周的战场数据：
+      const prompt = `以下是大湾区T100专项上周的战场数据：
 
 ${clientSummaries}
 
@@ -3050,7 +3241,7 @@ ${clientSummaries}
 3. 给出下周最重要的一个行动建议
 语气要直接、具体，不要空话套话。`;
 
-      const response = await invokeLLM({ messages: [{ role: "user", content: prompt }], model: "gpt-4o-mini" });
+      const response = await invokeLLM({ messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }], model: "gpt-4o-mini" });
       const summary = String((response.choices?.[0]?.message?.content) ?? "未能生成战报，请重试。");
       return { summary, stats: { signals: recentSignals.length, completed: completedTasks.length, pending: pendingTasks.length } };
     }),
@@ -3184,8 +3375,7 @@ ${clientSummaries}
       // 根据阶段分别构建 prompt
       let prompt: string;
       if (isOpportunityStage) {
-        prompt = `你是一位顶级销售预测分析师，专注于企业级网络安全大客户销售。
-
+        prompt = `
 客户：${input.clientName}（${input.industry || "科技企业"}）
 当前阶段：进入商机（共${input.oppCount ?? 0}条并行商机，MEDDPICC为各商机评分的加权均值）
 商机组合健康度：${overallScore}/100（${riskLevel}）
@@ -3213,8 +3403,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
 返回JSON：
 { "analysis": "判断文本", "warnings": ["风险点1", "风险点2"] }`;
       } else {
-        prompt = `你是一位顶级销售预测分析师，专注于企业级网络安全大客户销售。
-
+        prompt = `
 客户：${input.clientName}（${input.industry || "科技企业"}）
 当前阶段：${input.stage}（客户开发阶段，尚未进入正式商机）
 客户健康度：${overallScore}/100（${riskLevel}）
@@ -3245,7 +3434,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -3337,8 +3526,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
         `- ${c.name}（${c.title || '职位未知'}，${c.department || '部门未知'}，影响力：${c.influence}，关系：${c.relationship}${c.reportingTo ? `，汇报给：${c.reportingTo}` : ''}）`
       ).join('\n');
 
-      const prompt = `你是一位顶级大客户销售教练，专注于帮助 SAM 突破关键人认知壁垒。
-
+      const prompt = `
 客户：${input.clientName}
 关键人列表：
 ${contactList}
@@ -3362,7 +3550,7 @@ ${contactList}
 
       const res = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const parsed = JSON.parse(extractJSON(String(res.choices[0].message.content || '{}')));
 
@@ -3712,8 +3900,7 @@ ${contactList}
       const [ks] = await db.select().from(killSheets).where(eq(killSheets.id, input.id));
       if (!ks) throw new Error('Kill sheet not found');
 
-      const prompt = `你是亚信安全（AIStorm/AsiaInfo Security）的竞品对抗专家。
-
+      const prompt = `
 竞品：${ks.competitorName}
 竞品类型：${ks.competitorType || '未指定'}
 我方对应产品：${ks.ourProduct || '亚信安全全线产品'}
@@ -3740,7 +3927,7 @@ ${contactList}
 
       const res = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const aiGeneratedTalk = String(res.choices[0].message.content || '');
       await db.update(killSheets).set({ aiGeneratedTalk } as any).where(eq(killSheets.id, input.id));
@@ -3753,8 +3940,7 @@ ${contactList}
       clientContext: z.string().optional(),
       sourceClientId: z.number().optional(),
     })).mutation(async ({ input }) => {
-      const prompt = `你是亚信安全（AsiaInfo Security）的竞品对抗专家，擅长帮助销售团队在竞争性销售场景中击败对手。
-
+      const prompt = `
 竞品：${input.competitorName}
 竞品产品线：${input.productLine || '未指定'}
 我方对应产品：${input.ourProduct || '亚信安全全线产品'}
@@ -3785,7 +3971,7 @@ ${contactList}
 
       const res = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const aiContent = String(res.choices[0].message.content || '');
 
@@ -4305,8 +4491,8 @@ ${contactList}
             const textSnippet = doc.extractedText
               ? doc.extractedText.slice(0, 1500)
               : `文件名：${doc.filename || doc.title}`;
-            const prompt = `你是亚信科技/亚信安全产品专家。请根据文档信息判断该文档属于哪个产品线。\n\n【可选产品线列表】\n${productLinePromptText}\n\n【文档标题】${doc.title}\n【文档内容摘录】\n${textSnippet}\n\n只返回产品线的 value 值（如：AI XDR、TrustOne），不含其他文字。无法判断返回"未知"。`;
-            const result = await invokeLLM({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }], maxTokens: 50 });
+            const prompt = `请根据文档信息判断该文档属于哪个产品线。\n\n【可选产品线列表】\n${productLinePromptText}\n\n【文档标题】${doc.title}\n【文档内容摘录】\n${textSnippet}\n\n只返回产品线的 value 值（如：AI XDR、TrustOne），不含其他文字。无法判断返回"未知"。`;
+            const result = await invokeLLM({ model: 'gpt-4o-mini', messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }], maxTokens: 50 });
             const rawText = result.choices?.[0]?.message?.content;
             const productLine = (typeof rawText === 'string' ? rawText : '').trim().replace(/["""'']/g, '').trim();
             if ((PRODUCT_LINE_VALUES as string[]).includes(productLine)) {
@@ -4348,7 +4534,7 @@ ${contactList}
         const context = doc.extractedText
           ? `文档内容摘录：\n${doc.extractedText.slice(0, 3000)}`
           : `文档名称：${doc.title}\n产品线：${doc.productLine || '未知'}\n描述：${doc.description || '无'}`;
-        const prompt = `你是一位网络安全产品专家。请分析以下产品文档，提取核心摘要和关键卖点。
+        const prompt = `请分析以下产品文档，提取核心摘要和关键卖点。
 
 ${context}
 
@@ -4361,7 +4547,7 @@ ${context}
 }`;
         const res = await invokeLLM({
           model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }],
+          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
           response_format: {
             type: 'json_schema',
             json_schema: {
@@ -4401,15 +4587,12 @@ ${context}
   arsenalAI: router({
     // 获取AI生成历史
     list: publicProcedure
-      .input(z.object({ clientId: z.number().optional(), opportunityId: z.number().optional() }).optional())
+      .input(z.object({ clientId: z.number().optional() }).optional())
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) return [];
         const { arsenalGenerated } = await import('../drizzle/schema');
         const { eq, desc } = await import('drizzle-orm');
-        if (input?.opportunityId) {
-          return db.select().from(arsenalGenerated).where(eq(arsenalGenerated.opportunityId, input.opportunityId)).orderBy(desc(arsenalGenerated.createdAt));
-        }
         if (input?.clientId) {
           return db.select().from(arsenalGenerated).where(eq(arsenalGenerated.clientId, input.clientId)).orderBy(desc(arsenalGenerated.createdAt));
         }
@@ -4430,8 +4613,8 @@ ${context}
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) throw new Error('Database unavailable');
-        const { arsenalGenerated, productDocs, opportunities, opportunityMeddpicc, killSheets } = await import('../drizzle/schema');
-        const { inArray, eq, desc } = await import('drizzle-orm');
+        const { arsenalGenerated, productDocs } = await import('../drizzle/schema');
+        const { inArray } = await import('drizzle-orm');
 
         // 读取参考文档内容
         let docContext = '';
@@ -4449,28 +4632,28 @@ ${context}
         };
 
         const guide = categoryGuide[input.category] || '';
-        let opportunityContext = "【商机作战事实上下文】\n未关联商机：不得假设 MEDDPICC、痛点、竞争或客户决策条件。";
-        let historyContext = "【历史方案处置记录】\n暂无同商机经人工确认的采用或客户反馈记录。";
-        if (input.opportunityId) {
-          const [[opportunity], [meddpicc], relatedKillSheets, priorMaterials] = await Promise.all([
-            db.select().from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1),
-            db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1),
-            input.clientId ? db.select().from(killSheets).where(eq(killSheets.clientId, input.clientId)) : Promise.resolve([] as any[]),
-            db.select().from(arsenalGenerated).where(eq(arsenalGenerated.opportunityId, input.opportunityId)).orderBy(desc(arsenalGenerated.createdAt)).limit(5),
-          ]);
-          const meddpiccFacts = meddpicc ? `MEDDPICC：D1 决策标准 ${meddpicc.decisionCriteriaScore ?? 0}/4（${meddpicc.decisionCriteriaNotes || "证据待补"}）；I 痛点 ${meddpicc.implicatePainScore ?? 0}/4（${meddpicc.implicatePainNotes || "证据待补"}）；Champion ${meddpicc.championScore ?? 0}/4（${meddpicc.championNotes || "证据待补"}）。` : "MEDDPICC：数据不足，暂不判断。";
-          const blueSheetFacts = opportunity ? `客户业务目标：${opportunity.bizObjective || "数据不足"}；已入库价值主张：${opportunity.valueProposition || "数据不足"}；当前 Champion：${opportunity.champion || "数据不足"}；竞争态势：${opportunity.blueSheetCompetitor || opportunity.competitorName || "数据不足"}；当前赢单策略：${opportunity.winStrategy || "数据不足"}` : "Blue Sheet：数据不足，暂不判断。";
-          const competitionFacts = relatedKillSheets.length ? relatedKillSheets.map((row: any) => `竞品：${row.competitorName || "待补"}；差异点：${row.keyDiffs || row.ourAdvantages || "待补"}；反制动作：${row.battleNotes || "待补"}`).join("\n") : "竞争事实：数据不足，暂不判断。";
-          opportunityContext = `【商机作战事实上下文】\n商机：${opportunity?.name || "待确认"}；阶段：${opportunity?.stage || "待确认"}\n${meddpiccFacts}\n${blueSheetFacts}\n${competitionFacts}\n要求：材料必须围绕上述已知短板、客户痛点和决策标准；缺失信息明确写为待验证，不得补造。`;
-          const reviewedHistory = priorMaterials.filter((row: any) => row.adoptionStatus === "已采用" || row.customerFeedback).map((row: any) => `- ${row.title}：人工状态=${row.adoptionStatus}；客户反馈=${row.customerFeedback || "未录入"}`).join("\n");
-          if (reviewedHistory) historyContext = `【历史方案处置记录（仅供待验证参考）】\n${reviewedHistory}\n不得把这些反馈当作新的客户事实；如与当前证据冲突，以当前证据为准。`;
-        }
-        const systemMsg = SALES_METHODOLOGY_SYSTEM_PROMPT;
-        const userMsg = `你是 AIStorm（亚信安全）的资深解决方案架构师。\n${guide}\n\n输出要求：\n- 使用 Markdown 格式，结构清晰\n- 语言专业但易懂，适合销售使用\n- 只引用已给出的产品文档和商机事实；数据不足时明确待验证\n- 不编造客户意图、竞争结论或价值数字\n\n${opportunityContext}\n\n${historyContext}\n\n销售需求描述：\n${input.prompt}\n\n${docContext ? `参考产品文档：\n${docContext}` : '（未选择参考文档；不得伪造具体产品参数或客户案例）'}`;
+        const opportunityContext = input.clientId && input.opportunityId
+          ? await getArsenalOpportunityContext(input.clientId, input.opportunityId)
+          : "";
+        const userMsg = `你是 AIStorm 的资深解决方案架构师，负责将已核验的作战事实转化为可供人工审核的${input.category}材料。
+
+${guide}
+
+输出要求：
+- 使用 Markdown，结构清晰，便于销售、SA 和 AD 审阅
+- 优先解决当前商机最弱 Win 因子，而不是泛化介绍产品
+- 仅引用已提供的产品文档和商机事实；无来源数据不得编造
+- 未确认事项必须标为“待验证假设”或“数据不足，暂不判断”
+${opportunityContext}
+
+销售需求描述：
+${input.prompt}
+
+${docContext ? `参考产品文档：\n${docContext}` : "未选择参考文档；仅可使用已入库商机事实与 AIStorm 通用产品知识，不能编造客户数据。"}`;
 
         const llmResult = await invokeLLM({
           messages: [
-            { role: 'system', content: systemMsg },
+            { role: 'system', content: SALES_METHODOLOGY_SYSTEM_PROMPT },
             { role: 'user', content: userMsg },
           ],
           model: 'claude-sonnet-4-5',
@@ -4487,22 +4670,10 @@ ${context}
           docIds: input.docIds,
           generatedContent,
           clientId: input.clientId,
-          opportunityId: input.opportunityId,
           targetContact: input.targetContact,
           createdBy: ctx.user?.name || 'unknown',
         });
         return { id: (result as any).insertId, content: generatedContent, title };
-      }),
-
-    updateOutcome: protectedProcedure
-      .input(z.object({ id: z.number(), adoptionStatus: z.enum(["待确认", "已采用", "未采用"]), customerFeedback: z.string().max(3000).optional() }))
-      .mutation(async ({ input }) => {
-        const db = await getDb();
-        if (!db) throw new Error('Database unavailable');
-        const { arsenalGenerated } = await import('../drizzle/schema');
-        const { eq } = await import('drizzle-orm');
-        await db.update(arsenalGenerated).set({ adoptionStatus: input.adoptionStatus, customerFeedback: input.customerFeedback?.trim() || null, outcomeUpdatedAt: new Date() } as any).where(eq(arsenalGenerated.id, input.id));
-        return { success: true };
       }),
 
     // 删除生成记录
@@ -5061,8 +5232,7 @@ ${context}
 - 每次安全事件损失：${baseline.estimatedIncidentCost || "未知"}
 - 数据来源：${baseline.dataSource || "AI估算"}` : "暂无效能基线数据，请使用行业基准估算";
 
-      const prompt = `你是一位企业级安全销售顾问，专注于将技术问题转化为业务价值陈述。
-
+      const prompt = `
 客户：${client.name}（${client.industry || "未知行业"}）
 当前阶段：${client.stage}
 
@@ -5088,7 +5258,7 @@ ${recentPainPoints || "暂无拜访记录"}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const painStatement = String(res.choices[0].message.content || "");
 
@@ -5121,8 +5291,7 @@ ${recentPainPoints || "暂无拜访记录"}
 - 每年安全事件损失：${baseline.estimatedIncidentCost || "行业基准$150K/次"}
 - 数据来源：${baseline.dataSource || "AI估算"}` : "使用行业基准数据估算";
 
-      const prompt = `你是一位企业级安全销售ROI分析师。
-
+      const prompt = `
 客户：${client.name}（${client.industry || "未知行业"}）
 拟推方案：${input.proposedProducts || "亚信安全整体方案"}
 ${champion ? `Champion：${champion.name}（${champion.title || ""}）` : ""}
@@ -5151,7 +5320,7 @@ ${baselineText}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const roiContent = String(res.choices[0].message.content || "");
 
@@ -5222,7 +5391,7 @@ ${baselineText}
         const recentSignalsWin = signals.slice(0, 3).map((s: any) =>
           `[${s.signalType}/${s.urgency}] ${s.rawSignal.slice(0, 80)}`
         ).join("\n") || "暂无情报信号";
-        const prompt = `你是一位顶级大客户销售顾问，请基于以下信息，为 SAM 生成一份 IBM Blue Sheet 风格的 Win Strategy 建议。
+        const prompt = `基于以下信息，为 SAM 生成一份 IBM Blue Sheet 风格的 Win Strategy 建议。
 
 客户：${input.clientName}
 当前阶段：${input.stage}
@@ -5244,7 +5413,10 @@ ${baselineContext}
 5. **差异化定位**：针对竞品，如何在客户心中建立独特认知？
 
 请用简洁的中文输出，每项不超过3句话，直接可用于 SAM 作战指导。`;
-        const result = await invokeLLM({ messages: [{ role: 'user', content: prompt }], maxTokens: 1200 });
+        // Inject Account Map diagnostic context for Win Strategy
+        const winAccountDiag = await getAccountDiagnosticContext(input.clientId);
+        const enrichedWinPrompt = prompt + winAccountDiag;
+        const result = await invokeLLM({ messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedWinPrompt }], maxTokens: 1200 });
         const rawContent = result.choices?.[0]?.message?.content;
         const aiSuggestion = typeof rawContent === 'string' ? rawContent : '';
         // Save to DB
@@ -5291,7 +5463,7 @@ ${baselineContext}
       aiSuggestion: z.string(),
       stage: z.string(),
     })).mutation(async ({ input }) => {
-      const prompt = `你是一位销售行动计划提取助手。从以下 Win Strategy 文本中提取3个最优先的可执行行动，分配给对应角色。
+      const prompt = `从以下 Win Strategy 文本中提取3个最优先的可执行行动，分配给对应角色。
 
 Win Strategy 内容：
 ${input.aiSuggestion}
@@ -5307,11 +5479,104 @@ ${input.aiSuggestion}
 返回格式：{ "actions": [ {...}, {...}, {...} ] }`;
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: { type: "json_schema", json_schema: { name: "actions", strict: true, schema: { type: "object", properties: { actions: { type: "array", items: { type: "object", properties: { title: { type: "string" }, description: { type: "string" }, role: { type: "string" }, dueDays: { type: "number" } }, required: ["title","description","role","dueDays"], additionalProperties: false } } }, required: ["actions"], additionalProperties: false } } },
       });
       const parsed = JSON.parse(String(res.choices[0].message.content || "{}"));
       return { actions: (parsed.actions ?? []) as Array<{ title: string; description: string; role: string; dueDays: number }> };
+    }),
+  }),
+  // ── Command 2.0：Account Map（0→1）与 Deal Map（1→N）事实工作台 ────────
+  command2: router({
+    getAccountMap: protectedProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { accountOverview, relationshipCoverage } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const [overview, coverage] = await Promise.all([
+        db.select().from(accountOverview).where(eq(accountOverview.clientId, input.clientId)).limit(1),
+        db.select().from(relationshipCoverage).where(eq(relationshipCoverage.clientId, input.clientId)),
+      ]);
+      return { overview: overview[0] ?? null, coverage };
+    }),
+    saveAccountOverview: protectedProcedure.input(z.object({
+      clientId: z.number(), strategicFitScore: z.number().int().min(0).max(5).nullable().optional(), potentialScore: z.number().int().min(0).max(5).nullable().optional(), relationshipScore: z.number().int().min(0).max(5).nullable().optional(), whitespaceScore: z.number().int().min(0).max(5).nullable().optional(), execPriorityScore: z.number().int().min(0).max(5).nullable().optional(),
+      strategy12m: z.string().max(4000).nullable().optional(), strategy24m: z.string().max(4000).nullable().optional(), strategy36m: z.string().max(4000).nullable().optional(), aiOpportunity: z.string().max(4000).nullable().optional(), cyberOpportunity: z.string().max(4000).nullable().optional(), ictOpportunity: z.string().max(4000).nullable().optional(), triggerEvents: z.string().max(4000).nullable().optional(), vendorVision: z.string().max(50).nullable().optional(), annualSuccessKPI: z.string().max(4000).nullable().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { accountOverview } = await import("../drizzle/schema"); const { eq } = await import("drizzle-orm");
+      const { clientId, ...values } = input;
+      const existing = await db.select({ id: accountOverview.id }).from(accountOverview).where(eq(accountOverview.clientId, clientId)).limit(1);
+      if (existing[0]) await db.update(accountOverview).set({ ...values, updatedAt: new Date() }).where(eq(accountOverview.clientId, clientId));
+      else await db.insert(accountOverview).values({ clientId, ...values });
+      return { clientId };
+    }),
+    saveCoverage: protectedProcedure.input(z.object({
+      id: z.number().optional(), clientId: z.number(), coverageLevel: z.string().max(100).nullable().optional(), targetPerson: z.string().max(100).nullable().optional(), ourCoverer: z.string().max(100).nullable().optional(), strengthScore: z.number().int().min(0).max(5).nullable().optional(), lastInteraction: z.date().nullable().optional(), hasExecMeeting: z.boolean().optional(), stance: z.string().max(50).nullable().optional(), gapJudgment: z.enum(["P1", "P2", "P3"]).nullable().optional(), nextAction: z.string().max(4000).nullable().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { relationshipCoverage } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm");
+      const { id, clientId, ...values } = input;
+      if (id) { await db.update(relationshipCoverage).set(values).where(and(eq(relationshipCoverage.id, id), eq(relationshipCoverage.clientId, clientId))); return { id }; }
+      const inserted = await db.insert(relationshipCoverage).values({ clientId, ...values }); return { id: Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId) };
+    }),
+    deleteCoverage: protectedProcedure.input(z.object({ id: z.number(), clientId: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { relationshipCoverage } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm");
+      await db.delete(relationshipCoverage).where(and(eq(relationshipCoverage.id, input.id), eq(relationshipCoverage.clientId, input.clientId))); return { id: input.id };
+    }),
+    getDealMap: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number() })).query(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { threeWhy, painMetrics, competitionMap, goNoGo } = await import("../drizzle/schema"); const { eq } = await import("drizzle-orm");
+      const [whyRows, pains, competition, gates] = await Promise.all([
+        db.select().from(threeWhy).where(eq(threeWhy.opportunityId, input.opportunityId)).limit(1),
+        db.select().from(painMetrics).where(eq(painMetrics.opportunityId, input.opportunityId)),
+        db.select().from(competitionMap).where(eq(competitionMap.opportunityId, input.opportunityId)),
+        db.select().from(goNoGo).where(eq(goNoGo.opportunityId, input.opportunityId)).limit(1),
+      ]);
+      const gate = gates[0] ?? null;
+      const goNoGoScore = calculateGoNoGo(gate).score;
+      const annualValueTotal = pains.reduce((sum, item) => sum + Number(item.annualValue ?? 0), 0);
+      return { threeWhy: whyRows[0] ?? null, pains, competition, goNoGo: gate, goNoGoScore, annualValueTotal };
+    }),
+    saveThreeWhy: protectedProcedure.input(z.object({
+      clientId: z.number(), opportunityId: z.number(), whyChangeClaim: z.string().max(4000).nullable().optional(), whyChangePain: z.string().max(4000).nullable().optional(), whyChangeConsequence: z.string().max(4000).nullable().optional(), whyChangeEvidence: z.string().max(4000).nullable().optional(), whyChangeScore: z.number().int().min(0).max(5).nullable().optional(), whyNowClaim: z.string().max(4000).nullable().optional(), whyNowTrigger: z.string().max(4000).nullable().optional(), whyNowEvidence: z.string().max(4000).nullable().optional(), whyNowScore: z.number().int().min(0).max(5).nullable().optional(), whyUsClaim: z.string().max(4000).nullable().optional(), whyUsDifferentiator: z.string().max(4000).nullable().optional(), whyUsEvidence: z.string().max(4000).nullable().optional(), whyUsScore: z.number().int().min(0).max(5).nullable().optional(), challengerTeach: z.string().max(4000).nullable().optional(), challengerTailor: z.string().max(4000).nullable().optional(), challengerControl: z.string().max(4000).nullable().optional(), reframeEvidence: z.string().max(4000).nullable().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { threeWhy } = await import("../drizzle/schema"); const { eq } = await import("drizzle-orm"); const { opportunityId, clientId, ...values } = input;
+      const existing = await db.select({ id: threeWhy.id }).from(threeWhy).where(eq(threeWhy.opportunityId, opportunityId)).limit(1);
+      if (existing[0]) await db.update(threeWhy).set({ ...values, updatedAt: new Date() }).where(eq(threeWhy.opportunityId, opportunityId)); else await db.insert(threeWhy).values({ clientId, opportunityId, ...values });
+      return { opportunityId };
+    }),
+    saveGoNoGo: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number(), gate1StrategicFit: z.number().int().min(0).max(2), gate2PainVerified: z.number().int().min(0).max(2), gate3ChampionExists: z.number().int().min(0).max(2), gate4EBClear: z.number().int().min(0).max(2), gate5ValueQuantified: z.number().int().min(0).max(2), gate6CriteriaWinnable: z.number().int().min(0).max(2), gate7ProcessClear: z.number().int().min(0).max(2), gate8CompDefensible: z.number().int().min(0).max(2), gate9DeliveryOK: z.number().int().min(0).max(2), gate10ROIJustified: z.number().int().min(0).max(2), managerOverride: z.enum(["Go", "Conditional Go", "No-Go"]).nullable().optional(), overrideReason: z.string().max(4000).nullable().optional() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { goNoGo } = await import("../drizzle/schema"); const { eq } = await import("drizzle-orm"); const { opportunityId, clientId: _clientId, ...values } = input;
+      const existing = await db.select({ id: goNoGo.id }).from(goNoGo).where(eq(goNoGo.opportunityId, opportunityId)).limit(1);
+      if (existing[0]) await db.update(goNoGo).set({ ...values, updatedAt: new Date() }).where(eq(goNoGo.opportunityId, opportunityId)); else await db.insert(goNoGo).values({ opportunityId, ...values });
+      // Event-driven: non-blocking refresh after Go/No-Go gate change
+      setImmediate(() => triggerSingleClientRefresh(input.clientId));
+      return { opportunityId };
+    }),
+    savePainMetric: protectedProcedure.input(z.object({ id: z.number().optional(), clientId: z.number(), opportunityId: z.number(), painType: z.string().max(100).nullable().optional(), painStatement: z.string().max(4000).nullable().optional(), affectedSponsor: z.string().max(100).nullable().optional(), currentBaseline: z.string().max(4000).nullable().optional(), targetImprovement: z.string().max(4000).nullable().optional(), valueLogic: z.string().max(4000).nullable().optional(), timeframe: z.string().max(50).nullable().optional(), annualValue: z.number().int().min(0).nullable().optional(), confidence: z.number().min(0).max(1).nullable().optional(), evidenceStrength: z.enum(["未验证", "口头确认", "书面确认", "高层确认"]).nullable().optional() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { painMetrics } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm"); const { id, clientId, opportunityId, confidence, ...values } = input;
+      const payload = { clientId, opportunityId, ...values, confidence: confidence == null ? null : String(confidence) } as any;
+      if (id) { await db.update(painMetrics).set(payload).where(and(eq(painMetrics.id, id), eq(painMetrics.opportunityId, opportunityId))); return { id }; }
+      const inserted = await db.insert(painMetrics).values(payload); return { id: Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId) };
+    }),
+    deletePainMetric: protectedProcedure.input(z.object({ id: z.number(), opportunityId: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { painMetrics } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm"); await db.delete(painMetrics).where(and(eq(painMetrics.id, input.id), eq(painMetrics.opportunityId, input.opportunityId))); return { id: input.id };
+    }),
+    saveCompetition: protectedProcedure.input(z.object({ id: z.number().optional(), clientId: z.number(), opportunityId: z.number(), competitorType: z.string().max(100).nullable().optional(), controlPoints: z.string().max(4000).nullable().optional(), customerSupporter: z.string().max(100).nullable().optional(), strengths: z.string().max(4000).nullable().optional(), weaknesses: z.string().max(4000).nullable().optional(), attackVector: z.string().max(4000).nullable().optional(), counterAction: z.string().max(4000).nullable().optional(), riskScore: z.number().int().min(0).max(5).nullable().optional(), owner: z.string().max(100).nullable().optional(), nextStep: z.string().max(4000).nullable().optional() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { competitionMap } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm"); const { id, clientId, opportunityId, ...values } = input;
+      if (id) { await db.update(competitionMap).set(values).where(and(eq(competitionMap.id, id), eq(competitionMap.opportunityId, opportunityId))); return { id }; }
+      const inserted = await db.insert(competitionMap).values({ clientId, opportunityId, ...values }); return { id: Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId) };
+    }),
+    deleteCompetition: protectedProcedure.input(z.object({ id: z.number(), opportunityId: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { competitionMap } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm"); await db.delete(competitionMap).where(and(eq(competitionMap.id, input.id), eq(competitionMap.opportunityId, input.opportunityId))); return { id: input.id };
     }),
   }),
   // ── AI 原生 AD 指挥中心：事实驱动建议、AD 确认与任务闭环 ──────────────────
@@ -5319,11 +5584,12 @@ ${input.aiSuggestion}
     refresh: publicProcedure.mutation(async () => {
       const db = await getDb();
       if (!db) return [];
-      const { clients, meetingMinutes, meddpicc, opportunities, opportunityMeddpicc, actionItems, adCommandRecommendations } = await import('../drizzle/schema');
+      const { clients, meetingMinutes, meddpicc, opportunities, opportunityMeddpicc, actionItems, adCommandRecommendations, customerPurchaseSignals, accountOverview, relationshipCoverage, threeWhy, painMetrics, competitionMap, goNoGo } = await import('../drizzle/schema');
       const { buildAdCommandRecommendations } = await import('../shared/adCommand');
+      const { enrichAdCommandRecommendation } = await import('./adCommandLLM');
       const { desc } = await import('drizzle-orm');
 
-      const [allClients, allMeetings, clientMeddpicc, allOpportunities, oppMeddpicc, pendingActions, existing] = await Promise.all([
+      const [allClients, allMeetings, clientMeddpicc, allOpportunities, oppMeddpicc, pendingActions, existing, purchaseSignals, accountOverviews, coverageRows, threeWhyRows, painMetricRows, competitionRows, goNoGoRows] = await Promise.all([
         db.select().from(clients),
         db.select({ clientId: meetingMinutes.clientId, meetingDate: meetingMinutes.meetingDate }).from(meetingMinutes),
         db.select().from(meddpicc),
@@ -5331,6 +5597,13 @@ ${input.aiSuggestion}
         db.select().from(opportunityMeddpicc),
         db.select().from(actionItems),
         db.select().from(adCommandRecommendations).orderBy(desc(adCommandRecommendations.createdAt)),
+        db.select().from(customerPurchaseSignals),
+        db.select().from(accountOverview),
+        db.select().from(relationshipCoverage),
+        db.select().from(threeWhy),
+        db.select().from(painMetrics),
+        db.select().from(competitionMap),
+        db.select().from(goNoGo),
       ]);
 
       const latestMeeting = new Map<number, Date>();
@@ -5340,6 +5613,10 @@ ${input.aiSuggestion}
       }
       const clientScore = new Map(clientMeddpicc.map(item => [item.clientId, item]));
       const oppScore = new Map(oppMeddpicc.map(item => [item.opportunityId, item]));
+      const accountByClient = new Map(accountOverviews.map(item => [item.clientId, item]));
+      const whyByOpportunity = new Map(threeWhyRows.map(item => [item.opportunityId, item]));
+      const gatesByOpportunity = new Map(goNoGoRows.map(item => [item.opportunityId, item]));
+      const gateScore = (record: any) => calculateGoNoGo(record).score;
       const dimensionLabels: Array<[string, string]> = [
         ['metricsScore', '价值量化'], ['economicBuyerScore', '经济决策人'], ['decisionCriteriaScore', '决策标准'], ['decisionProcessScore', '决策流程'],
         ['paperProcessScore', '采购流程'], ['implicatePainScore', '痛点牵连'], ['championScore', 'Champion'], ['competitionScore', '竞争态势'],
@@ -5354,30 +5631,214 @@ ${input.aiSuggestion}
           weakestDimension: ordered[0]?.label, weakestScore: ordered[0]?.score,
         };
       });
-      const generated = buildAdCommandRecommendations(
-        allClients.map(client => ({
-          id: client.id, name: client.name, stage: client.stage,
-          stageChangedAt: client.stageChangedAt, lastMeetingAt: latestMeeting.get(client.id) ?? null,
-          championScore: clientScore.get(client.id)?.championScore ?? 0, assignedSamName: client.assignedSamName,
-        })),
+      const stageDays = (value: Date | null | undefined) => value ? Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000)) : null;
+      const clientInputs = allClients.map(client => ({
+        id: client.id, name: client.name, stage: client.stage,
+        stageChangedAt: client.stageChangedAt, lastMeetingAt: latestMeeting.get(client.id) ?? null,
+        championScore: clientScore.get(client.id)?.championScore ?? 0, assignedSamName: client.assignedSamName,
+      }));
+      const { runNativeAdAnalysis, snapshotFingerprint } = await import('./adNativeAnalysis');
+      const nativeSnapshot = {
+        generatedAt: new Date().toISOString(),
+        clients: allClients.map(client => {
+          const score = clientScore.get(client.id) as any;
+          const lastMeeting = latestMeeting.get(client.id) ?? null;
+          const activeOpps = allOpportunities.filter(opportunity => opportunity.clientId === client.id && opportunity.status !== '丢单');
+          const whyFacts = activeOpps.map(opportunity => whyByOpportunity.get(opportunity.id)).filter(Boolean) as any[];
+          const clientCoverage = coverageRows.filter(item => item.clientId === client.id);
+          const clientPains = painMetricRows.filter(item => item.clientId === client.id);
+          const clientCompetition = competitionRows.filter(item => item.clientId === client.id);
+          const gateScores = activeOpps.map(opportunity => gateScore(gatesByOpportunity.get(opportunity.id))).filter((value): value is number => value !== null);
+          return {
+            id: client.id,
+            name: client.name,
+            stage: client.stage,
+            stageDays: stageDays(client.stageChangedAt),
+            daysSinceLastMeeting: lastMeeting ? stageDays(lastMeeting) : null,
+            totalMeetings: allMeetings.filter(meeting => meeting.clientId === client.id).length,
+            purchaseSignalCount: purchaseSignals.filter(signal => signal.clientId === client.id).length,
+            meddpicc: {
+              champion: Number(score?.championScore ?? 0), economicBuyer: Number(score?.economicBuyerScore ?? 0),
+              decisionCriteria: Number(score?.decisionCriteriaScore ?? 0), decisionProcess: Number(score?.decisionProcessScore ?? 0),
+              paperProcess: Number(score?.paperProcessScore ?? 0), pain: Number(score?.implicatePainScore ?? 0),
+              competition: Number(score?.competitionScore ?? 0), metrics: Number(score?.metricsScore ?? 0),
+            },
+            assignedSam: client.assignedSamName ?? null,
+            accountFitScore: accountByClient.get(client.id)?.strategicFitScore ?? null,
+            execCoverageCount: clientCoverage.filter(item => item.hasExecMeeting).length,
+            competitorAdvantageCount: clientCompetition.filter(item => Number(item.riskScore ?? 0) >= 4).length,
+            threeWhyScore: whyFacts.length ? {
+              change: Math.min(...whyFacts.map(item => Number(item.whyChangeScore ?? 0))),
+              now: Math.min(...whyFacts.map(item => Number(item.whyNowScore ?? 0))),
+              us: Math.min(...whyFacts.map(item => Number(item.whyUsScore ?? 0))),
+            } : null,
+            painMetricsTotal: clientPains.length ? clientPains.reduce((total, item) => total + Number(item.annualValue ?? 0), 0) : null,
+            goNoGoScore: gateScores.length ? Math.min(...gateScores) : null,
+            dealHealthScore: (() => {
+              // Calculate Deal Health from available snapshot data
+              const s = score;
+              const threeWhyMin = whyFacts.length ? Math.min(
+                ...whyFacts.map((w: any) => Math.min(Number(w.whyChangeScore ?? 0), Number(w.whyNowScore ?? 0), Number(w.whyUsScore ?? 0)))
+              ) : null;
+              const execCount = clientCoverage.filter((item: any) => item.hasExecMeeting).length;
+              const input = {
+                relationshipPower: execCount >= 2 ? 4 : execCount > 0 ? 2 : null,
+                meddpicc: s ? Math.round((Number(s.championScore ?? 0) + Number(s.economicBuyerScore ?? 0) + Number(s.decisionCriteriaScore ?? 0) + Number(s.decisionProcessScore ?? 0) + Number(s.paperProcessScore ?? 0) + Number(s.implicatePainScore ?? 0) + Number(s.competitionScore ?? 0) + Number(s.metricsScore ?? 0)) / 8 / 20) : null,
+                metricsValue: s ? Math.round(Number(s.metricsScore ?? 0) / 20) : null,
+                champion: s ? Math.round(Number(s.championScore ?? 0) / 20) : null,
+                accountFit: accountByClient.get(client.id)?.strategicFitScore ?? null,
+                economicBuyer: s ? Math.round(Number(s.economicBuyerScore ?? 0) / 20) : null,
+                threeWhy: threeWhyMin != null ? Math.round(threeWhyMin / 20) : null,
+                decisionCriteria: s ? Math.round(Number(s.decisionCriteriaScore ?? 0) / 20) : null,
+                processPaper: s ? Math.round(Number(s.paperProcessScore ?? 0) / 20) : null,
+                competition: s ? Math.round(Number(s.competitionScore ?? 0) / 20) : null,
+                actionDiscipline: null, // No data source yet
+              };
+              const result = calculateDealHealth(input);
+              return result.score;
+            })(),
+            activeOpportunities: activeOpps.map(opportunity => {
+              const scoreItem = oppScore.get(opportunity.id) as any;
+              const weakest = dimensionLabels.map(([key, label]) => ({ label, score: Number(scoreItem?.[key] ?? 0) })).sort((a, b) => a.score - b.score)[0];
+              return {
+                id: opportunity.id, name: opportunity.name, stage: opportunity.stage, stageDays: stageDays(opportunity.stageChangedAt),
+                estimatedValue: (opportunity as any).estimatedValue ? String((opportunity as any).estimatedValue) : null,
+                weakestDimension: weakest?.label ?? '数据不足', weakestScore: weakest?.score ?? 0,
+              };
+            }),
+          };
+        }),
+        teamStats: {
+          totalClients: allClients.length,
+          stageDistribution: allClients.reduce((result, client) => ({ ...result, [client.stage]: (result[client.stage] ?? 0) + 1 }), {} as Record<string, number>),
+          totalActiveOpportunities: allOpportunities.filter(opportunity => opportunity.status !== '丢单').length,
+          samList: Array.from(new Map(allClients.map(client => [client.assignedSamName || '未分配 SAM', allClients.filter(item => (item.assignedSamName || '未分配 SAM') === (client.assignedSamName || '未分配 SAM')).length])).entries()).map(([name, clientCount]) => ({ name, clientCount })),
+        },
+      };
+      const nativeHash = snapshotFingerprint(nativeSnapshot);
+      const nativeSummaryFingerprint = `native-${nativeHash}-summary`;
+      const nativeAlreadyExists = existing.some(item => item.fingerprint === nativeSummaryFingerprint);
+      const nativeOutput = nativeAlreadyExists ? null : await runNativeAdAnalysis(nativeSnapshot);
+      // 规则只在原生 LLM 调用失败或未给出任何建议时兜底；已缓存的原生结果不重复触发规则与二次 LLM。
+      const shouldUseFallback = !nativeAlreadyExists && (!nativeOutput || !nativeOutput.recommendations.length);
+      const fallbackGenerated = shouldUseFallback ? buildAdCommandRecommendations(
+        clientInputs,
         oppInputs,
         new Date(),
         pendingActions.filter(action => !action.isCompleted).map(action => ({
           id: action.id, clientId: action.clientId, opportunityId: action.opportunityId, clientName: allClients.find(client => client.id === action.clientId)?.name ?? `客户#${action.clientId}`,
           title: action.title, objective: action.objective, priority: action.priority, timeframe: action.timeframe, responsibleRole: action.responsibleRole,
         })),
-      );
+      ) : [];
       const knownFingerprints = new Set(existing.map(item => item.fingerprint));
-      const inserts = generated.filter(item => !knownFingerprints.has(item.fingerprint)).map(({ urgency, ...item }) => ({
+      const newGenerated = fallbackGenerated.filter(item => !knownFingerprints.has(`fallback-${item.fingerprint}`));
+      const enriched = await Promise.all(newGenerated.map(async (item) => {
+        if (item.kind !== 'today_action' && item.kind !== 'anomaly') return item;
+        const client = item.clientId ? allClients.find(candidate => candidate.id === item.clientId) : null;
+        const opportunity = item.opportunityId ? allOpportunities.find(candidate => candidate.id === item.opportunityId) : null;
+        const clientId = item.clientId ?? opportunity?.clientId ?? null;
+        const clientScoreItem = clientId ? clientScore.get(clientId) : null;
+        const opportunityScoreItem = opportunity ? oppScore.get(opportunity.id) : null;
+        const meetingDate = clientId ? latestMeeting.get(clientId) : null;
+        const stageChangedAt = opportunity?.stageChangedAt ?? client?.stageChangedAt ?? null;
+        const stageDays = stageChangedAt ? Math.floor((Date.now() - new Date(stageChangedAt).getTime()) / 86_400_000) : null;
+        const daysSinceVisit = meetingDate ? Math.floor((Date.now() - new Date(meetingDate).getTime()) / 86_400_000) : null;
+        const weakest = opportunityScoreItem ? dimensionLabels
+          .map(([key, label]) => ({ label, score: Number((opportunityScoreItem as any)[key] ?? 0) }))
+          .sort((a, b) => a.score - b.score)[0] : null;
+        return enrichAdCommandRecommendation(item, {
+          clientName: client?.name ?? opportunity?.name ?? '未命名客户',
+          stage: client?.stage ?? opportunity?.stage ?? '数据不足',
+          stageDays,
+          daysSinceVisit,
+          championScore: Number((clientScoreItem as any)?.championScore ?? (opportunityScoreItem as any)?.championScore ?? 0),
+          economicBuyerScore: Number((clientScoreItem as any)?.economicBuyerScore ?? (opportunityScoreItem as any)?.economicBuyerScore ?? 0),
+          painScore: Number((clientScoreItem as any)?.implicatePainScore ?? (opportunityScoreItem as any)?.implicatePainScore ?? 0),
+          decisionCriteriaScore: Number((clientScoreItem as any)?.decisionCriteriaScore ?? (opportunityScoreItem as any)?.decisionCriteriaScore ?? 0),
+          signalCount: clientId ? purchaseSignals.filter(signal => signal.clientId === clientId).length : 0,
+          samName: client?.assignedSamName ?? null,
+          opportunityName: opportunity?.name ?? null,
+          opportunityStage: opportunity?.stage ?? null,
+          opportunityStagnantDays: opportunity?.stageChangedAt ? Math.floor((Date.now() - new Date(opportunity.stageChangedAt).getTime()) / 86_400_000) : null,
+          weakestDimension: weakest?.label ?? null,
+          weakestScore: weakest?.score ?? null,
+        });
+      }));
+      const fallbackInserts = enriched.map(({ urgency, ...item }) => ({
         ...item,
         // 数据库遗留字段仅作存储兼容；用户界面与研判逻辑统一使用行动紧迫度。
         priority: urgency === '立即处理' ? 'P0' : urgency === '本周推进' ? 'P1' : 'P2',
+        fingerprint: `fallback-${item.fingerprint}`,
         clientId: item.clientId ?? undefined,
         opportunityId: item.opportunityId ?? undefined,
         dueDate: new Date(Date.now() + (urgency === '立即处理' ? 2 : 7) * 86_400_000),
       }));
+      const nativeFactsFor = (recommendation: any) => {
+        const client = nativeSnapshot.clients.find(item => item.id === recommendation.clientId);
+        const opportunity = recommendation.opportunityId ? client?.activeOpportunities.find(item => item.id === recommendation.opportunityId) : null;
+        const facts = [
+          { label: '客户阶段', value: client?.stage ?? '数据不足' },
+          { label: '阶段停留', value: client?.stageDays === null || client?.stageDays === undefined ? '数据不足' : `${client.stageDays}天` },
+          { label: '距上次拜访', value: client?.daysSinceLastMeeting === null || client?.daysSinceLastMeeting === undefined ? '无记录' : `${client.daysSinceLastMeeting}天` },
+          { label: '购买信号', value: `${client?.purchaseSignalCount ?? 0}/3` },
+        ];
+        if (opportunity) facts.push({ label: '商机最弱维度', value: `${opportunity.weakestDimension} ${opportunity.weakestScore}/4` });
+        return facts;
+      };
+      const nativeInserts = nativeOutput?.recommendations.length ? [
+        {
+          clientId: undefined, opportunityId: undefined, kind: 'today_action', priority: 'P1', title: '本周全局战场研判',
+          aiConclusion: nativeOutput.battlefieldSummary, facts: [
+            { label: '漏斗健康', value: nativeOutput.funnelHealth }, { label: '赢单风险', value: nativeOutput.winRisk }, { label: '团队模式', value: nativeOutput.teamPattern }, { label: '快照指纹', value: nativeHash },
+          ], methodology: 'AI 原生全量战场研判', suggestedAction: '展开全局判断后确认需要进入 POD 的行动。', assignedRole: 'AD',
+          fingerprint: nativeSummaryFingerprint, dueDate: new Date(Date.now() + 7 * 86_400_000),
+        },
+        ...nativeOutput.recommendations.map((recommendation, index) => ({
+          clientId: recommendation.clientId, opportunityId: recommendation.opportunityId ?? undefined, kind: recommendation.kind,
+          priority: recommendation.urgency === '立即处理' ? 'P0' : recommendation.urgency === '本周推进' ? 'P1' : 'P2',
+          title: recommendation.title, aiConclusion: recommendation.judgment, facts: nativeFactsFor(recommendation), methodology: recommendation.methodology,
+          suggestedAction: recommendation.adAction, assignedRole: 'AD', fingerprint: `native-${nativeHash}-${recommendation.clientId}-${recommendation.opportunityId ?? 'client'}-${index}`,
+          dueDate: new Date(Date.now() + (recommendation.urgency === '立即处理' ? 2 : recommendation.urgency === '本周推进' ? 7 : 14) * 86_400_000),
+        })),
+      ] : [];
+      const inserts = nativeInserts.length ? nativeInserts : fallbackInserts;
+      const { generateGlobalBattleReview, getIsoWeekKey } = await import('./adGlobalReviewLLM');
+      const weeklyKey = getIsoWeekKey();
+      const hasWeeklyReview = knownFingerprints.has(`global-review-${weeklyKey}-summary`);
+      if (!nativeInserts.length && !hasWeeklyReview) {
+        const candidateFacts = fallbackGenerated.filter(item => item.clientId && (item.kind === 'today_action' || item.kind === 'anomaly')).slice(0, 6).map(item => {
+          const client = allClients.find(candidate => candidate.id === item.clientId);
+          return { clientId: item.clientId!, clientName: client?.name ?? item.title, stage: client?.stage ?? '数据不足', trigger: item.aiConclusion, facts: item.facts };
+        });
+        const globalReview = await generateGlobalBattleReview(candidateFacts);
+        if (globalReview?.actions.length) {
+          inserts.push({
+            clientId: undefined, opportunityId: undefined, kind: 'today_action', priority: 'P1', title: '本周全局战场研判',
+            aiConclusion: globalReview.judgment.slice(0, 80),
+            facts: [
+              { label: '整体漏斗健康度', value: globalReview.funnelHealth },
+              { label: '本季度赢单风险', value: globalReview.winRisk },
+              { label: '团队能力短板', value: globalReview.teamGap },
+            ],
+            methodology: '全局战场五维研判 · AD 指挥节奏',
+            suggestedAction: `优先确认本周三项行动：${globalReview.actions.map(action => action.title).join('；')}`,
+            assignedRole: 'AD', fingerprint: `global-review-${weeklyKey}-summary`, dueDate: new Date(Date.now() + 7 * 86_400_000),
+          } as any);
+          for (let index = 0; index < globalReview.actions.length; index += 1) {
+            const action = globalReview.actions[index];
+            const candidate = candidateFacts.find(item => item.clientId === action.clientId);
+            inserts.push({
+              clientId: action.clientId, opportunityId: undefined, kind: 'today_action', priority: index === 0 ? 'P0' : 'P1',
+              title: action.title.slice(0, 240), aiConclusion: action.evidence.slice(0, 300),
+              facts: candidate?.facts ?? [{ label: '全局研判依据', value: action.evidence }],
+              methodology: '全局战场研判 · AD 本周行动', suggestedAction: action.action.slice(0, 100), assignedRole: 'AD',
+              fingerprint: `global-review-${weeklyKey}-action-${action.clientId}-${index}`, dueDate: new Date(Date.now() + (index === 0 ? 2 : 7) * 86_400_000),
+            } as any);
+          }
+        }
+      }
       if (inserts.length) await db.insert(adCommandRecommendations).values(inserts as any);
-      const currentFingerprints = new Set(generated.map(item => item.fingerprint));
+      const currentFingerprints = new Set(fallbackGenerated.map(item => `fallback-${item.fingerprint}`));
       const derivedTypes = new Set(['contact-gap', 'champion-gap', 'opp-stagnant']);
       for (const item of existing) {
         const isDerived = Array.from(derivedTypes).some(prefix => item.fingerprint.startsWith(prefix));
@@ -5438,6 +5899,110 @@ ${input.aiSuggestion}
       const { eq } = await import('drizzle-orm');
       await db.update(adCommandRecommendations).set({ status: 'skipped', skipReason: input.reason || 'AD 当前不采纳' }).where(eq(adCommandRecommendations.id, input.id));
       return { id: input.id };
+    }),
+    samCoachReview: publicProcedure.input(z.object({ samName: z.string().min(1).max(100) })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { clients, meetingMinutes, meddpicc, opportunities } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const { buildSamCoachPrompt } = await import('./samCoachLLM');
+      const [samClients, allMeetings, allScores, allOpportunities] = await Promise.all([
+        db.select().from(clients).where(eq(clients.assignedSamName, input.samName)),
+        db.select({ clientId: meetingMinutes.clientId, meetingDate: meetingMinutes.meetingDate }).from(meetingMinutes),
+        db.select().from(meddpicc),
+        db.select().from(opportunities),
+      ]);
+      if (!samClients.length) return { content: `数据不足，暂不判断。${input.samName} 暂无已分配客户记录。`, samName: input.samName, clientCount: 0 };
+      const clientIds = new Set(samClients.map(client => client.id));
+      const latestMeeting = new Map<number, Date>();
+      for (const meeting of allMeetings.filter(meeting => clientIds.has(meeting.clientId))) {
+        const current = latestMeeting.get(meeting.clientId);
+        if (!current || meeting.meetingDate > current) latestMeeting.set(meeting.clientId, meeting.meetingDate);
+      }
+      const scoreByClient = new Map(allScores.filter(score => clientIds.has(score.clientId)).map(score => [score.clientId, score]));
+      const now = Date.now();
+      const facts = samClients.map(client => {
+        const lastMeeting = latestMeeting.get(client.id);
+        return {
+          clientName: client.name,
+          stage: client.stage,
+          lastMeetingDays: lastMeeting ? Math.floor((now - new Date(lastMeeting).getTime()) / 86_400_000) : null,
+          championScore: Number((scoreByClient.get(client.id) as any)?.championScore ?? 0),
+          economicBuyerScore: Number((scoreByClient.get(client.id) as any)?.economicBuyerScore ?? 0),
+          activeOpportunityCount: allOpportunities.filter(opp => opp.clientId === client.id && opp.status === '活跃').length,
+        };
+      });
+      const response = await invokeLLM({
+        model: 'gpt-5-mini',
+        messages: [
+          { role: 'system', content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+          { role: 'user', content: buildSamCoachPrompt(input.samName, facts) },
+        ],
+        maxCompletionTokens: 900,
+      });
+      const content = String(response.choices?.[0]?.message?.content || '').trim() || '数据不足，暂不判断。请补充客户对话或关键人证据后重试。';
+      return { content, samName: input.samName, clientCount: samClients.length };
+    }),
+    samSelfCheck: protectedProcedure.input(z.object({ clientId: z.number() })).mutation(async ({ input }) => {
+      const client = await getClientById(input.clientId);
+      const meddpiccData = await getMeddpiccByClientId(input.clientId);
+      const m = meddpiccData as any;
+      const champScore = m?.championScore ?? 0;
+      const ebScore = m?.economicBuyerScore ?? 0;
+      const painScore = m?.implicatePainScore ?? 0;
+      const prompt = `为负责客户"${client?.name || "未知"}"（阶段：${client?.stage || "未知"}）生成最多3项“待补录的可验证事实”。
+当前MEDDPICC：Champion=${champScore}/100, EB=${ebScore}/100, Pain=${painScore}/100
+
+要求：
+- 每项只针对当前最弱的 Win 因子；不得要求 SAM 填写主观看法或猜测客户意图
+- 明确要补录到哪个事实入口：contact（关键人图谱）、signal（购买/外部信号）、meeting（拜访日志）或 meddpicc（已有事实依据备注）
+- evidenceRequired 必须写明可回溯来源，例如客户原话、拜访日期、关键人姓名、邮件/会议纪要或采购文件
+- 若现有数据不足以形成补录指引，返回空数组；不要编造事实
+
+不要输出问题、评分结论或解释框架。`;
+      const res = await invokeLLM({
+        model: "gpt-5-mini",
+        maxCompletionTokens: 500,
+        messages: [
+          { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "sam_fact_backfill_prompts",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                items: {
+                  type: "array",
+                  maxItems: 3,
+                  items: {
+                    type: "object",
+                    properties: {
+                      target: { type: "string", enum: ["contact", "signal", "meeting", "meddpicc"] },
+                      title: { type: "string" },
+                      evidenceRequired: { type: "string" },
+                      captureHint: { type: "string" },
+                    },
+                    required: ["target", "title", "evidenceRequired", "captureHint"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["items"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+      try {
+        const parsed = JSON.parse(String(res.choices?.[0]?.message?.content || '{"items":[]}'));
+        return { items: Array.isArray(parsed.items) ? parsed.items : [] };
+      } catch {
+        return { items: [] };
+      }
     }),
   }),
   // ── AD 指挥台聚合接口 ─────────────────────────────────────────────────────
@@ -6335,7 +6900,7 @@ ${input.aiSuggestion}
       extractedText: z.string(),
       filename: z.string().optional(),
     })).mutation(async ({ input }) => {
-      const prompt = `你是一位企业销售案例分析专家。请从以下文档内容中提取成功案例的结构化信息。
+      const prompt = `请从以下文档内容中提取成功案例的结构化信息。
 
 文档名称：${input.filename || "未知"}
 文档内容：
@@ -6364,7 +6929,7 @@ ${input.extractedText.slice(0, 4000)}
 
       const result = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const raw = String(result.choices[0]?.message?.content || '');
       try {
@@ -6493,5 +7058,164 @@ ${input.extractedText.slice(0, 4000)}
       }),
   }),
 
+  // ── SA 技术定标工作台 ─────────────────────────────────────────────────────
+  sa: router({
+    getTechReadiness: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number(),
+    })).mutation(async ({ input }) => {
+      const client = await getClientById(input.clientId);
+      const meddpiccData = await getMeddpiccByClientId(input.clientId);
+      const { keyContacts, opportunities: oppsTable } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const contacts = await db.select().from(keyContacts).where(eq(keyContacts.clientId, input.clientId));
+      const techBuyer = contacts.find((c: any) => c.buyingRole === "技术决策人" || c.title?.includes("CTO") || c.title?.includes("技术"));
+      const opp = (await db.select().from(oppsTable).where(eq(oppsTable.id, input.opportunityId)))[0] as any;
+      const d1Score = (meddpiccData as any)?.decisionCriteriaScore ?? 0;
+      const d1Evidence = (meddpiccData as any)?.decisionCriteriaNotes || "未填写";
+      const competitor = opp?.competitors || "未知";
+      const prompt = `当前商机技术定标阶段数据：\n\nMEDDPICC决策标准（D1）：${d1Score}/100，依据：${d1Evidence}\n技术决策人：${techBuyer?.name || "未找到"}，立场：${(techBuyer as any)?.relationship || "未知"}\n主要竞品：${competitor}\n商机阶段：${opp?.stage || "未知"}\n客户：${client?.name || "未知"}\n\n作为SA，请给出：\n1. 本阶段技术定标的最高风险（一句话，基于D1分数和技术决策人状态）\n2. POC/技术演示的最优设计建议（针对已知决策标准的弱点）\n3. 需要向SAM/AD申请的支持（具体资源）\n4. 竞品技术对比的核心差异化论点（一条，针对已录入竞品）\n\n数据不足时明确说明，不要编造技术参数。`;
+      const res = await invokeLLM({
+        model: "gpt-5-mini",
+        maxCompletionTokens: 400,
+        messages: [
+          { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
+      });
+      return { content: String(res.choices?.[0]?.message?.content || "数据不足，暂不判断") };
+    }),
+  }),
+
+  // ── RSM 属地工作台 ─────────────────────────────────────────────────────
+  rsm: router({
+    getLocalActionPlan: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number(),
+    })).mutation(async ({ input }) => {
+      const client = await getClientById(input.clientId);
+      const meddpiccData = await getMeddpiccByClientId(input.clientId);
+      const { opportunities: oppsTable, keyContacts } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("数据库不可用");
+      const opp = (await db.select().from(oppsTable).where(eq(oppsTable.id, input.opportunityId)))[0] as any;
+      const contacts = await db.select().from(keyContacts).where(eq(keyContacts.clientId, input.clientId));
+      const hasProcurement = contacts.some((c: any) => (c.title || "").includes("采购") || (c.title || "").includes("法务") || c.buyingRole === "采购决策人");
+      const d2Score = (meddpiccData as any)?.decisionProcessScore ?? 0;
+      const pScore = (meddpiccData as any)?.paperProcessScore ?? 0;
+      const pEvidence = (meddpiccData as any)?.paperProcessNotes || "未填写";
+      const prompt = `属地RSM在以下商机中的协同任务分析：\n\n客户：${client?.name || "未知"}，商机阶段：${opp?.stage || "未知"}\nMEDDPICC决策流程（D2）：${d2Score}/100\nMEDDPICC采购流程（P）：${pScore}/100\nP维度评分依据：${pEvidence}\n是否有采购/法务联系人：${hasProcurement ? "是" : "否"}\n属地渠道：${(client as any)?.rsmPartner || "未登记"}\n\n请给RSM生成本周属地协同任务（最多3条）：\n1. 招投标/框架协议推进：当前最紧急的一步\n2. 渠道协调：是否需要拉入本地渠道？何时？为什么？\n3. 属地关系：有哪个属地人脉可以协助推进决策流程？\n\n只基于上述事实，不编造关系或流程细节。`;
+      const res = await invokeLLM({
+        model: "gpt-5-mini",
+        maxCompletionTokens: 300,
+        messages: [
+          { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
+      });
+      return { content: String(res.choices?.[0]?.message?.content || "数据不足，暂不判断") };
+    }),
+  }),
+
+  // ── Command 3.1：SA / RSM 主动式角色工作台 ────────────────────────────────
+  roleWorkbench: router({
+    getMyDashboard: protectedProcedure.query(async ({ ctx }) => {
+      const role = ctx.user.podRole;
+      if (role !== "SA" && role !== "RSM") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "该工作台仅向 SA 或 RSM 提供" });
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
+      const { clients: clientsTable, opportunities: opportunitiesTable, opportunityMeddpicc, podTasks, keyContacts } = await import("../drizzle/schema");
+      const [allClients, allOpportunities, allScores, allTasks, allContacts] = await Promise.all([
+        db.select().from(clientsTable),
+        db.select().from(opportunitiesTable),
+        db.select().from(opportunityMeddpicc),
+        db.select().from(podTasks),
+        db.select().from(keyContacts),
+      ]);
+
+      const ownedClients = role === "RSM"
+        ? allClients.filter(client => client.assignedRsmId === ctx.user.id)
+        : allClients;
+      const ownedClientIds = new Set(ownedClients.map(client => client.id));
+      const activeOpportunities = allOpportunities.filter(opportunity => opportunity.status === "活跃");
+      const assignedOpportunities = role === "SA"
+        ? activeOpportunities.filter(opportunity => opportunity.assignedSaId === ctx.user.id)
+        : activeOpportunities.filter(opportunity => ownedClientIds.has(opportunity.clientId));
+      const assignedOpportunityIds = new Set(assignedOpportunities.map(opportunity => opportunity.id));
+      const clientById = new Map(allClients.map(client => [client.id, client]));
+      const scoreByOpportunity = new Map(allScores.map(score => [score.opportunityId, score]));
+      const contactsByClient = new Map<number, typeof allContacts>();
+      for (const contact of allContacts) {
+        const current = contactsByClient.get(contact.clientId) ?? [];
+        current.push(contact);
+        contactsByClient.set(contact.clientId, current);
+      }
+
+      const openTasks = allTasks.filter(task => task.assignedRole === role && task.taskStatus !== "done" && (
+        assignedOpportunityIds.has(task.opportunityId ?? -1) || ownedClientIds.has(task.clientId)
+      ));
+      const tasksByOpportunity = new Map<number, typeof openTasks>();
+      for (const task of openTasks) {
+        if (!task.opportunityId) continue;
+        const current = tasksByOpportunity.get(task.opportunityId) ?? [];
+        current.push(task);
+        tasksByOpportunity.set(task.opportunityId, current);
+      }
+
+      const workItems = assignedOpportunities.map(opportunity => {
+        const client = clientById.get(opportunity.clientId);
+        const score = scoreByOpportunity.get(opportunity.id) as any;
+        const contacts = contactsByClient.get(opportunity.clientId) ?? [];
+        const assignedTasks = tasksByOpportunity.get(opportunity.id) ?? [];
+        const technicalDecisionMaker = contacts.find(contact => contact.buyingRole === "技术决策人");
+        const procurementContact = contacts.find(contact => contact.buyingRole === "经济决策人" || /(采购|法务)/.test(contact.title || ""));
+        const decisionCriteriaScore = Number(score?.decisionCriteriaScore ?? 0);
+        const decisionProcessScore = Number(score?.decisionProcessScore ?? 0);
+        const paperProcessScore = Number(score?.paperProcessScore ?? 0);
+        const isUrgent = role === "SA"
+          ? decisionCriteriaScore < 60 || !technicalDecisionMaker
+          : decisionProcessScore < 60 || paperProcessScore < 60 || !procurementContact;
+        const diagnostic = role === "SA"
+          ? !technicalDecisionMaker
+            ? "未入库技术决策人，不能假设 POC 验收标准已被覆盖"
+            : `D1 决策标准 ${decisionCriteriaScore}/100；需以已确认技术标准校准验证动作`
+          : !procurementContact
+            ? "尚未入库采购或法务联系人，不能假设属地流程已打通"
+            : `D2 决策流程 ${decisionProcessScore}/100，P 采购流程 ${paperProcessScore}/100；需核验本地流程证据`;
+        return {
+          clientId: opportunity.clientId,
+          clientName: client?.name ?? "未知客户",
+          opportunityId: opportunity.id,
+          opportunityName: opportunity.name,
+          stage: opportunity.stage,
+          isUrgent,
+          diagnostic,
+          decisionCriteriaScore,
+          decisionProcessScore,
+          paperProcessScore,
+          assignedTaskCount: assignedTasks.length,
+          tasks: assignedTasks.map(task => ({ id: task.id, title: task.title, dueDate: task.dueDate, taskStatus: task.taskStatus })),
+        };
+      }).sort((a, b) => Number(b.isUrgent) - Number(a.isUrgent));
+
+      return {
+        role,
+        summary: {
+          activeDealCount: workItems.length,
+          urgentDealCount: workItems.filter(item => item.isUrgent).length,
+          openTaskCount: openTasks.length,
+        },
+        workItems,
+      };
+    }),
+  }),
+
 });
 export type AppRouter = typeof appRouter;
+import { triggerSingleClientRefresh } from "./eventDrivenRefresh";

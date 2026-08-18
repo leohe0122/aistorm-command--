@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "cf42b49e-e1c6-4aee-9608-75d76b005235",
-  "prevId": "de6cd1c0-e9ed-4930-b900-9f5cf7b5955f",
+  "id": "954f0574-44e1-4c34-bca6-0b9594f91d3d",
+  "prevId": "1f24e4e5-6fd5-4d2b-b05b-b0f6425c477b",
   "tables": {
     "account_overview": {
       "name": "account_overview",
@@ -263,6 +263,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": "(now())"
+        },
+        "sourceReviewId": {
+          "name": "sourceReviewId",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
@@ -3335,6 +3342,13 @@
           "notNull": false,
           "autoincrement": false,
           "default": "'manual'"
+        },
+        "aiPostAnalysis": {
+          "name": "aiPostAnalysis",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
@@ -3580,6 +3594,20 @@
           "notNull": true,
           "autoincrement": false,
           "default": "(now())"
+        },
+        "assignedSaId": {
+          "name": "assignedSaId",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "assignedSaName": {
+          "name": "assignedSaName",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
@@ -4079,6 +4107,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'pending'"
+        },
+        "sourceReviewId": {
+          "name": "sourceReviewId",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},
