@@ -27,8 +27,9 @@ describe("武器库作战上下文", () => {
   });
 
   it("商机作战室要求人工确认后才创建竞品反制 POD 任务", () => {
-    expect(opportunityRoomSource).toContain("确认并创建 POD 任务");
+    expect(opportunityRoomSource).toContain("转为 POD 任务 →");
     expect(opportunityRoomSource).toContain("来源：Kill Sheet #");
+    expect(opportunityRoomSource).toContain('sourceType: "competition_counter"');
     expect(opportunityRoomSource).toContain("Champion 突破话术");
   });
 });

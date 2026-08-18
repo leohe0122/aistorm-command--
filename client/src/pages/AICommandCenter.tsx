@@ -3,9 +3,11 @@ import { useLocation } from "wouter";
 import { AlertTriangle, BarChart3, CheckCircle2, ChevronRight, Clock3, MapPinned, RefreshCw, Sparkles, Target, Users, Wrench, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { trpc } from "@/lib/trpc";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AIConfidenceBar } from "@/components/AIConfidenceBar";
 import { toast } from "sonner";
 
 type CommandRecommendation = {
@@ -59,6 +61,7 @@ function RecommendationCard({ item, onConfirm, onSkip, onNavigate }: {
             <h3 className="text-sm font-semibold text-foreground">{item.title}</h3>
           </div>
           <p className="mt-1 text-sm text-foreground/90">{item.aiConclusion}</p>
+          <AIConfidenceBar signalDimensions={item.facts.filter(fact => fact.value && !/数据不足|暂无|未录入/.test(fact.value)).length} />
           <p className="mt-2 text-xs text-cyan-300"><span className="font-semibold">建议行动：</span>{item.suggestedAction}</p>
           <details className="mt-3 rounded-lg bg-muted/30 px-3 py-2 text-xs">
             <summary className="cursor-pointer font-medium text-muted-foreground">查看 AI 依据与方法论判断</summary>
@@ -111,6 +114,7 @@ export function AICommandCenter() {
   const isSaOrRsm = userRole === "SA" || userRole === "RSM";
   const roleWorkbenchQuery = trpc.roleWorkbench.getMyDashboard.useQuery(undefined, { enabled: isSaOrRsm });
   const recommendationsQuery = trpc.adCommand.list.useQuery(undefined, { refetchInterval: 60_000 });
+  const reviewClosureQuery = trpc.insights.reviewClosureMetrics.useQuery({ period: "week" });
   const utils = trpc.useUtils();
   const refresh = trpc.adCommand.refresh.useMutation({
     onSuccess: () => { utils.adCommand.list.invalidate(); setDidRefresh(true); },
@@ -284,7 +288,7 @@ export function AICommandCenter() {
         {globalBattlefield ? <section className="rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-950/35 to-cyan-950/20 p-4">
           <button className="flex w-full items-start gap-3 text-left" onClick={() => setGlobalExpanded(value => !value)}>
             <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-violet-200" />
-            <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-violet-100">本周全局战场研判</p><Badge variant="outline" className={globalBattlefield.fingerprint?.startsWith("native-") ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-200" : "border-slate-500/35 text-slate-400"}>{globalBattlefield.fingerprint?.startsWith("native-") ? "AI 原生研判" : "规则触发"}</Badge></div><p className="mt-1 text-sm text-foreground/90">{globalBattlefield.aiConclusion}</p></div>
+            <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-violet-100">本周全局战场研判</p><Badge variant="outline" className={globalBattlefield.fingerprint?.startsWith("native-") ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-200" : "border-slate-500/35 text-slate-400"}>{globalBattlefield.fingerprint?.startsWith("native-") ? "AI 原生研判" : "规则触发"}</Badge></div><p className="mt-1 text-sm text-foreground/90">{globalBattlefield.aiConclusion}</p><AIConfidenceBar signalDimensions={globalBattlefield.facts.filter(fact => fact.value && !/数据不足|暂无|未录入/.test(fact.value)).length} /></div>
             <span className="text-xs text-muted-foreground">{globalExpanded ? "收起 ▲" : "展开详情 ▼"}</span>
           </button>
           {globalExpanded ? <div className="mt-4 grid gap-3 border-t border-violet-500/20 pt-4 md:grid-cols-3">{globalBattlefield.facts.filter(fact => fact.label !== "快照指纹").map((fact, index) => <div key={index} className="rounded-lg bg-background/30 p-3"><p className="text-xs font-medium text-violet-200">{fact.label}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{fact.value}</p></div>)}</div> : null}
@@ -314,6 +318,7 @@ export function AICommandCenter() {
         {[
           ["目标客户", (dashboard as any)?.clientCount ?? 0, "客户组合"], ["高风险", (dashboard as any)?.riskClients?.length ?? 0, "需要 AI 升级"], ["本周拜访", (dashboard as any)?.visitedThisWeekCount ?? 0, "已入库行为"], ["待确认建议", allVisible.length, "AD 人类控制"],
         ].map(([label, value, note]) => <div key={String(label)} className="rounded-2xl border bg-card p-5"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-3xl font-bold">{value}</p><p className="mt-1 text-xs text-muted-foreground">{note}</p></div>)}
+        <div className={cn("rounded-2xl border p-5", (reviewClosureQuery.data?.rate ?? 100) < 60 ? "border-amber-500/35 bg-amber-500/5" : "bg-card")}><p className="text-xs text-muted-foreground">Review 闭环率 · 本周</p><p className="mt-2 text-3xl font-bold">{reviewClosureQuery.data?.rate === null || reviewClosureQuery.data?.rate === undefined ? "数据不足" : `${reviewClosureQuery.data.rate}%`}</p><p className={cn("mt-1 text-xs", (reviewClosureQuery.data?.rate ?? 100) < 60 ? "text-amber-300" : "text-muted-foreground")}>{reviewClosureQuery.data ? `${reviewClosureQuery.data.completed}/${reviewClosureQuery.data.total} 项已完成` : "加载中…"}{(reviewClosureQuery.data?.rate ?? 100) < 60 ? " · 需在下轮 Review 升级未完成任务" : ""}</p></div>
         <div className="md:col-span-4 rounded-2xl border bg-card p-5 text-sm text-muted-foreground"><BarChart3 className="mb-2 h-5 w-5 text-cyan-300" />漏斗、MEDDPICC 雷达、拜访频率等详细数据保留为按需分析，不再占用 AD 的决策首屏。</div>
       </section>}
 

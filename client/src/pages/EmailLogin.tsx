@@ -64,14 +64,14 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
     <div className="h-screen flex" style={{ background: "oklch(0.09 0.025 240)" }}>
       {/* Left panel - branding */}
       <div className="hidden md:flex md:w-5/12 flex-col justify-between p-10 relative overflow-hidden"
-        style={{ background: "linear-gradient(160deg, #060f1e 0%, #0a1a32 40%, #0d2244 100%)" }}>
+        style={{ background: "linear-gradient(160deg, #05070e 0%, #08162b 42%, #130d1a 100%)" }}>
 
         {/* Network grid + glow — matches aistorm.com hero */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full"
             style={{ background: "radial-gradient(circle, rgba(0,168,214,0.20) 0%, transparent 65%)" }} />
           <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full"
-            style={{ background: "radial-gradient(circle, rgba(27,111,191,0.16) 0%, transparent 65%)" }} />
+            style={{ background: "radial-gradient(circle, rgba(229,72,77,0.15) 0%, transparent 65%)" }} />
           <svg className="absolute inset-0 w-full h-full opacity-[0.07]" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <pattern id="cmd-grid" width="40" height="40" patternUnits="userSpaceOnUse">
@@ -82,6 +82,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
           </svg>
           <div className="absolute top-0 left-0 w-full h-full opacity-[0.04]"
             style={{ background: "linear-gradient(135deg, transparent 30%, rgba(0,168,214,0.9) 50%, transparent 70%)" }} />
+          <div className="absolute inset-y-0 left-0 w-full opacity-20" style={{ backgroundImage: "repeating-linear-gradient(90deg, transparent 0, transparent 64px, rgba(0,168,214,.2) 65px, transparent 66px)", animation: "pulse 5s ease-in-out infinite" }} />
         </div>
 
        {/* Logo */}
@@ -91,19 +92,18 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
 
         {/* Center content */}
         <div className="relative z-10">
-          <h2 className="text-4xl font-bold text-white leading-tight mb-4">
+          <h2 className="text-4xl font-bold text-white leading-tight mb-5" style={{ textShadow: "0 0 22px rgba(0,168,214,.32), 0 0 2px #ffffff" }}>
             AIStorm<br />
             <span style={{ background: "linear-gradient(90deg, #00A8D6, #4DB87A)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               Command
             </span>
           </h2>
-          <p className="text-base text-white/60 leading-relaxed max-w-sm">
-            AI 驱动的大客户作战指挥系统。整合情报、MEDDPICC、POD 协同，让每一次拜访都精准高效。
-          </p>
+          <p className="text-base font-semibold text-white/80 leading-relaxed max-w-md">顶级销售方法论 × AI原生执行力</p>
+          <p className="mt-1 text-base text-white/55 leading-relaxed max-w-md">让每一笔大客户都有迹可循、有法可赢</p>
 
           {/* Feature tags */}
           <div className="flex flex-wrap gap-2 mt-6">
-            {["战场地图", "情报雷达", "AI洞察", "POD协同", "Champion培养"].map(tag => (
+            {["MEDDPICC全要素", "战场诊断", "POD协同", "智能武器库", "AI赢单闭环"].map(tag => (
               <span key={tag} className="px-3 py-1 rounded-full text-xs font-medium text-white/70 border border-white/10"
                 style={{ background: "rgba(255,255,255,0.05)" }}>
                 {tag}
@@ -120,7 +120,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
 
       {/* Right panel - login form */}
       <div className="flex-1 flex flex-col items-center justify-center p-8 relative"
-        style={{ background: "linear-gradient(160deg, #07111f 0%, #0a1628 60%, #0c1e38 100%)" }}>
+        style={{ background: "linear-gradient(160deg, #06080f 0%, #0a1322 60%, #120d18 100%)" }}>
         {/* Subtle right-side glow */}
         <div className="absolute top-1/4 right-0 w-96 h-96 rounded-full pointer-events-none"
           style={{ background: "radial-gradient(circle, rgba(0,168,214,0.06) 0%, transparent 70%)" }} />

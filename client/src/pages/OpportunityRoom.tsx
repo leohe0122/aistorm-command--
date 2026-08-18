@@ -258,6 +258,7 @@ function SpinWorkspace({ opportunity, meddpicc }: { opportunity: any; meddpicc: 
 }
 
 function DealBattleTools({ client, opportunity, contacts }: { client: any; opportunity: any; contacts: any[] }) {
+  const [, navigate] = useLocation();
   const championContact = contacts.find((contact: any) => contact.buyingRole === "Champion") || contacts.find((contact: any) => contact.name === opportunity.champion);
   const championName = opportunity.champion || championContact?.name || "";
   const competitor = String(opportunity.blueSheetCompetitor || opportunity.competitorName || "").trim();
@@ -269,7 +270,7 @@ function DealBattleTools({ client, opportunity, contacts }: { client: any; oppor
     onError: (error) => toast.error(`Champion 弹药生成失败：${error.message}`),
   });
   const counterTaskMutation = trpc.pod.addTask.useMutation({
-    onSuccess: () => toast.success("竞品反制动作已创建为 POD 任务"),
+    onSuccess: () => { toast.success("竞品反制动作已创建，请在 POD 协同页确认执行"); navigate(`/pod-center?oppId=${opportunity.id}&oppName=${encodeURIComponent(opportunity.name)}`); },
     onError: (error) => toast.error(`创建竞品反制任务失败：${error.message}`),
   });
   const matchingSheets = (killSheets as any[]).filter((item: any) => {
@@ -298,12 +299,12 @@ function DealBattleTools({ client, opportunity, contacts }: { client: any; oppor
       <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold text-amber-100"><Swords className="h-4 w-4" />竞品对比作战卡</div><p className="mt-1 text-xs leading-5 text-slate-400">从已入库的 Kill Sheet 中匹配本商机已确认竞品；未命中时不虚构对比结论。</p></div></div>
       <p className="mt-3 rounded-lg border border-amber-400/15 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">已确认竞品：{competitor || "数据不足，暂不判断"}</p>
       {competitor && matchingSheets.length === 0 && <p className="mt-3 text-xs leading-5 text-amber-100/80">未找到对应 Kill Sheet。请使用上方“生成武器”，针对当前 Deal Map 事实生成待审核的竞争材料。</p>}
-      {matchingSheets.map((sheet: any) => { const counterAction = sheet.battleNotes || sheet.aiGeneratedTalk || sheet.ourAdvantages || sheet.keyDiffs; return <div key={sheet.id} className="mt-3 rounded-lg border border-amber-400/15 bg-slate-950/55 p-3"><div className="text-xs font-semibold text-amber-100">{sheet.competitorName || competitor} · {sheet.productLine || "产品线待补"}</div><p className="mt-1 text-[11px] leading-5 text-slate-300">{counterAction || "已有 Kill Sheet，但反制动作待补充。"}</p>{counterAction && <div className="mt-3 flex flex-wrap items-center gap-2"><Select value={counterRole} onValueChange={value => setCounterRole(value as (typeof roleOptions)[number])}><SelectTrigger className="h-8 w-24 border-amber-400/25 bg-slate-950/65 text-[11px]"><SelectValue /></SelectTrigger><SelectContent>{roleOptions.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select><Button size="sm" variant="outline" disabled={counterTaskMutation.isPending} onClick={() => counterTaskMutation.mutate({ clientId: client.id, opportunityId: opportunity.id, assignedRole: counterRole, title: `竞品反制：${sheet.competitorName || competitor}`, description: `${counterAction}\n\n来源：Kill Sheet #${sheet.id} · 已确认竞品：${competitor}` })} className="h-8 border-amber-400/35 text-xs text-amber-100 hover:bg-amber-400/10">{counterTaskMutation.isPending ? "创建中…" : "确认并创建 POD 任务"}</Button></div>}</div>; })}
+      {matchingSheets.map((sheet: any) => { const counterAction = sheet.battleNotes || sheet.aiGeneratedTalk || sheet.ourAdvantages || sheet.keyDiffs; const actionSummary = String(counterAction || "").replace(/\s+/g, " ").trim().slice(0, 36); return <div key={sheet.id} className="mt-3 rounded-lg border border-amber-400/15 bg-slate-950/55 p-3"><div className="text-xs font-semibold text-amber-100">{sheet.competitorName || competitor} · {sheet.productLine || "产品线待补"}</div><p className="mt-1 text-[11px] leading-5 text-slate-300">{counterAction || "已有 Kill Sheet，但反制动作待补充。"}</p>{counterAction && <div className="mt-3 flex flex-wrap items-center gap-2"><Select value={counterRole} onValueChange={value => setCounterRole(value as (typeof roleOptions)[number])}><SelectTrigger className="h-8 w-24 border-amber-400/25 bg-slate-950/65 text-[11px]"><SelectValue /></SelectTrigger><SelectContent>{roleOptions.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select><Button size="sm" variant="outline" disabled={counterTaskMutation.isPending} onClick={() => counterTaskMutation.mutate({ clientId: client.id, opportunityId: opportunity.id, assignedRole: counterRole, sourceType: "competition_counter", title: `[竞品反制] ${sheet.competitorName || competitor} · ${actionSummary}`, description: `${counterAction}\n\n来源：Kill Sheet #${sheet.id} · 已确认竞品：${competitor}` })} className="h-8 border-amber-400/35 text-xs text-amber-100 hover:bg-amber-400/10">{counterTaskMutation.isPending ? "创建中…" : "转为 POD 任务 →"}</Button></div>}</div>; })}
     </article>
   </section>;
 }
 
-function ActionWorkspace({ clientId, opportunityId }: { clientId: number; opportunityId: number }) {
+function ActionWorkspace({ clientId, opportunityId, initialReviewId }: { clientId: number; opportunityId: number; initialReviewId?: number | null }) {
   const utils = trpc.useUtils();
   const { data: podTasks = [], isLoading } = trpc.pod.listByOpportunity.useQuery({ opportunityId });
   const { data: actionItems = [] } = trpc.actions.listByClient.useQuery({ clientId });
@@ -314,7 +315,7 @@ function ActionWorkspace({ clientId, opportunityId }: { clientId: number; opport
   const sourceReviewById = useMemo(() => new Map((sourceReviews as any[]).map(review => [review.id, review])), [sourceReviews]);
   const reviewTasks = (podTasks as any[]).filter(task => Number.isInteger(task.sourceReviewId) && task.sourceReviewId > 0);
   const completedReviewTasks = reviewTasks.filter(task => task.taskStatus === "done" || task.isCompleted).length;
-  const [expandedReviewId, setExpandedReviewId] = useState<number | null>(null);
+  const [expandedReviewId, setExpandedReviewId] = useState<number | null>(initialReviewId ?? null);
   const { data: oppData } = trpc.opportunities.listByClient.useQuery({ clientId });
   const { data: meddpiccData } = trpc.opportunities.getMeddpicc.useQuery({ opportunityId });
   const opp = (oppData ?? []).find((o: any) => o.id === opportunityId) as any;
@@ -369,10 +370,12 @@ function DealMapWorkspace({ clientId, opportunityId, mode }: { clientId: number;
 
 export default function OpportunityRoom() {
   const [, params] = useRoute("/clients/:clientId/opportunities/:opportunityId");
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const clientId = Number(params?.clientId);
   const opportunityId = Number(params?.opportunityId);
-  const [activeSection, setActiveSection] = useState<RoomSection>("overview");
+  const reviewLinkParams = new URLSearchParams(location.split("?")[1] || "");
+  const linkedReviewId = Number(reviewLinkParams.get("reviewId")) || null;
+  const [activeSection, setActiveSection] = useState<RoomSection>(() => reviewLinkParams.get("section") === "actions" ? "actions" : "overview");
   const { data: clients = [], isLoading: clientsLoading } = trpc.clients.list.useQuery();
   const client = clients.find((item: any) => item.id === clientId) as any;
   const { data: opportunities = [], isLoading: opportunitiesLoading } = trpc.opportunities.listByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
@@ -401,7 +404,7 @@ export default function OpportunityRoom() {
     threewhy: <DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="threewhy" />,
     value: <DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="value" />,
     gonogo: <DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="gonogo" />,
-    actions: <div className="space-y-4"><AIProcessGuide methodology="行动闭环：将经人工审核的 AI 建议转化为有责任角色和状态的任务。" facts="只读取已关联本商机的行动指令和 POD 任务；客户级或其他商机任务不会混入。" judgement="未关联、未审核或数据不足的建议不会被自动下发。" action="AD/SAM/SA 明确责任、截止与完成标准，并由负责人显式关闭任务。" /><DealBattleTools client={client} opportunity={opportunity} contacts={contacts as any[]} /><ActionWorkspace clientId={clientId} opportunityId={opportunityId} /></div>,
+    actions: <div className="space-y-4"><AIProcessGuide methodology="行动闭环：将经人工审核的 AI 建议转化为有责任角色和状态的任务。" facts="只读取已关联本商机的行动指令和 POD 任务；客户级或其他商机任务不会混入。" judgement="未关联、未审核或数据不足的建议不会被自动下发。" action="AD/SAM/SA 明确责任、截止与完成标准，并由负责人显式关闭任务。" /><DealBattleTools client={client} opportunity={opportunity} contacts={contacts as any[]} /><ActionWorkspace clientId={clientId} opportunityId={opportunityId} initialReviewId={linkedReviewId} /></div>,
   };
 
   return <main className="min-h-full bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.12),transparent_28%),linear-gradient(180deg,rgba(10,15,28,0.45),rgba(3,8,18,0.12))] px-4 py-5 lg:px-7 lg:py-7"><div className="mx-auto max-w-[1640px]"><button onClick={() => setLocation(`/clients/${clientId}`)} className="group mb-4 flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-cyan-200"><ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />返回 {client.name} 客户作战台</button><header className="mb-5 overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-950/70 shadow-[0_18px_55px_rgba(0,0,0,0.2)] backdrop-blur-sm"><div className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-start lg:justify-between lg:px-7 lg:py-6"><div className="flex min-w-0 gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-400/10 text-amber-200"><Target className="h-6 w-6" /></div><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h1 className="text-2xl font-semibold tracking-tight text-slate-50">{opportunity.name}</h1><span className="rounded-full border border-amber-300/25 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">独立商机作战室</span></div><p className="text-sm text-slate-400">{[client.name, product?.name || null, opportunity.stage].filter(Boolean).join(" · ")}</p><p className="mt-2 text-xs text-slate-500">本页只承载该商机的赢单方法论、证据与行动；客户级关系经营留在客户作战台。</p></div></div><div className="grid grid-cols-3 gap-2 sm:min-w-[330px]"><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-sm font-semibold text-amber-200">{opportunity.estimatedValue || "—"}</div><div className="text-[10px] text-slate-500">金额</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-sm font-semibold text-cyan-200">{opportunity.expectedCloseDate || "—"}</div><div className="text-[10px] text-slate-500">预计签约</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className={cn("text-sm font-semibold", health === null ? "text-slate-400" : health >= 60 ? "text-emerald-200" : health >= 35 ? "text-amber-200" : "text-rose-200")}>{health === null ? "—" : `${health}%`}</div><div className="text-[10px] text-slate-500">MEDDPICC</div></div></div></div></header><AIWarJudgement clientId={clientId} clientName={client.name} opportunityId={opportunityId} opportunity={opportunity} productName={product?.name} contacts={contacts as any[]} meetings={meetings as any[]} signals={signals as any[]} meddpicc={meddpicc} /><div className="mt-5 grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)]"><aside className="h-fit rounded-2xl border border-slate-700/70 bg-slate-950/60 p-2 xl:sticky xl:top-5"><div className="px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">商机工作流</div><nav className="space-y-1">{roomSections.map(section => { const Icon = section.icon; const active = activeSection === section.id; return <button key={section.id} onClick={() => setActiveSection(section.id)} className={cn("flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs transition-colors", active ? "border border-cyan-300/25 bg-cyan-400/10 font-semibold text-cyan-100" : "border border-transparent text-slate-400 hover:bg-slate-900/70 hover:text-slate-200")}><Icon className="h-3.5 w-3.5" />{section.label}<ChevronRight className={cn("ml-auto h-3 w-3", active ? "text-cyan-200" : "text-slate-600")} /></button>; })}</nav></aside><section className="min-w-0 rounded-2xl border border-slate-700/70 bg-slate-950/55 p-4 shadow-[0_12px_35px_rgba(0,0,0,0.12)] lg:p-5">{sectionContent[activeSection]}</section></div></div></main>;

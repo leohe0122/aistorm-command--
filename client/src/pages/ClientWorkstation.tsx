@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { KeyContactsPanel, ProductCoverageBar } from "./BattleMap";
 import PreVisitInsightButton from "@/components/PreVisitInsightButton";
 import ExternalSignalWorkbench from "@/components/ExternalSignalWorkbench";
+import { AIConfidenceBar } from "@/components/AIConfidenceBar";
 
 const CUSTOMER_STAGES = ["建图", "进门", "定痛", "找人", "进入商机"];
 
@@ -30,7 +31,8 @@ function formatDate(value?: string | Date | null) {
 function OpportunityHealthBadge({ score }: { score: number | null }) {
   if (score === null) return <span className="text-[10px] text-muted-foreground">商机证据待补充</span>;
   const color = score >= 60 ? "text-emerald-300 border-emerald-400/30 bg-emerald-400/10" : score >= 35 ? "text-amber-300 border-amber-400/30 bg-amber-400/10" : "text-rose-300 border-rose-400/30 bg-rose-400/10";
-  return <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", color)}>商机 MEDDPICC {score}%</span>;
+  const scoredDimensions = Math.max(1, Math.min(8, Math.round(score / 12.5)));
+  return <span className="inline-flex items-center gap-2"><span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", color)}>商机 MEDDPICC {score}%</span><AIConfidenceBar signalDimensions={scoredDimensions} className="mt-0 w-28" /></span>;
 }
 
 function StageRail({ stage }: { stage: string }) {

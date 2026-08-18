@@ -1,0 +1,1 @@
+ALTER TABLE `pod_tasks` ADD `sourceType` varchar(50);

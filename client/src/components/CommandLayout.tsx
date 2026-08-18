@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import AIStormLogo from "@/components/AIStormLogo";
 import { cn } from "@/lib/utils";
 import {
-  Map, Users, MessageSquare,
+  Activity, BrainCircuit, Map, Users, MessageSquare,
   ChevronRight, Database, Bell, Crosshair, LogOut, LayoutDashboard, Settings, Plus
 } from "lucide-react";
 import { UserCog, KeyRound } from "lucide-react";
@@ -36,7 +36,7 @@ const roleColors: Record<string, string> = {
 };
 
 const roleDescriptions: Record<string, string> = {
-  AD: "Account Director · 顶层破冰",
+  AD: "Account Director · 顶层权力枢纽",
   SAM: "Strategic Account Mgr · 中枢操盘",
   SA: "Solution Architect · 技术定标",
   RSM: "Regional Sales Mgr · 属地辅攻",
@@ -137,6 +137,12 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { emailUser } = useEmailAuth();
   const [showQuickEntry, setShowQuickEntry] = useState(false);
+  const aiStatusQuery = trpc.dashboard.summary.useQuery(undefined, { refetchInterval: 60_000 });
+  const activeDeals = (aiStatusQuery.data as any)?.oneToNBoard ?? [];
+  const knownHealthScores = activeDeals.map((deal: any) => deal.healthScore).filter((score: unknown) => typeof score === "number");
+  const averageHealth = knownHealthScores.length ? Math.round(knownHealthScores.reduce((sum: number, score: number) => sum + score, 0) / knownHealthScores.length) : null;
+  const statusLabel = aiStatusQuery.isFetching ? "实时分析中" : "战场快照已同步";
+  const updatedLabel = aiStatusQuery.dataUpdatedAt ? new Date(aiStatusQuery.dataUpdatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "等待数据";
 
   // Role-based visibility: AD sees everything, others see restricted items
   const isAD = !emailUser || emailUser.podRole === 'AD';
@@ -292,6 +298,12 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto flex flex-col">
+        <div className="hidden md:flex h-8 shrink-0 items-center justify-end gap-4 border-b border-border/60 bg-sidebar/45 px-5 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1.5"><Activity className={cn("h-3 w-3", aiStatusQuery.isFetching ? "animate-pulse text-cyan-300" : "text-emerald-300")} />{statusLabel}</span>
+          <span className="flex items-center gap-1.5"><BrainCircuit className="h-3 w-3 text-cyan-300" />跟进商机 {activeDeals.length}</span>
+          <span>健康均分 {averageHealth === null ? "数据不足" : `${averageHealth}%`}</span>
+          <span className="text-muted-foreground/70">更新 {updatedLabel}</span>
+        </div>
         {/* Page content */}
         <div className="flex-1 pb-16 md:pb-0 animate-in fade-in duration-200">
           {children}

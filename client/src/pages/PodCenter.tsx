@@ -23,9 +23,9 @@ const roleColor: Record<string, string> = {
 
 const roleDesc: Record<string, { title: string; focus: string[]; rules: string[] }> = {
   AD: {
-    title: "Account Director · 顶层破冰",
-    focus: ["C-Level 关系建立", "预算决策人识别", "战略价值传递"],
-    rules: ["SAM 提交1-Pager后方可请AD出场", "每次出场必须有明确的会议目标", "会后24小时内同步会面结果"],
+    title: "Account Director · 顶层权力枢纽",
+    focus: ["高层权力连接", "MEDDPICC Power 掌控", "Go/No-Go 资源决策"],
+    rules: ["SAM 遇到 Power 壁垒、高层博弈或资源卡口时主动调用 AD", "每次出场必须有明确的权力目标、战略背书或政治空气掩护", "会后24小时内同步会面事实与资源决策结果"],
   },
   SAM: {
     title: "Strategic Account Manager · 中枢操盘",
@@ -95,6 +95,7 @@ function AddTaskForm({ clientId, role, onSuccess }: { clientId: number; role: Po
 
 // ── Kanban Components ──────────────────────────────────────────────────────
 function KanbanCard({ task, clientName, onDelete }: { task: any; clientName?: string; onDelete: () => void }) {
+  const [, navigate] = useLocation();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 } : undefined;
   const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.taskStatus !== 'done';
@@ -131,6 +132,7 @@ function KanbanCard({ task, clientName, onDelete }: { task: any; clientName?: st
       </div>
       <div className="text-xs font-medium text-foreground leading-snug">{task.title}</div>
       {task.description && <div className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{task.description}</div>}
+      {task.sourceReviewId && task.opportunityId && <button type="button" onClick={(event) => { event.stopPropagation(); navigate(`/clients/${task.clientId}/opportunities/${task.opportunityId}?section=actions&reviewId=${task.sourceReviewId}`); }} className="mt-1 inline-flex items-center gap-1 text-[10px] text-violet-300 hover:text-violet-100"><BookOpen className="h-2.5 w-2.5" />来源: 1→N Deal Review · {new Date(task.createdAt).toLocaleDateString("zh-CN")}</button>}
       {task.dueDate && !isOverdue && (
         <div className="text-[10px] text-muted-foreground mt-1">{new Date(task.dueDate).toLocaleDateString('zh-CN')}</div>
       )}
@@ -167,6 +169,7 @@ function KanbanColumn({ id, label, color, tasks, clients, onDelete }: {
 }
 
 function RoleView({ viewRole, filterOppId }: { viewRole: PodRole; filterOppId?: number }) {
+  const [, navigate] = useLocation();
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const { data: clients = [] } = trpc.clients.list.useQuery();
@@ -392,6 +395,7 @@ function RoleView({ viewRole, filterOppId }: { viewRole: PodRole; filterOppId?: 
                           {task.dueDate && !isOverdue && (
                             <span className="text-xs text-muted-foreground">{new Date(task.dueDate).toLocaleDateString("zh-CN")}</span>
                           )}
+                          {task.sourceReviewId && task.opportunityId && <button type="button" onClick={() => navigate(`/clients/${task.clientId}/opportunities/${task.opportunityId}?section=actions&reviewId=${task.sourceReviewId}`)} className="inline-flex items-center gap-1 text-[10px] text-violet-300 hover:text-violet-100"><BookOpen className="h-2.5 w-2.5" />来源: 1→N Deal Review · {new Date(task.createdAt).toLocaleDateString("zh-CN")}</button>}
                         </div>
                         <div className="text-sm text-foreground mt-0.5">{task.title}</div>
                         {task.notes && <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{task.notes}</div>}

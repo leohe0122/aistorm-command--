@@ -154,10 +154,27 @@ describe("作战工作流入口收敛", () => {
     expect(arsenal).toContain("const [selectedOpportunityId, setSelectedOpportunityId]");
     expect(arsenal).toContain("关联商机（可选）");
     expect(arsenal).toContain("opportunityId: selectedOpportunityId");
-    expect(arsenal).not.toContain('value="champion"');
-    expect(arsenal).not.toContain('value="killsheets"');
+    expect(arsenal).toContain('value="champion"');
+    expect(arsenal).toContain('value="killsheets"');
+    expect(arsenal).toContain("建议在商机作战室中使用。");
     expect(opportunityRoom).toContain("Champion 突破话术");
     expect(opportunityRoom).toContain("竞品对比作战卡");
+  });
+
+  it("让竞品反制任务、POD 来源 Review 深链与本周闭环率形成可解释的产品化闭环", () => {
+    const routers = projectFile("server/routers.ts");
+    const schema = projectFile("drizzle/schema.ts");
+    const commandCenter = projectFile("client/src/pages/AICommandCenter.tsx");
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    const podCenter = projectFile("client/src/pages/PodCenter.tsx");
+    expect(schema).toContain('sourceType: varchar("sourceType", { length: 50 })');
+    expect(routers).toContain('"competition_counter"');
+    expect(routers).toContain("reviewClosureMetrics: protectedProcedure");
+    expect(commandCenter).toContain("Review 闭环率 · 本周");
+    expect(opportunityRoom).toContain("转为 POD 任务 →");
+    expect(opportunityRoom).toContain('sourceType: "competition_counter"');
+    expect(podCenter).toContain("来源: 1→N Deal Review");
+    expect(podCenter).toContain("section=actions&reviewId=");
   });
 
   it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {

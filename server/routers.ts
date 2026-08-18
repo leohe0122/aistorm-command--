@@ -2218,6 +2218,23 @@ ${contactStances || "暂无关键人数据"}
       const { inArray } = await import("drizzle-orm");
       return db.select().from(aiReviews).where(inArray(aiReviews.id, input.ids));
     }),
+    // 仅统计在指定周期内由持久化 Review 生成的任务；不将手工任务混入闭环率。
+    reviewClosureMetrics: protectedProcedure.input(z.object({ period: z.enum(["week", "month"]).default("week") }).optional()).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { period: input?.period ?? "week", total: 0, completed: 0, rate: null as number | null };
+      const period = input?.period ?? "week";
+      const since = new Date();
+      if (period === "week") since.setDate(since.getDate() - 7);
+      else since.setMonth(since.getMonth() - 1);
+      const { podTasks } = await import("../drizzle/schema");
+      const { and, gte, isNotNull } = await import("drizzle-orm");
+      const tasks = await db.select({ isCompleted: podTasks.isCompleted, taskStatus: podTasks.taskStatus }).from(podTasks).where(and(
+        isNotNull(podTasks.sourceReviewId),
+        gte(podTasks.createdAt, since),
+      ));
+      const completed = tasks.filter(task => task.isCompleted || task.taskStatus === "done").length;
+      return { period, total: tasks.length, completed, rate: tasks.length ? Math.round((completed / tasks.length) * 100) : null as number | null };
+    }),
     // Review 改进闭环：与上次 Review 对比的变化摘要
     getReviewDelta: protectedProcedure.input(z.object({
       clientId: z.number(),
@@ -3151,6 +3168,7 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
       description: z.string().optional(),
       dueDate: z.string().optional(),
       opportunityId: z.number().optional(),
+      sourceType: z.enum(["competition_counter", "manual", "review_action", "ad_command"]).optional(),
     })).mutation(({ input }) =>
       insertPodTask({
         clientId: input.clientId,
@@ -3159,6 +3177,7 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         description: input.description,
         dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
         opportunityId: input.opportunityId,
+        sourceType: input.sourceType,
       })
     ),
     complete: publicProcedure.input(z.object({ id: z.number() })).mutation(({ input }) =>
@@ -6471,6 +6490,14 @@ ${input.aiSuggestion}
             }
           }
 
+          const healthScores = meddpicc
+            ? ["metricsScore", "economicBuyerScore", "decisionCriteriaScore", "decisionProcessScore", "paperProcessScore", "implicatePainScore", "championScore", "competitionScore"]
+              .map(key => Number((meddpicc as any)[key] ?? 0))
+            : [];
+          const healthScore = healthScores.length
+            ? Math.round((healthScores.reduce((sum, value) => sum + value, 0) / healthScores.length) * 25)
+            : null;
+
           return {
             id: opp.id,
             clientId: opp.clientId,
@@ -6487,6 +6514,7 @@ ${input.aiSuggestion}
             isWarning,
             thresholdYellow: threshold.yellow,
             thresholdRed: threshold.red,
+            healthScore,
             oppAnomalies,
             hasPendingTask: oppHasTaskSet.has(opp.id),
           };

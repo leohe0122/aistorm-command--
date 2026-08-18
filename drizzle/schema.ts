@@ -350,6 +350,8 @@ export const podTasks = mysqlTable("pod_tasks", {
   taskType: mysqlEnum("taskType", ["external_sales", "internal_resource"]).default("external_sales"), // 对外销售 vs 内部资源协调
   opportunityId: int("opportunityId"),  // 关联子商机（可选）
   taskStatus: mysqlEnum("taskStatus", ["pending", "in_progress", "done"]).default("pending").notNull(), // 看板状态
+  /** 业务来源类型；用于区分人工任务、竞品反制与结构化 Review 行动。 */
+  sourceType: varchar("sourceType", { length: 50 }),
   /** 任务由哪一条 AI Review 生成；仅记录可追溯来源，不替代完成状态。 */
   sourceReviewId: int("sourceReviewId"),
 });
