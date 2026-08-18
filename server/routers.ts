@@ -7,7 +7,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
-import { invokeLLM } from "./_core/llm";
+import { getLLMTextContent, invokeLLM } from "./_core/llm";
 import { buildDailyBriefingPrompt, getComplianceRssDigest } from "./dailyBriefingRss";
 import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildDealMapDiagnosticLayer } from "./salesMethodology";
 import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
@@ -1912,7 +1912,7 @@ AI质疑层规则（内嵌在以上各节中执行）：
           },
         },
       });
-      const rawReview = String(res.choices[0].message.content || "").trim();
+      const rawReview = getLLMTextContent(res.choices[0]?.message.content);
       if (!rawReview) {
         const finishReason = res.choices[0]?.finish_reason || "未知";
         throw new TRPCError({
@@ -1971,6 +1971,7 @@ AI质疑层规则（内嵌在以上各节中执行）：
       }
       return {
         content: reviewContent,
+        reviewGenerationVersion: "review-one-to-n-v3-nonempty-guard",
         stage: opp.stage,
         daysInStage,
         stagnationRisk,

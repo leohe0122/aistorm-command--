@@ -113,6 +113,8 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("AI Review 未返回可保存内容");
     expect(routers).toContain("本次未写入 Review");
     expect(routers).toContain("extractJSON(rawReview)");
+    expect(routers).toContain("getLLMTextContent(res.choices[0]?.message.content)");
+    expect(routers).toContain("review-one-to-n-v3-nonempty-guard");
     expect(opportunityRoom).toContain("reviewRunStatus");
     expect(opportunityRoom).toContain("AI Review 已生成并写入当前商机");
     expect(opportunityRoom).toContain("本次未保存 Review");

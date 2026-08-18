@@ -102,6 +102,17 @@ export type InvokeResult = {
   };
 };
 
+/** 将 OpenAI 兼容接口的字符串或多模态文本分段统一为可持久化正文。 */
+export function getLLMTextContent(content: InvokeResult["choices"][number]["message"]["content"] | null | undefined): string {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((part): part is TextContent => part?.type === "text")
+    .map(part => part.text)
+    .join("\n")
+    .trim();
+}
+
 export type JsonSchema = {
   name: string;
   schema: Record<string, unknown>;

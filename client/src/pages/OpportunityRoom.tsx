@@ -95,7 +95,14 @@ function AIWarJudgement({
   const reviewMutation = trpc.insights.reviewOneToN.useMutation({
     onMutate: () => setReviewRunStatus({ state: "loading", message: "正在读取已入库事实、生成结构化 Review 并回写当前商机…" }),
     onSuccess: (result: any) => {
-      setGeneratedReview(String(result.content || ""));
+      const nextContent = String(result.content || "").trim();
+      if (!nextContent) {
+        const message = "AI Review 未返回正文，本次未保存 Review。请稍后重试；若持续出现，请检查 AI 模型配置。";
+        setReviewRunStatus({ state: "error", message });
+        toast.error(message);
+        return;
+      }
+      setGeneratedReview(nextContent);
       setRoleTaskReceipt(result.roleTaskCreation ?? null);
       setReviewRunStatus({ state: "success", message: "AI Review 已生成并写入当前商机。" });
       utils.insights.getLatestReviews.invalidate({ clientId });

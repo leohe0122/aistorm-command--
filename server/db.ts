@@ -720,6 +720,9 @@ export async function upsertEffectivenessBaseline(clientId: number, data: Partia
 
 // ── AI Reviews ────────────────────────────────────────────────────────────────
 export async function saveAiReview(data: InsertAiReview): Promise<number> {
+  if (!data.content || !data.content.trim()) {
+    throw new Error("拒绝保存空 AI Review 正文");
+  }
   const db = await getDb();
   if (!db) return 0;
   const result = await db.insert(aiReviews).values(data);
