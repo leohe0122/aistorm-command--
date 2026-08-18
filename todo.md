@@ -893,3 +893,4 @@
 - [x] 建立 Account Map、关系覆盖、3 Why、Pain & Metrics、竞争态势、Go/No-Go 数据模型及接口
 - [x] 在客户作战台与商机作战室呈现 Account Map、覆盖矩阵、3 Why、商业价值和 Go/No-Go
 - [x] 校准 Command 2.0 六项导航语义、完成 HKT 真实事实验收、生产发布与 GitHub 同步
+- [x] 将 SALES_METHODOLOGY_SYSTEM_PROMPT 注入 routers.ts 中全部 LLM 调用点（31 处），消除独立 prompt 的事实约束不一致

@@ -355,7 +355,7 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
 }`;
       const result = await invokeLLM({
         model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const textContent = result.choices[0]?.message?.content;
       const text = typeof textContent === 'string' ? textContent : JSON.stringify(textContent);
@@ -584,7 +584,7 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
 
       const res = await invokeLLM({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -698,7 +698,7 @@ ${candidateList}
 
       const res = await invokeLLM({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const analysisContent = String(res.choices[0].message.content || "");
 
@@ -1016,7 +1016,7 @@ ${signalsSummary}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -1189,7 +1189,7 @@ MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
 
       const res = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const parsed = JSON.parse(extractJSON(String(res.choices[0].message.content || '{}')));
       const tasks = (parsed.tasks || []).map((t: any) => ({
@@ -1334,7 +1334,7 @@ ${situationSnapshot}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
 
       const content = String(res.choices[0].message.content || "");
@@ -1941,7 +1941,7 @@ ${recentVisits || "暂无拜访记录"}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const reviewContent = String(res.choices[0].message.content || "");
       await saveAiReview({ clientId: input.clientId, opportunityId: null, reviewType: "buyingGroup", content: reviewContent, createdBy: null });
@@ -2024,7 +2024,7 @@ ${contactStances || "暂无关键人数据"}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const reviewContent = String(res.choices[0].message.content || "");
 
@@ -2215,7 +2215,7 @@ ${clientLines}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const content = String(res.choices[0].message.content || "");
       return { content, clientCount: allClients.length, activeOppCount: activeOpps.length, stagnantCount: stagnantClients.length };
@@ -2349,7 +2349,7 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
 
       const res = await invokeLLM({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const content2 = String(res.choices[0].message.content || "");
       return {
@@ -2523,7 +2523,7 @@ ${input.stageType === "0to1" ? `如果是0→1阶段，问题聚焦于：
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       return { content: String(res.choices[0].message.content || ""), stageType: input.stageType, clientName: client.name, stage };
     }),
@@ -2567,7 +2567,7 @@ ${input.samAnswerNotes}
 注意：如果 SAM 回答记录为空或内容不足，直接说明"回答记录不足，无法生成有效辅导建议，建议补充记录后重试"。`;
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       return { content: String(res.choices[0].message.content || ""), stageType: input.stageType, stageLabel, clientStage: client.stage };
     }),
@@ -2612,7 +2612,7 @@ ${input.samAnswerNotes}
       });
       const rssDigest = await getComplianceRssDigest(5);
       const prompt = buildDailyBriefingPrompt({ today, clientSummaries, rssDigest });
-      const llmResult = await invokeLLM({ messages: [{ role: "user", content: prompt }] });
+      const llmResult = await invokeLLM({ messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }] });
       const briefing = typeof llmResult.choices[0]?.message?.content === "string" ? llmResult.choices[0].message.content : "";
       if (!briefing) return { ok: false, message: "AI 生成失败", briefing: "" };
       await notifyOwner({ title: `📊 每日战情简报 · ${today}`, content: briefing.slice(0, 2000) });
@@ -2732,7 +2732,7 @@ ${knowledgeNote}`;
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
 
       const content = String(res.choices[0].message.content || "");
@@ -2829,7 +2829,7 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
 
       const res = await invokeLLM({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const aiMinutes = String(res.choices[0].message.content || "");
 
@@ -3064,7 +3064,7 @@ ${clientSummaries}
 3. 给出下周最重要的一个行动建议
 语气要直接、具体，不要空话套话。`;
 
-      const response = await invokeLLM({ messages: [{ role: "user", content: prompt }], model: "gpt-4o-mini" });
+      const response = await invokeLLM({ messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }], model: "gpt-4o-mini" });
       const summary = String((response.choices?.[0]?.message?.content) ?? "未能生成战报，请重试。");
       return { summary, stats: { signals: recentSignals.length, completed: completedTasks.length, pending: pendingTasks.length } };
     }),
@@ -3259,7 +3259,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -3376,7 +3376,7 @@ ${contactList}
 
       const res = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const parsed = JSON.parse(extractJSON(String(res.choices[0].message.content || '{}')));
 
@@ -3754,7 +3754,7 @@ ${contactList}
 
       const res = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const aiGeneratedTalk = String(res.choices[0].message.content || '');
       await db.update(killSheets).set({ aiGeneratedTalk } as any).where(eq(killSheets.id, input.id));
@@ -3799,7 +3799,7 @@ ${contactList}
 
       const res = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const aiContent = String(res.choices[0].message.content || '');
 
@@ -4320,7 +4320,7 @@ ${contactList}
               ? doc.extractedText.slice(0, 1500)
               : `文件名：${doc.filename || doc.title}`;
             const prompt = `你是亚信科技/亚信安全产品专家。请根据文档信息判断该文档属于哪个产品线。\n\n【可选产品线列表】\n${productLinePromptText}\n\n【文档标题】${doc.title}\n【文档内容摘录】\n${textSnippet}\n\n只返回产品线的 value 值（如：AI XDR、TrustOne），不含其他文字。无法判断返回"未知"。`;
-            const result = await invokeLLM({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }], maxTokens: 50 });
+            const result = await invokeLLM({ model: 'gpt-4o-mini', messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }], maxTokens: 50 });
             const rawText = result.choices?.[0]?.message?.content;
             const productLine = (typeof rawText === 'string' ? rawText : '').trim().replace(/["""'']/g, '').trim();
             if ((PRODUCT_LINE_VALUES as string[]).includes(productLine)) {
@@ -4375,7 +4375,7 @@ ${context}
 }`;
         const res = await invokeLLM({
           model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }],
+          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
           response_format: {
             type: 'json_schema',
             json_schema: {
@@ -5071,7 +5071,7 @@ ${recentPainPoints || "暂无拜访记录"}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const painStatement = String(res.choices[0].message.content || "");
 
@@ -5134,7 +5134,7 @@ ${baselineText}
 
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const roiContent = String(res.choices[0].message.content || "");
 
@@ -5227,7 +5227,7 @@ ${baselineContext}
 5. **差异化定位**：针对竞品，如何在客户心中建立独特认知？
 
 请用简洁的中文输出，每项不超过3句话，直接可用于 SAM 作战指导。`;
-        const result = await invokeLLM({ messages: [{ role: 'user', content: prompt }], maxTokens: 1200 });
+        const result = await invokeLLM({ messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }], maxTokens: 1200 });
         const rawContent = result.choices?.[0]?.message?.content;
         const aiSuggestion = typeof rawContent === 'string' ? rawContent : '';
         // Save to DB
@@ -5290,7 +5290,7 @@ ${input.aiSuggestion}
 返回格式：{ "actions": [ {...}, {...}, {...} ] }`;
       const res = await invokeLLM({
         model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: { type: "json_schema", json_schema: { name: "actions", strict: true, schema: { type: "object", properties: { actions: { type: "array", items: { type: "object", properties: { title: { type: "string" }, description: { type: "string" }, role: { type: "string" }, dueDays: { type: "number" } }, required: ["title","description","role","dueDays"], additionalProperties: false } } }, required: ["actions"], additionalProperties: false } } },
       });
       const parsed = JSON.parse(String(res.choices[0].message.content || "{}"));
@@ -6655,7 +6655,7 @@ ${input.extractedText.slice(0, 4000)}
 
       const result = await invokeLLM({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const raw = String(result.choices[0]?.message?.content || '');
       try {
