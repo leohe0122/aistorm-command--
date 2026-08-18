@@ -79,6 +79,19 @@ describe("作战工作流入口收敛", () => {
     expect(layout).toContain('label: "每日情报简报"');
   });
 
+  it("将 Account Map 限定在客户 0→1 作战台，并在商机作战室提供三类 Deal Map 工作区", () => {
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    expect(workstation).toContain("function AccountMapPanel");
+    expect(workstation).toContain('client.stage !== "进入商机" && <AccountMapPanel');
+    expect(workstation).toContain("多层覆盖矩阵");
+    expect(opportunityRoom).toContain('label: "3 Why"');
+    expect(opportunityRoom).toContain('label: "Pain & Metrics"');
+    expect(opportunityRoom).toContain('label: "Go / No-Go"');
+    expect(opportunityRoom).toContain("trpc.command2.getDealMap.useQuery");
+    expect(opportunityRoom).toContain("数据不足");
+  });
+
   it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");

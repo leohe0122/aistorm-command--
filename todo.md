@@ -891,5 +891,5 @@
 - [ ] 扩展全量战场原生研判：以 Win 公式、Account Map 与 Deal Map 识别风险，规则仅作失败兜底
 - [x] 改写 0→1 Review、1→N Deal Review、SAM 教练、规则兜底研判与 MEDDPICC 真实性提示
 - [x] 建立 Account Map、关系覆盖、3 Why、Pain & Metrics、竞争态势、Go/No-Go 数据模型及接口
-- [ ] 在客户作战台与商机作战室呈现 Account Map、覆盖矩阵、3 Why、商业价值和 Go/No-Go
+- [x] 在客户作战台与商机作战室呈现 Account Map、覆盖矩阵、3 Why、商业价值和 Go/No-Go
 - [ ] 校准 Command 2.0 六项导航语义、完成 HKT 真实事实验收、生产发布与 GitHub 同步
