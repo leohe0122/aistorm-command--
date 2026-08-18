@@ -7,7 +7,6 @@ import { RoleProvider } from "./contexts/RoleContext";
 import CommandLayout from "./components/CommandLayout";
 import BattleMap from "./pages/BattleMap";
 import IntelRadar from "./pages/IntelRadar";
-import QuickReview from "./pages/QuickReview";
 import AIInsights from "./pages/AIInsights";
 import ChampionAmmo from "./pages/ChampionAmmo";
 import PodCenter from "./pages/PodCenter";
@@ -132,7 +131,6 @@ function Router() {
         <Route path="/clients/:clientId/opportunities/:opportunityId" component={OpportunityRoom} />
         <Route path="/clients/:clientId" component={ClientWorkstation} />
         <Route path="/intel-radar" component={IntelRadar} />
-        <Route path="/quick-review" component={QuickReview} />
         <Route path="/ai-insights" component={AIInsights} />
         <Route path="/champion-ammo" component={ChampionAmmo} />
         <Route path="/pod-center" component={PodCenter} />

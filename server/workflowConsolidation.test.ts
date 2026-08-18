@@ -13,11 +13,21 @@ describe("作战工作流入口收敛", () => {
     expect(workstation).toContain('client.stage === "进入商机" && <ClientActionDesk');
   });
 
-  it("不再注册或展示独立 AI 行动指令台入口", () => {
+  it("将 0→1 Review 迁回客户作战台，并保留其服务端事实研判能力", () => {
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
+    expect(workstation).toContain("function ClientRelationshipReview");
+    expect(workstation).toContain("trpc.insights.reviewZeroToOne.useMutation");
+    expect(workstation).toContain('client.stage !== "进入商机" && <ClientRelationshipReview');
+  });
+
+  it("不再注册或展示独立行动指令与快速 Review 入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");
     expect(app).not.toContain('path="/action-command"');
     expect(app).not.toContain('import ActionCommand');
     expect(layout).not.toContain('path: "/action-command"');
+    expect(app).not.toContain('path="/quick-review"');
+    expect(app).not.toContain('import QuickReview');
+    expect(layout).not.toContain('path: "/quick-review"');
   });
 });

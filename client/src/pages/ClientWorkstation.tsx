@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
+import ReactMarkdown from "react-markdown";
+import { toast } from "sonner";
 import {
   ArrowLeft, ArrowUpRight, Building2, CalendarClock, CheckCircle2,
   ChevronRight, CircleAlert, ClipboardCheck, ContactRound, Crosshair,
@@ -355,6 +357,40 @@ function ClientActionDesk({ client, clientId, meddpicc, signals }: { client: any
   );
 }
 
+function ClientRelationshipReview({ clientId, stage, contacts, meetings, signals }: { clientId: number; stage: string; contacts: any[]; meetings: any[]; signals: any[] }) {
+  const utils = trpc.useUtils();
+  const [generatedReview, setGeneratedReview] = useState("");
+  const [activeReview, setActiveReview] = useState<"0to1" | "buyingGroup" | "visitTrend">("0to1");
+  const { data: reviews = [] } = trpc.insights.getLatestReviews.useQuery({ clientId });
+  const hasEvidence = contacts.length + meetings.length + signals.length > 0;
+  const latestForType = (type: string) => (reviews as any[]).find(review => review.reviewType === type)?.content || "";
+  const zeroToOne = trpc.insights.reviewZeroToOne.useMutation({
+    onSuccess: result => { setActiveReview("0to1"); setGeneratedReview(result.content); utils.insights.getLatestReviews.invalidate({ clientId }); toast.success("AI 关系推进 Review 已生成"); },
+    onError: error => toast.error(`AI Review 生成失败：${error.message}`),
+  });
+  const buyingGroup = trpc.insights.reviewBuyingGroup.useMutation({
+    onSuccess: result => { setActiveReview("buyingGroup"); setGeneratedReview(result.content); utils.insights.getLatestReviews.invalidate({ clientId }); toast.success("Buying Group 分析已生成"); },
+    onError: error => toast.error(`Buying Group 分析失败：${error.message}`),
+  });
+  const visitTrend = trpc.insights.reviewVisitTrend.useMutation({
+    onSuccess: result => { setActiveReview("visitTrend"); setGeneratedReview(result.content || ""); utils.insights.getLatestReviews.invalidate({ clientId }); toast.success("拜访趋势分析已生成"); },
+    onError: error => toast.error(`拜访趋势分析失败：${error.message}`),
+  });
+  const pending = zeroToOne.isPending || buyingGroup.isPending || visitTrend.isPending;
+  const reviewContent = generatedReview || latestForType(activeReview);
+
+  return <section className="overflow-hidden rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-400/[0.07] via-slate-950/75 to-slate-950/80 shadow-[0_16px_45px_rgba(124,58,237,0.08)]">
+    <div className="flex flex-col gap-3 border-b border-violet-400/15 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex items-start gap-3"><span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-400/15 text-violet-200"><Sparkles className="h-4.5 w-4.5" /></span><div><h2 className="text-sm font-semibold text-violet-50">AI 关系推进 Review</h2><p className="mt-1 text-[11px] leading-5 text-violet-100/55">仅用于 0→1 客户经营：识别关系是否足够热、决策链覆盖何处缺口；不会以销售自评或拜访数量替代客户购买信号。</p></div></div>
+      <div className="flex flex-wrap gap-2"><Button size="sm" type="button" onClick={() => zeroToOne.mutate({ clientId })} disabled={!hasEvidence || pending} className="h-8 gap-1.5 bg-violet-500/80 text-xs text-white hover:bg-violet-400"><Sparkles className="h-3.5 w-3.5" />{zeroToOne.isPending ? "分析中…" : "关系推进 Review"}</Button><Button size="sm" type="button" variant="outline" onClick={() => buyingGroup.mutate({ clientId })} disabled={!hasEvidence || pending} className="h-8 border-cyan-400/30 bg-cyan-400/10 text-xs text-cyan-100 hover:bg-cyan-400/20">Buying Group</Button><Button size="sm" type="button" variant="outline" onClick={() => visitTrend.mutate({ clientId })} disabled={!hasEvidence || pending} className="h-8 border-emerald-400/30 bg-emerald-400/10 text-xs text-emerald-100 hover:bg-emerald-400/20">拜访趋势</Button></div>
+    </div>
+    <div className="grid gap-px bg-violet-300/10 lg:grid-cols-[0.82fr_1.18fr]">
+      <div className="space-y-3 bg-slate-950/60 p-4"><div><div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-200/75">事实依据</div><div className="grid grid-cols-3 gap-2"><div className="rounded-lg border border-slate-700/60 bg-slate-950/60 px-2.5 py-2"><div className="text-sm font-semibold text-violet-200">{contacts.length}</div><div className="text-[9px] text-slate-500">关键人</div></div><div className="rounded-lg border border-slate-700/60 bg-slate-950/60 px-2.5 py-2"><div className="text-sm font-semibold text-cyan-200">{meetings.length}</div><div className="text-[9px] text-slate-500">拜访事实</div></div><div className="rounded-lg border border-slate-700/60 bg-slate-950/60 px-2.5 py-2"><div className="text-sm font-semibold text-amber-200">{signals.length}</div><div className="text-[9px] text-slate-500">情报信号</div></div></div></div><div className="rounded-lg border border-violet-400/15 bg-violet-400/[0.04] p-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-200/75">方法论边界</div><p className="text-[11px] leading-5 text-slate-300">客户级 MEDDPICC 只记录关系就绪度证据；Buying Group 验证决策链覆盖；购买信号门控决定是否可以申请开商机。</p></div><p className="text-[10px] leading-4 text-slate-500">{hasEvidence ? "AI 结论仅基于已入库事实；生成后需由负责人审核，并将新的客户事实回填至对应工作区。" : "数据不足，暂不判断。请先录入拜访、关键人或外部情报事实。"}</p></div>
+      <div className="bg-slate-950/60 p-4"><div className="mb-2 flex flex-wrap items-center gap-2"><div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-200/75">AI 判断与下一步</div><div className="ml-auto flex gap-1">{(["0to1", "buyingGroup", "visitTrend"] as const).map(type => <button key={type} type="button" onClick={() => { setActiveReview(type); setGeneratedReview(""); }} className={cn("rounded px-1.5 py-0.5 text-[9px]", activeReview === type ? "bg-violet-400/15 text-violet-100" : "text-slate-500 hover:text-slate-300")}>{type === "0to1" ? "关系" : type === "buyingGroup" ? "组织" : "趋势"}</button>)}</div></div>{pending ? <div className="flex min-h-36 items-center justify-center gap-2 text-xs text-slate-400"><Loader2 className="h-4 w-4 animate-spin text-violet-300" />AI 正在基于客户事实研判…</div> : reviewContent ? <div className="prose prose-invert prose-sm max-w-none text-xs leading-6 prose-headings:text-violet-100 prose-strong:text-slate-100"><ReactMarkdown>{reviewContent}</ReactMarkdown></div> : <div className="flex min-h-36 items-center rounded-lg border border-dashed border-slate-700 px-4 text-xs leading-5 text-slate-500">尚未生成该维度的 Review。点击上方按钮，让 AI 根据已入库客户事实给出判断；无数据时不会替你推断客户意图。</div>}</div>
+    </div>
+  </section>;
+}
+
 export default function ClientWorkstation() {
   const [, params] = useRoute("/clients/:clientId");
   const [, setLocation] = useLocation();
@@ -431,6 +467,7 @@ export default function ClientWorkstation() {
           <PurchaseSignalWorkbench readiness={readiness} clientId={clientId} contacts={contacts as any[]} />
           <CustomerDiscoverySpin readiness={readiness} />
         </div>}
+        {client.stage !== "进入商机" && <ClientRelationshipReview clientId={clientId} stage={client.stage} contacts={contacts as any[]} meetings={meetings as any[]} signals={signals as any[]} />}
 
         <section className="rounded-2xl border border-slate-700/70 bg-slate-950/55 p-4 shadow-[0_12px_35px_rgba(0,0,0,0.12)] lg:p-5"><div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2 text-sm font-semibold text-slate-100"><Crosshair className="h-4 w-4 text-amber-300" />{client.stage === "进入商机" ? "在打商机" : "机会假设与商机门控"}</div><p className="mt-1 text-xs text-slate-500">{client.stage === "进入商机" ? "客户级只看商机摘要；所有交易方法论、证据与行动均进入独立作战室。" : "当阶段门控满足后，SAM 或 AD 才能申请开商机；系统不会把主观兴趣视为证据。"}</p></div><span className="text-xs text-slate-500">{opportunities.length} 条商机</span></div><div className="space-y-3">{opportunities.length === 0 ? <div className="rounded-xl border border-dashed border-slate-700 px-5 py-8 text-center text-sm text-slate-500">暂无已开商机。请先完成当前阶段的客观证据与标准动作。</div> : opportunities.map((opportunity: any) => { const score = calculateOpportunityHealth(opportunityMeddpicc.find((item: any) => item.opportunityId === opportunity.id)); return <article key={opportunity.id} className="group rounded-xl border border-slate-700/60 bg-slate-900/35 p-4 transition-colors hover:border-cyan-400/35 hover:bg-slate-900/60"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div className="min-w-0"><div className="mb-2 flex flex-wrap items-center gap-2"><h3 className="text-sm font-semibold text-slate-100">{opportunity.name}</h3><span className="rounded border border-cyan-300/20 bg-cyan-400/10 px-1.5 py-0.5 text-[10px] text-cyan-200">{opportunity.stage || "阶段待定义"}</span><OpportunityHealthBadge score={score} /></div><div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">{opportunity.estimatedValue && <span>金额：<strong className="font-medium text-slate-300">{opportunity.estimatedValue}</strong></span>}{opportunity.productName && <span>产品：<strong className="font-medium text-slate-300">{opportunity.productName}</strong></span>}{opportunity.competitorName && <span>竞品：<strong className="font-medium text-amber-200">{opportunity.competitorName}</strong></span>}</div></div><Button size="sm" className="h-8 shrink-0 gap-1.5 bg-cyan-500/15 text-xs text-cyan-100 hover:bg-cyan-400/25" variant="outline" onClick={() => setLocation(`/clients/${clientId}/opportunities/${opportunity.id}`)}>进入作战室 <ArrowUpRight className="h-3.5 w-3.5" /></Button></div></article>; })}</div></section>
 
