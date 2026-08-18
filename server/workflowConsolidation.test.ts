@@ -72,6 +72,13 @@ describe("作战工作流入口收敛", () => {
     expect(layout).toContain('label: "POD 协同"');
   });
 
+  it("将日常主导航收敛为六个清晰入口", () => {
+    const layout = projectFile("client/src/components/CommandLayout.tsx");
+    const expectedPaths = ["/dashboard", "/battle-map", "/meeting-minutes", "/pod-center", "/arsenal", "/daily-briefing"];
+    expectedPaths.forEach(path => expect(layout).toContain(`path: "${path}"`));
+    expect(layout).toContain('label: "每日情报简报"');
+  });
+
   it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");

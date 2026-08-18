@@ -20,6 +20,7 @@ const navItems = [
   { path: "/meeting-minutes", label: "拜访作战日志", icon: MessageSquare, desc: "拜访录入·AI解析·更新战场" },
   { path: "/pod-center", label: "POD 协同", icon: Users, desc: "次级任务汇总" },
   { path: "/arsenal", label: "武器库 Arsenal", icon: Crosshair, desc: "产品文档·AI方案·竞品阻击包" },
+  { path: "/daily-briefing", label: "每日情报简报", icon: Bell, desc: "战场事实 · RSS 外部情报" },
 ];
 
 const settingsNavItems = [
