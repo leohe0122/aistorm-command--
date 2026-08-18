@@ -105,6 +105,13 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain("roleTaskReceipt");
   });
 
+  it("在 ESM 服务端路径中不使用 CommonJS require，避免 SAM AI 自检与原生刷新出现运行时异常", () => {
+    const routers = projectFile("server/routers.ts");
+    expect(routers).not.toContain("require(");
+    expect(routers).toContain('import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2"');
+    expect(routers).toContain("samSelfCheck: protectedProcedure");
+  });
+
   it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");

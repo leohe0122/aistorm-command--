@@ -915,3 +915,10 @@
 ## Command 3.0 Deal Review 行动闭环强化
 - [x] 用 JSON Schema 结构化输出替代 1→N Review 的 Markdown 正则角色行动解析
 - [x] 在商机作战室明确展示本次 Review 创建的角色任务数量与失败原因
+
+## 运行时缺陷修复
+- [x] 修复 SAM AI 自检 mutation 的 `require is not defined` ESM 运行时异常，并完成回归与生产验证
+
+## 角色原生化后续边界（已确认）
+- [ ] 为 SA 与 RSM 建设主动式角色首页，优先呈现本周需其介入的商机与 AI 任务，而非仅增加 POD 被动过滤
+- [ ] 将 SAM AI 自检转化为带字段指向和来源要求的事实补录引导；不把 SAM 主观回答直接写入 Review 事实层

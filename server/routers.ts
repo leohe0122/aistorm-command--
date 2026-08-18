@@ -10,7 +10,7 @@ import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
 import { buildDailyBriefingPrompt, getComplianceRssDigest } from "./dailyBriefingRss";
 import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildDealMapDiagnosticLayer } from "./salesMethodology";
-import { calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
+import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
 import { getAccountDiagnosticContext, getDealDiagnosticContext } from "./diagnosticContext";
@@ -5648,7 +5648,6 @@ ${input.aiSuggestion}
             goNoGoScore: gateScores.length ? Math.min(...gateScores) : null,
             dealHealthScore: (() => {
               // Calculate Deal Health from available snapshot data
-              const { calculateDealHealth } = require('../shared/command2');
               const s = score;
               const threeWhyMin = whyFacts.length ? Math.min(
                 ...whyFacts.map((w: any) => Math.min(Number(w.whyChangeScore ?? 0), Number(w.whyNowScore ?? 0), Number(w.whyUsScore ?? 0)))
