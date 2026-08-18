@@ -10,6 +10,7 @@ import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
 import { buildDailyBriefingPrompt, getComplianceRssDigest } from "./dailyBriefingRss";
 import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildDealMapDiagnosticLayer } from "./salesMethodology";
+import { calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
 // Admin-only procedure: requires login + admin role
@@ -5296,17 +5297,108 @@ ${input.aiSuggestion}
       return { actions: (parsed.actions ?? []) as Array<{ title: string; description: string; role: string; dueDays: number }> };
     }),
   }),
+  // ── Command 2.0：Account Map（0→1）与 Deal Map（1→N）事实工作台 ────────
+  command2: router({
+    getAccountMap: protectedProcedure.input(z.object({ clientId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { accountOverview, relationshipCoverage } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const [overview, coverage] = await Promise.all([
+        db.select().from(accountOverview).where(eq(accountOverview.clientId, input.clientId)).limit(1),
+        db.select().from(relationshipCoverage).where(eq(relationshipCoverage.clientId, input.clientId)),
+      ]);
+      return { overview: overview[0] ?? null, coverage };
+    }),
+    saveAccountOverview: protectedProcedure.input(z.object({
+      clientId: z.number(), strategicFitScore: z.number().int().min(0).max(5).nullable().optional(), potentialScore: z.number().int().min(0).max(5).nullable().optional(), relationshipScore: z.number().int().min(0).max(5).nullable().optional(), whitespaceScore: z.number().int().min(0).max(5).nullable().optional(), execPriorityScore: z.number().int().min(0).max(5).nullable().optional(),
+      strategy12m: z.string().max(4000).nullable().optional(), strategy24m: z.string().max(4000).nullable().optional(), strategy36m: z.string().max(4000).nullable().optional(), aiOpportunity: z.string().max(4000).nullable().optional(), cyberOpportunity: z.string().max(4000).nullable().optional(), ictOpportunity: z.string().max(4000).nullable().optional(), triggerEvents: z.string().max(4000).nullable().optional(), vendorVision: z.string().max(50).nullable().optional(), annualSuccessKPI: z.string().max(4000).nullable().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { accountOverview } = await import("../drizzle/schema"); const { eq } = await import("drizzle-orm");
+      const { clientId, ...values } = input;
+      const existing = await db.select({ id: accountOverview.id }).from(accountOverview).where(eq(accountOverview.clientId, clientId)).limit(1);
+      if (existing[0]) await db.update(accountOverview).set({ ...values, updatedAt: new Date() }).where(eq(accountOverview.clientId, clientId));
+      else await db.insert(accountOverview).values({ clientId, ...values });
+      return { clientId };
+    }),
+    saveCoverage: protectedProcedure.input(z.object({
+      id: z.number().optional(), clientId: z.number(), coverageLevel: z.string().max(100).nullable().optional(), targetPerson: z.string().max(100).nullable().optional(), ourCoverer: z.string().max(100).nullable().optional(), strengthScore: z.number().int().min(0).max(5).nullable().optional(), lastInteraction: z.date().nullable().optional(), hasExecMeeting: z.boolean().optional(), stance: z.string().max(50).nullable().optional(), gapJudgment: z.enum(["P1", "P2", "P3"]).nullable().optional(), nextAction: z.string().max(4000).nullable().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { relationshipCoverage } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm");
+      const { id, clientId, ...values } = input;
+      if (id) { await db.update(relationshipCoverage).set(values).where(and(eq(relationshipCoverage.id, id), eq(relationshipCoverage.clientId, clientId))); return { id }; }
+      const inserted = await db.insert(relationshipCoverage).values({ clientId, ...values }); return { id: Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId) };
+    }),
+    deleteCoverage: protectedProcedure.input(z.object({ id: z.number(), clientId: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { relationshipCoverage } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm");
+      await db.delete(relationshipCoverage).where(and(eq(relationshipCoverage.id, input.id), eq(relationshipCoverage.clientId, input.clientId))); return { id: input.id };
+    }),
+    getDealMap: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number() })).query(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { threeWhy, painMetrics, competitionMap, goNoGo } = await import("../drizzle/schema"); const { eq } = await import("drizzle-orm");
+      const [whyRows, pains, competition, gates] = await Promise.all([
+        db.select().from(threeWhy).where(eq(threeWhy.opportunityId, input.opportunityId)).limit(1),
+        db.select().from(painMetrics).where(eq(painMetrics.opportunityId, input.opportunityId)),
+        db.select().from(competitionMap).where(eq(competitionMap.opportunityId, input.opportunityId)),
+        db.select().from(goNoGo).where(eq(goNoGo.opportunityId, input.opportunityId)).limit(1),
+      ]);
+      const gate = gates[0] ?? null;
+      const goNoGoScore = calculateGoNoGo(gate).score;
+      const annualValueTotal = pains.reduce((sum, item) => sum + Number(item.annualValue ?? 0), 0);
+      return { threeWhy: whyRows[0] ?? null, pains, competition, goNoGo: gate, goNoGoScore, annualValueTotal };
+    }),
+    saveThreeWhy: protectedProcedure.input(z.object({
+      clientId: z.number(), opportunityId: z.number(), whyChangeClaim: z.string().max(4000).nullable().optional(), whyChangePain: z.string().max(4000).nullable().optional(), whyChangeConsequence: z.string().max(4000).nullable().optional(), whyChangeEvidence: z.string().max(4000).nullable().optional(), whyChangeScore: z.number().int().min(0).max(5).nullable().optional(), whyNowClaim: z.string().max(4000).nullable().optional(), whyNowTrigger: z.string().max(4000).nullable().optional(), whyNowEvidence: z.string().max(4000).nullable().optional(), whyNowScore: z.number().int().min(0).max(5).nullable().optional(), whyUsClaim: z.string().max(4000).nullable().optional(), whyUsDifferentiator: z.string().max(4000).nullable().optional(), whyUsEvidence: z.string().max(4000).nullable().optional(), whyUsScore: z.number().int().min(0).max(5).nullable().optional(), challengerTeach: z.string().max(4000).nullable().optional(), challengerTailor: z.string().max(4000).nullable().optional(), challengerControl: z.string().max(4000).nullable().optional(), reframeEvidence: z.string().max(4000).nullable().optional(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { threeWhy } = await import("../drizzle/schema"); const { eq } = await import("drizzle-orm"); const { opportunityId, clientId, ...values } = input;
+      const existing = await db.select({ id: threeWhy.id }).from(threeWhy).where(eq(threeWhy.opportunityId, opportunityId)).limit(1);
+      if (existing[0]) await db.update(threeWhy).set({ ...values, updatedAt: new Date() }).where(eq(threeWhy.opportunityId, opportunityId)); else await db.insert(threeWhy).values({ clientId, opportunityId, ...values });
+      return { opportunityId };
+    }),
+    saveGoNoGo: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number(), gate1StrategicFit: z.number().int().min(0).max(2), gate2PainVerified: z.number().int().min(0).max(2), gate3ChampionExists: z.number().int().min(0).max(2), gate4EBClear: z.number().int().min(0).max(2), gate5ValueQuantified: z.number().int().min(0).max(2), gate6CriteriaWinnable: z.number().int().min(0).max(2), gate7ProcessClear: z.number().int().min(0).max(2), gate8CompDefensible: z.number().int().min(0).max(2), gate9DeliveryOK: z.number().int().min(0).max(2), gate10ROIJustified: z.number().int().min(0).max(2), managerOverride: z.enum(["Go", "Conditional Go", "No-Go"]).nullable().optional(), overrideReason: z.string().max(4000).nullable().optional() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { goNoGo } = await import("../drizzle/schema"); const { eq } = await import("drizzle-orm"); const { opportunityId, clientId: _clientId, ...values } = input;
+      const existing = await db.select({ id: goNoGo.id }).from(goNoGo).where(eq(goNoGo.opportunityId, opportunityId)).limit(1);
+      if (existing[0]) await db.update(goNoGo).set({ ...values, updatedAt: new Date() }).where(eq(goNoGo.opportunityId, opportunityId)); else await db.insert(goNoGo).values({ opportunityId, ...values });
+      return { opportunityId };
+    }),
+    savePainMetric: protectedProcedure.input(z.object({ id: z.number().optional(), clientId: z.number(), opportunityId: z.number(), painType: z.string().max(100).nullable().optional(), painStatement: z.string().max(4000).nullable().optional(), affectedSponsor: z.string().max(100).nullable().optional(), currentBaseline: z.string().max(4000).nullable().optional(), targetImprovement: z.string().max(4000).nullable().optional(), valueLogic: z.string().max(4000).nullable().optional(), timeframe: z.string().max(50).nullable().optional(), annualValue: z.number().int().min(0).nullable().optional(), confidence: z.number().min(0).max(1).nullable().optional(), evidenceStrength: z.enum(["未验证", "口头确认", "书面确认", "高层确认"]).nullable().optional() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { painMetrics } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm"); const { id, clientId, opportunityId, confidence, ...values } = input;
+      const payload = { clientId, opportunityId, ...values, confidence: confidence == null ? null : String(confidence) } as any;
+      if (id) { await db.update(painMetrics).set(payload).where(and(eq(painMetrics.id, id), eq(painMetrics.opportunityId, opportunityId))); return { id }; }
+      const inserted = await db.insert(painMetrics).values(payload); return { id: Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId) };
+    }),
+    deletePainMetric: protectedProcedure.input(z.object({ id: z.number(), opportunityId: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { painMetrics } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm"); await db.delete(painMetrics).where(and(eq(painMetrics.id, input.id), eq(painMetrics.opportunityId, input.opportunityId))); return { id: input.id };
+    }),
+    saveCompetition: protectedProcedure.input(z.object({ id: z.number().optional(), clientId: z.number(), opportunityId: z.number(), competitorType: z.string().max(100).nullable().optional(), controlPoints: z.string().max(4000).nullable().optional(), customerSupporter: z.string().max(100).nullable().optional(), strengths: z.string().max(4000).nullable().optional(), weaknesses: z.string().max(4000).nullable().optional(), attackVector: z.string().max(4000).nullable().optional(), counterAction: z.string().max(4000).nullable().optional(), riskScore: z.number().int().min(0).max(5).nullable().optional(), owner: z.string().max(100).nullable().optional(), nextStep: z.string().max(4000).nullable().optional() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { competitionMap } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm"); const { id, clientId, opportunityId, ...values } = input;
+      if (id) { await db.update(competitionMap).set(values).where(and(eq(competitionMap.id, id), eq(competitionMap.opportunityId, opportunityId))); return { id }; }
+      const inserted = await db.insert(competitionMap).values({ clientId, opportunityId, ...values }); return { id: Number((inserted as any)[0]?.insertId ?? (inserted as any).insertId) };
+    }),
+    deleteCompetition: protectedProcedure.input(z.object({ id: z.number(), opportunityId: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb(); if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { competitionMap } = await import("../drizzle/schema"); const { and, eq } = await import("drizzle-orm"); await db.delete(competitionMap).where(and(eq(competitionMap.id, input.id), eq(competitionMap.opportunityId, input.opportunityId))); return { id: input.id };
+    }),
+  }),
   // ── AI 原生 AD 指挥中心：事实驱动建议、AD 确认与任务闭环 ──────────────────
   adCommand: router({
     refresh: publicProcedure.mutation(async () => {
       const db = await getDb();
       if (!db) return [];
-      const { clients, meetingMinutes, meddpicc, opportunities, opportunityMeddpicc, actionItems, adCommandRecommendations, customerPurchaseSignals } = await import('../drizzle/schema');
+      const { clients, meetingMinutes, meddpicc, opportunities, opportunityMeddpicc, actionItems, adCommandRecommendations, customerPurchaseSignals, accountOverview, relationshipCoverage, threeWhy, painMetrics, competitionMap, goNoGo } = await import('../drizzle/schema');
       const { buildAdCommandRecommendations } = await import('../shared/adCommand');
       const { enrichAdCommandRecommendation } = await import('./adCommandLLM');
       const { desc } = await import('drizzle-orm');
 
-      const [allClients, allMeetings, clientMeddpicc, allOpportunities, oppMeddpicc, pendingActions, existing, purchaseSignals] = await Promise.all([
+      const [allClients, allMeetings, clientMeddpicc, allOpportunities, oppMeddpicc, pendingActions, existing, purchaseSignals, accountOverviews, coverageRows, threeWhyRows, painMetricRows, competitionRows, goNoGoRows] = await Promise.all([
         db.select().from(clients),
         db.select({ clientId: meetingMinutes.clientId, meetingDate: meetingMinutes.meetingDate }).from(meetingMinutes),
         db.select().from(meddpicc),
@@ -5315,6 +5407,12 @@ ${input.aiSuggestion}
         db.select().from(actionItems),
         db.select().from(adCommandRecommendations).orderBy(desc(adCommandRecommendations.createdAt)),
         db.select().from(customerPurchaseSignals),
+        db.select().from(accountOverview),
+        db.select().from(relationshipCoverage),
+        db.select().from(threeWhy),
+        db.select().from(painMetrics),
+        db.select().from(competitionMap),
+        db.select().from(goNoGo),
       ]);
 
       const latestMeeting = new Map<number, Date>();
@@ -5324,6 +5422,10 @@ ${input.aiSuggestion}
       }
       const clientScore = new Map(clientMeddpicc.map(item => [item.clientId, item]));
       const oppScore = new Map(oppMeddpicc.map(item => [item.opportunityId, item]));
+      const accountByClient = new Map(accountOverviews.map(item => [item.clientId, item]));
+      const whyByOpportunity = new Map(threeWhyRows.map(item => [item.opportunityId, item]));
+      const gatesByOpportunity = new Map(goNoGoRows.map(item => [item.opportunityId, item]));
+      const gateScore = (record: any) => calculateGoNoGo(record).score;
       const dimensionLabels: Array<[string, string]> = [
         ['metricsScore', '价值量化'], ['economicBuyerScore', '经济决策人'], ['decisionCriteriaScore', '决策标准'], ['decisionProcessScore', '决策流程'],
         ['paperProcessScore', '采购流程'], ['implicatePainScore', '痛点牵连'], ['championScore', 'Champion'], ['competitionScore', '竞争态势'],
@@ -5350,6 +5452,12 @@ ${input.aiSuggestion}
         clients: allClients.map(client => {
           const score = clientScore.get(client.id) as any;
           const lastMeeting = latestMeeting.get(client.id) ?? null;
+          const activeOpps = allOpportunities.filter(opportunity => opportunity.clientId === client.id && opportunity.status !== '丢单');
+          const whyFacts = activeOpps.map(opportunity => whyByOpportunity.get(opportunity.id)).filter(Boolean) as any[];
+          const clientCoverage = coverageRows.filter(item => item.clientId === client.id);
+          const clientPains = painMetricRows.filter(item => item.clientId === client.id);
+          const clientCompetition = competitionRows.filter(item => item.clientId === client.id);
+          const gateScores = activeOpps.map(opportunity => gateScore(gatesByOpportunity.get(opportunity.id))).filter((value): value is number => value !== null);
           return {
             id: client.id,
             name: client.name,
@@ -5365,7 +5473,18 @@ ${input.aiSuggestion}
               competition: Number(score?.competitionScore ?? 0), metrics: Number(score?.metricsScore ?? 0),
             },
             assignedSam: client.assignedSamName ?? null,
-            activeOpportunities: allOpportunities.filter(opportunity => opportunity.clientId === client.id && opportunity.status !== '丢单').map(opportunity => {
+            accountFitScore: accountByClient.get(client.id)?.strategicFitScore ?? null,
+            execCoverageCount: clientCoverage.filter(item => item.hasExecMeeting).length,
+            competitorAdvantageCount: clientCompetition.filter(item => Number(item.riskScore ?? 0) >= 4).length,
+            threeWhyScore: whyFacts.length ? {
+              change: Math.min(...whyFacts.map(item => Number(item.whyChangeScore ?? 0))),
+              now: Math.min(...whyFacts.map(item => Number(item.whyNowScore ?? 0))),
+              us: Math.min(...whyFacts.map(item => Number(item.whyUsScore ?? 0))),
+            } : null,
+            painMetricsTotal: clientPains.length ? clientPains.reduce((total, item) => total + Number(item.annualValue ?? 0), 0) : null,
+            goNoGoScore: gateScores.length ? Math.min(...gateScores) : null,
+            dealHealthScore: null,
+            activeOpportunities: activeOpps.map(opportunity => {
               const scoreItem = oppScore.get(opportunity.id) as any;
               const weakest = dimensionLabels.map(([key, label]) => ({ label, score: Number(scoreItem?.[key] ?? 0) })).sort((a, b) => a.score - b.score)[0];
               return {
