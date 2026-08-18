@@ -1,5 +1,5 @@
 // AIStorm Command Service Worker
-const CACHE_NAME = 'aistorm-command-v20260818-stage-filter-1';
+const CACHE_NAME = 'aistorm-command-v20260819-ai-review-v1';
 
 // Install: skip waiting so new SW activates immediately
 self.addEventListener('install', (event) => {
@@ -25,6 +25,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (event.request.url.includes('/api/')) return;
+
+  // HTML 入口页永远优先从网络获取，确保新的构建脚本和新的 SW 注册版本不会被旧缓存遮蔽。
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)

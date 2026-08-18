@@ -120,6 +120,16 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain("本次未保存 Review");
   });
 
+  it("更新 Service Worker 后加载新版入口脚本，避免旧缓存遮蔽 AI Review 修复", () => {
+    const indexHtml = projectFile("client/index.html");
+    const serviceWorker = projectFile("client/public/sw.js");
+    const app = projectFile("client/src/App.tsx");
+    expect(indexHtml).toContain("/sw.js?v=20260819-ai-review-v1");
+    expect(serviceWorker).toContain("aistorm-command-v20260819-ai-review-v1");
+    expect(serviceWorker).toContain("event.request.mode === 'navigate'");
+    expect(app).toContain("controllerchange");
+  });
+
   it("将 RSM 纳入 1→N Review 的结构化行动，并让 Review 生成的任务可追溯且可计算闭环率", () => {
     const routers = projectFile("server/routers.ts");
     const schema = projectFile("drizzle/schema.ts");

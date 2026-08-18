@@ -52,13 +52,23 @@ function PWAUpdateBanner() {
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
+    let reloadedForNewController = false;
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'SW_UPDATED') {
         setShowUpdate(true);
       }
     };
     navigator.serviceWorker.addEventListener('message', handler);
-    return () => navigator.serviceWorker.removeEventListener('message', handler);
+    const handleControllerChange = () => {
+      if (reloadedForNewController) return;
+      reloadedForNewController = true;
+      window.location.reload();
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handler);
+      navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+    };
   }, []);
 
   if (!showUpdate) return null;
