@@ -185,7 +185,7 @@ export const appRouter = router({
       nameEn: z.string().optional(),
       industry: z.string().optional(),
       priority: z.enum(["P0", "P1", "P2"]).default("P1"),
-      stage: z.enum(["建图", "进门", "定痛", "找人", "进入商机"]).default("建图"),
+      stage: z.enum(["建图", "进门", "定痛", "找人"]).default("建图"),
       notes: z.string().optional(),
       hookTopic: z.string().optional(),
       securityAngle: z.string().optional(),

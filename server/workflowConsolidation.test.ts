@@ -200,6 +200,30 @@ describe("作战工作流入口收敛", () => {
     expect(battleMap).toContain("显示全部客户");
   });
 
+  it("禁止战场地图直改进入商机，并保留申请开商机和 AD 高层直入两条受控路径", () => {
+    const battleMap = projectFile("client/src/pages/BattleMap.tsx");
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
+    const routers = projectFile("server/routers.ts");
+    expect(battleMap).toContain('STAGES_LIST = ["建图", "进门", "定痛", "找人"]');
+    expect(battleMap).toContain('nextStage === "进入商机"');
+    expect(battleMap).toContain('#opportunity-application');
+    expect(battleMap).toContain("仅 AD 可选择高层直入例外");
+    expect(workstation).toContain('id="opportunity-application"');
+    expect(workstation).toContain('id="executive-opportunity-exception"');
+    expect(workstation).toContain("高层直接建立商机信号");
+    expect(routers).toContain('bypassReason: z.literal("exec_meeting").optional()');
+    expect(routers).toContain("高层直入必须由 AD 或系统管理员在登录态下确认");
+    expect(routers).toContain("进入商机必须通过“申请开商机”完成");
+    expect(routers).toContain('stage: z.enum(["建图", "进门", "定痛", "找人"]).default("建图")');
+  });
+
+  it("展示客户关系基础叙事，但明确其不能替代新商机门控", () => {
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
+    expect(workstation).toContain("客户关系背景");
+    expect(workstation).toContain("client.relationshipNarrative");
+    expect(workstation).toContain("不会替代本次商机的购买信号或 AD 例外确认");
+  });
+
   it("在战场地图客户名称旁渲染可信品牌标识，并在资产不可用时保留文字回退", () => {
     const battleMap = projectFile("client/src/pages/BattleMap.tsx");
     const brandMark = projectFile("client/src/components/ClientBrandMark.tsx");

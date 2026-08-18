@@ -1775,6 +1775,11 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
   })();
 
   const handleSave = () => {
+    if (editData.stage === "进入商机" && client.stage !== "进入商机") {
+      toast.info("进入商机必须通过“申请开商机”完成；系统会固化三项购买信号，或由 AD 走高层直入例外确认。");
+      setLocation(`/clients/${client.id}#opportunity-application`);
+      return;
+    }
     if (Object.keys(editData).length > 0) updateClient.mutate({ id: client.id, ...editData });
     else setEditing(false);
   };
@@ -2081,6 +2086,12 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
               onClick={() => {
                 const nextStage = STAGES[STAGES.indexOf(client.stage) + 1];
                 if (nextStage) {
+                  if (nextStage === "进入商机") {
+                    setShowStageGate(false);
+                    toast.info("请在客户作战台通过“申请开商机”完成证据复核；仅 AD 可选择高层直入例外。", { duration: 6000 });
+                    setLocation(`/clients/${client.id}#opportunity-application`);
+                    return;
+                  }
                   // 定痛 → 找人：若无能力认可信号，需要 AD 手动确认
                   const lackCapabilitySignal = client.stage === '定痛' && !contacts.some((c: any) => c.stance === '支持');
                   if (lackCapabilitySignal) {
@@ -2094,7 +2105,7 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
               }}
               className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium transition-colors"
             >
-              确认推进 → {STAGES[STAGES.indexOf(client.stage) + 1]}
+              {STAGES[STAGES.indexOf(client.stage) + 1] === "进入商机" ? "前往申请开商机 →" : `确认推进 → ${STAGES[STAGES.indexOf(client.stage) + 1]}`}
             </button>
           </div>
           ) : (
@@ -2314,10 +2325,17 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
           <div className="grid grid-cols-1 gap-3 mb-3">
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">销售阶段</label>
-              <Select value={editData.stage || client.stage} onValueChange={(v) => setEditData({ ...editData, stage: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>{STAGES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-              </Select>
+              {client.stage === "进入商机" ? (
+                <div className="rounded-md border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100">已进入商机 · 交易推进请在商机作战室维护</div>
+              ) : (
+                <>
+                  <Select value={editData.stage || client.stage} onValueChange={(v) => setEditData({ ...editData, stage: v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>{STAGES.filter(s => s !== "进入商机").map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                  </Select>
+                  <button type="button" onClick={() => setLocation(`/clients/${client.id}#opportunity-application`)} className="mt-1.5 text-[10px] text-violet-300 hover:text-violet-100">进入商机请使用“申请开商机” →</button>
+                </>
+              )}
             </div>
           </div>
           <div className="mb-3">
@@ -3749,7 +3767,8 @@ export default function BattleMap() {
     setEditTarget(c);
   }
 
-  const STAGES_LIST = ["建图", "进门", "定痛", "找人", "进入商机"];
+  const STAGES_LIST = ["建图", "进门", "定痛", "找人"];
+  const DIRECT_EDIT_STAGES = STAGES_LIST.filter(stage => stage !== "进入商机");
 
   return (
     <div className="p-6">
@@ -4075,10 +4094,14 @@ export default function BattleMap() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5 col-span-2">
                 <Label>当前阶段</Label>
-                <Select value={form.stage} onValueChange={v => setForm(f => ({ ...f, stage: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{STAGES_LIST.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                </Select>
+                {editTarget?.stage === "进入商机" ? (
+                  <div className="rounded-md border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-sm text-cyan-100">已进入商机 · 交易阶段只在商机作战室维护</div>
+                ) : (
+                  <Select value={form.stage} onValueChange={v => setForm(f => ({ ...f, stage: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{STAGES_LIST.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
             <div className="pt-2 border-t border-border space-y-3">
