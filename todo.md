@@ -982,3 +982,4 @@
 - [ ] 在 ClientWorkstation 嵌入 0→1 敲门材料生成，自动传入 clientId 而不传 opportunityId
 - [ ] 保持 OpportunityRoom actions 中的 1→N 赢单材料生成，自动传入 clientId 与 opportunityId 并可转 POD
 - [ ] 完成登录态截图核验、回归、生产验证与 GitHub 同步
+- [ ] 防止浏览器自动翻译改写 React DOM，修复登录后客户作战台的 removeChild 异常
