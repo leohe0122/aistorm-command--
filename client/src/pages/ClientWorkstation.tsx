@@ -4,7 +4,7 @@ import {
   ArrowLeft, ArrowUpRight, Building2, CalendarClock, CheckCircle2,
   ChevronRight, CircleAlert, ClipboardCheck, ContactRound, Crosshair,
   FileText, Flag, Loader2, MessageSquareText, Plus, ShieldCheck,
-  Sparkles, Target, UsersRound
+  Sparkles, Target, UsersRound, Zap, RefreshCw, CheckCheck, Circle
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -269,6 +269,92 @@ function ExecutiveOpportunityPanel({ client, contacts, meetings, isAd, onSubmit,
   </section>;
 }
 
+function ClientActionDesk({ client, clientId, meddpicc, signals }: { client: any; clientId: number; meddpicc: any; signals: any[] }) {
+  const utils = trpc.useUtils();
+  const [adoptedIds, setAdoptedIds] = useState<Set<number>>(new Set());
+  const { data: actions = [], refetch } = trpc.actions.listByClient.useQuery({ clientId });
+  const pendingActions = actions.filter((action: any) => !action.isCompleted);
+  const generate = trpc.actions.generate.useMutation({
+    onSuccess: () => { refetch(); setAdoptedIds(new Set()); },
+  });
+  const adoptOne = trpc.actions.adoptOne.useMutation({
+    onSuccess: (_result, variables) => {
+      setAdoptedIds(current => new Set(Array.from(current).concat(variables.actionId)));
+      utils.pod.listByClient.invalidate({ clientId });
+    },
+  });
+
+  const generateActions = () => {
+    if (!meddpicc) return;
+    generate.mutate({
+      clientId,
+      clientName: client.name,
+      industry: client.industry || undefined,
+      stage: client.stage || "进入商机",
+      hookTopic: client.hookTopic || undefined,
+      securityAngle: client.securityAngle || undefined,
+      meddpicc: {
+        metricsScore: meddpicc.metricsScore,
+        economicBuyerScore: meddpicc.economicBuyerScore,
+        economicBuyerName: meddpicc.economicBuyerName,
+        decisionCriteriaScore: meddpicc.decisionCriteriaScore,
+        decisionProcessScore: meddpicc.decisionProcessScore,
+        implicatePainScore: meddpicc.implicatePainScore,
+        championScore: meddpicc.championScore,
+        championName: meddpicc.championName,
+        competitionScore: meddpicc.competitionScore,
+      },
+      recentSignals: signals.slice(0, 5).map((signal: any) => ({
+        signalType: signal.signalType,
+        content: signal.rawSignal || "",
+        aiInterpretation: signal.aiInterpretation,
+      })),
+      visitCount: client.visitCount ?? 0,
+      lastVisitDate: client.lastVisitDate ? new Date(client.lastVisitDate).toISOString() : null,
+    });
+  };
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-violet-400/20 bg-gradient-to-br from-violet-400/[0.07] via-slate-950/75 to-slate-950/80 shadow-[0_16px_45px_rgba(124,58,237,0.08)]">
+      <div className="flex flex-col gap-3 border-b border-violet-400/15 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-400/15 text-violet-200"><Zap className="h-4.5 w-4.5" /></span>
+          <div>
+            <h2 className="text-sm font-semibold text-violet-50">AI 行动指令</h2>
+            <p className="mt-1 text-[11px] leading-5 text-violet-100/55">AI 根据已入库客户事实、客户级关系证据与外部信号提出客户经营行动；采纳后才会进入 POD 协同任务。</p>
+          </div>
+        </div>
+        <Button size="sm" type="button" variant="outline" onClick={generateActions} disabled={!meddpicc || generate.isPending} className="h-8 gap-1.5 border-violet-400/30 bg-violet-400/10 text-xs text-violet-100 hover:bg-violet-400/20">
+          <RefreshCw className={cn("h-3.5 w-3.5", generate.isPending && "animate-spin")} />
+          {generate.isPending ? "AI 生成中…" : pendingActions.length ? "刷新行动指令" : "生成行动指令"}
+        </Button>
+      </div>
+      {!meddpicc ? (
+        <div className="px-5 py-5 text-xs leading-5 text-slate-400">数据不足，暂不判断。请先补充客户级关系证据，AI 才会生成可核验的行动建议。</div>
+      ) : pendingActions.length === 0 ? (
+        <div className="px-5 py-5 text-xs leading-5 text-slate-400">尚无待执行指令。生成时只使用已入库的客户事实，不将销售主观判断当作证据。</div>
+      ) : (
+        <div className="space-y-2 px-5 py-4">
+          {pendingActions.map((action: any) => {
+            const adopted = adoptedIds.has(action.id);
+            return <article key={action.id} className={cn("rounded-xl border p-3", adopted ? "border-emerald-400/35 bg-emerald-400/[0.06]" : "border-slate-700/70 bg-slate-950/45")}>
+              <div className="flex items-start gap-3">
+                <button type="button" disabled={adopted || adoptOne.isPending} onClick={() => adoptOne.mutate({ actionId: action.id, clientId, clientName: client.name })} className={cn("mt-0.5 shrink-0", adopted ? "cursor-default text-emerald-300" : "text-slate-500 transition-colors hover:text-emerald-300")} title={adopted ? "已采纳并推入 POD" : "采纳并推入 POD 任务"}>{adopted ? <CheckCheck className="h-5 w-5" /> : <Circle className="h-5 w-5" />}</button>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-1.5"><span className="rounded border border-violet-400/25 bg-violet-400/10 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200">{action.responsibleRole}</span><span className="text-[10px] text-slate-500">{action.timeframe} · {action.priority}优先</span>{adopted && <span className="text-[10px] text-emerald-300">已进入 POD 任务</span>}</div>
+                  <h3 className="text-xs font-semibold text-slate-100">{action.title}</h3>
+                  {action.objective && <p className="mt-1 text-[11px] leading-5 text-slate-400"><span className="font-medium text-slate-300">行动目标：</span>{action.objective}</p>}
+                  {action.suggestedScript && <p className="mt-2 rounded-lg border border-slate-700/60 bg-slate-950/65 px-2.5 py-2 text-[10px] leading-4 text-slate-400"><span className="font-semibold text-violet-200">建议话术：</span>{action.suggestedScript}</p>}
+                </div>
+              </div>
+            </article>;
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function ClientWorkstation() {
   const [, params] = useRoute("/clients/:clientId");
   const [, setLocation] = useLocation();
@@ -281,6 +367,7 @@ export default function ClientWorkstation() {
   const { data: opportunityMeddpicc = [] } = trpc.opportunities.listMeddpiccByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: meetings = [] } = trpc.meetings.listByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: signals = [] } = trpc.intelligence.listByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
+  const { data: meddpicc } = trpc.meddpicc.get.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: readiness, isLoading: readinessLoading } = trpc.opportunities.customerReadiness.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: customTasks = [] } = trpc.pod.listByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: products = [] } = trpc.products.listActive.useQuery();
@@ -335,6 +422,7 @@ export default function ClientWorkstation() {
         </header>
 
         <StageTaskCenter readiness={readiness} customTasks={customClientTasks} taskSubmitting={addTask.isPending} onAddTask={(title, description) => addTask.mutate({ clientId, assignedRole: "SAM", title, description: description || undefined })} onToggleTask={(task) => updateTask.mutate({ id: task.id, taskStatus: task.isCompleted || task.taskStatus === "done" ? "pending" : "done" })} />
+        {client.stage === "进入商机" && <ClientActionDesk client={client} clientId={clientId} meddpicc={meddpicc} signals={signals as any[]} />}
 
         <OpportunityApplicationPanel readiness={readiness} client={client} products={products as any[]} submitting={applyForOpportunity.isPending} onSubmit={(payload) => applyForOpportunity.mutate({ clientId, ...payload })} />
         <ExecutiveOpportunityPanel client={client} contacts={contacts as any[]} meetings={meetings as any[]} isAd={emailUser?.podRole === "AD" || emailUser?.role === "admin"} submitting={applyForOpportunity.isPending} onSubmit={(payload) => applyForOpportunity.mutate({ clientId, ...payload })} />

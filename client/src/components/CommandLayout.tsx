@@ -21,7 +21,6 @@ const navItems = [
   { path: "/quick-review", label: "⚡ 快速 Review", icon: TrendingUp, desc: "选客户，一键生成 AI Review" },
   { path: "/ai-insights", label: "AI洞察简报", icon: FileText, desc: "拜访前客户洞察 1-Pager" },
   { path: "/meeting-minutes", label: "拜访作战日志", icon: MessageSquare, desc: "拜访录入·AI解析·更新战场" },
-  { path: "/action-command", label: "AI行动指令台", icon: Zap, desc: "优先行动推荐" },
   { path: "/pod-center", label: "POD协同中枢", icon: Users, desc: "角色任务视图" },
   { path: "/arsenal", label: "武器库 Arsenal", icon: Crosshair, desc: "产品文档·AI方案·竞品阻击包" },
 ];
@@ -395,7 +394,6 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
           </div>
         {[
           { path: "/intel-radar", icon: Radio, label: "情报" },
-          { path: "/action-command", icon: Zap, label: "指令台" },
           { path: "/pod-center", icon: Users, label: "POD" },
         ].map(({ path, icon: Icon, label }) => {
           const isActive = location === path || (location === "/" && path === "/dashboard");
