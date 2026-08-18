@@ -57,6 +57,21 @@ describe("作战工作流入口收敛", () => {
     expect(arsenal).toContain("clientId: weaponContext?.clientId");
   });
 
+  it("将 CRM 收敛至系统设置，并将 POD 定位为次级任务汇总", () => {
+    const app = projectFile("client/src/App.tsx");
+    const settings = projectFile("client/src/pages/SystemSettings.tsx");
+    const crm = projectFile("client/src/pages/CrmIntegration.tsx");
+    const podCenter = projectFile("client/src/pages/PodCenter.tsx");
+    const layout = projectFile("client/src/components/CommandLayout.tsx");
+    expect(app).not.toContain('path="/crm"');
+    expect(settings).toContain("<CrmIntegrationPanel embedded />");
+    expect(crm).toContain("export function CrmIntegrationPanel");
+    expect(crm).toContain("从销售易拉取商机");
+    expect(podCenter).toContain("POD 协同 · 任务汇总");
+    expect(podCenter).toContain("次级汇总入口");
+    expect(layout).toContain('label: "POD 协同"');
+  });
+
   it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");

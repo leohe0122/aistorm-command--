@@ -13,6 +13,7 @@ import { Cpu, KeyRound, Zap, Shield, Package, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { CrmIntegrationPanel } from "./CrmIntegration";
 
 // ── RSS Sources Tab ─────────────────────────────────────────────────────────
 function RssSourcesTab() {
@@ -300,7 +301,7 @@ function FeishuBriefingTab() {
 }
 
 // ── CRM Integration Tab ─────────────────────────────────────────────────────
-function CrmIntegrationTab() {
+function LegacyCrmConnectionTab() {
   // Lazy import to avoid duplication — just re-render the existing page content
   // We embed the CrmIntegration page component directly
   const [config, setConfig] = useState({
@@ -397,6 +398,9 @@ function CrmIntegrationTab() {
   );
 }
 
+function CrmIntegrationTab() {
+  return <CrmIntegrationPanel embedded />;
+}
 
 // ── LLM Config Tab ──────────────────────────────────────────────────────────
 const PROVIDERS = [

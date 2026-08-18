@@ -535,9 +535,9 @@ export default function PodCenter() {
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-1">
           <Users className="w-5 h-5 text-primary" />
-          <h1 className="text-xl font-bold text-foreground">POD协同中枢</h1>
+          <h1 className="text-xl font-bold text-foreground">POD 协同 · 任务汇总</h1>
         </div>
-        <p className="text-sm text-muted-foreground">AD / SAM / SA / RSM 四角色独立视图 · 任务队列 · Deal Review 记录</p>
+        <p className="text-sm text-muted-foreground">次级汇总入口：任务的创建与方法论经营仍发生在客户作战台和商机作战室；这里用于跨角色查看、协调与复盘。</p>
       </div>
 
       {/* Opportunity filter banner when jumped from MEDDPICC matrix red dot */}

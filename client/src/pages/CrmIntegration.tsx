@@ -22,7 +22,7 @@ interface CrmSession {
   userId?: number;
 }
 
-export default function CrmIntegration() {
+export function CrmIntegrationPanel({ embedded = false }: { embedded?: boolean }) {
   const [config, setConfig] = useState<CrmConfig>({
     clientId: "",
     clientSecret: "",
@@ -175,7 +175,7 @@ export default function CrmIntegration() {
   const STAGES = ["Prospecting", "Qualification", "Needs Analysis", "Value Proposition", "Id. Decision Makers", "Perception Analysis", "Proposal/Price Quote", "Negotiation/Review", "Closed Won", "Closed Lost"];
 
   return (
-    <div className="p-6">
+    <div className={embedded ? "space-y-6" : "p-6"}>
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-1">
           <Database className="w-5 h-5 text-primary" />
@@ -615,4 +615,8 @@ export default function CrmIntegration() {
       </div>
     </div>
   );
+}
+
+export default function CrmIntegration() {
+  return <CrmIntegrationPanel />;
 }

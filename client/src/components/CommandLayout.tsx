@@ -18,7 +18,7 @@ const navItems = [
   { path: "/dashboard", label: "AD 指挥台", icon: LayoutDashboard, desc: "Portfolio Review 看板" },
   { path: "/battle-map", label: "战场地图", icon: Map, desc: "MEDDPICC看板" },
   { path: "/meeting-minutes", label: "拜访作战日志", icon: MessageSquare, desc: "拜访录入·AI解析·更新战场" },
-  { path: "/pod-center", label: "POD协同中枢", icon: Users, desc: "角色任务视图" },
+  { path: "/pod-center", label: "POD 协同", icon: Users, desc: "次级任务汇总" },
   { path: "/arsenal", label: "武器库 Arsenal", icon: Crosshair, desc: "产品文档·AI方案·竞品阻击包" },
 ];
 
