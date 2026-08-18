@@ -5389,9 +5389,8 @@ ${input.aiSuggestion}
         });
         const globalReview = await generateGlobalBattleReview(candidateFacts);
         if (globalReview?.actions.length) {
-          const firstClientId = globalReview.actions[0].clientId;
           inserts.push({
-            clientId: firstClientId, opportunityId: undefined, kind: 'today_action', priority: 'P1', title: '本周全局战场研判',
+            clientId: undefined, opportunityId: undefined, kind: 'today_action', priority: 'P1', title: '本周全局战场研判',
             aiConclusion: globalReview.judgment.slice(0, 80),
             facts: [
               { label: '整体漏斗健康度', value: globalReview.funnelHealth },

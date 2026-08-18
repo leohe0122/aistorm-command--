@@ -147,6 +147,7 @@ export function AICommandCenter() {
   const onNavigate = (item: CommandRecommendation) => {
     if (item.clientId && item.opportunityId) navigate(`/clients/${item.clientId}/opportunities/${item.opportunityId}`);
     else if (item.clientId) navigate(`/clients/${item.clientId}`);
+    else navigate("/battle-map");
   };
 
   const zeroToOne = ((dashboard as any)?.zeroToOneBoard ?? []) as any[];

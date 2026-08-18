@@ -13,8 +13,13 @@ import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
 
 async function startServer() {
+  console.log(`[STARTUP] PORT=${process.env.PORT ?? "undefined"} NODE_ENV=${process.env.NODE_ENV ?? "undefined"}`);
   const app = express();
   const server = createServer(app);
+  // 不依赖数据库、认证或任何外部服务；用于托管平台最早期健康探针。
+  app.get("/__startup", (_req, res) => {
+    res.status(200).json({ ok: true, ts: Date.now(), port: process.env.PORT ?? null, env: process.env.NODE_ENV ?? null });
+  });
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
