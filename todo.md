@@ -932,3 +932,8 @@
 - [x] 将 1→N Deal Review 扩展为 AD/SAM/SA/RSM 四角色 JSON Schema 行动，并可靠创建对应 POD 任务
 - [x] 为 POD 任务呈现来源 Review 链接和对应事实片段，确保行动可追溯
 - [x] 在后续 Deal Review 中计算并呈现上次 Review 任务的闭环率，而不增加低价值状态时间线
+
+## 武器库作战上下文整合
+- [x] 为 AI 方案定制注入 SALES_METHODOLOGY_SYSTEM_PROMPT 与可选商机的 Deal Map 事实上下文
+- [x] 在商机作战室嵌入 Champion 突破话术与轻量竞品对比卡
+- [x] 将武器库导航收敛为仓库型能力，并完成回归、生产验证与 GitHub 同步

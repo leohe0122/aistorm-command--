@@ -13,7 +13,7 @@ import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildD
 import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
-import { getAccountDiagnosticContext, getDealDiagnosticContext } from "./diagnosticContext";
+import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -4606,6 +4606,7 @@ ${context}
         prompt: z.string().min(1),
         docIds: z.array(z.number()).optional(),
         clientId: z.number().optional(),
+        opportunityId: z.number().optional(),
         targetContact: z.string().optional(),
         title: z.string().optional(),
       }))
@@ -4631,13 +4632,28 @@ ${context}
         };
 
         const guide = categoryGuide[input.category] || '';
-        const systemMsg = `你是AIStorm（亚信安全）的资深解决方案架构师，专注于网络安全产品的销售支持。你的任务是根据销售的需求描述，结合提供的产品文档，生成高质量的${input.category}材料。\n\n${guide}\n\n输出要求：\n- 使用Markdown格式，结构清晰\n- 语言专业但易懂，适合销售使用\n- 突出AIStorm产品的核心价值\n- 内容要具体，避免空话套话\n- 如有具体数据（来自文档），请引用`;
+        const opportunityContext = input.clientId && input.opportunityId
+          ? await getArsenalOpportunityContext(input.clientId, input.opportunityId)
+          : "";
+        const userMsg = `你是 AIStorm 的资深解决方案架构师，负责将已核验的作战事实转化为可供人工审核的${input.category}材料。
 
-        const userMsg = `销售需求描述：\n${input.prompt}\n\n${docContext ? `参考产品文档：\n${docContext}` : '（未选择参考文档，请基于AIStorm产品通用知识生成）'}`;
+${guide}
+
+输出要求：
+- 使用 Markdown，结构清晰，便于销售、SA 和 AD 审阅
+- 优先解决当前商机最弱 Win 因子，而不是泛化介绍产品
+- 仅引用已提供的产品文档和商机事实；无来源数据不得编造
+- 未确认事项必须标为“待验证假设”或“数据不足，暂不判断”
+${opportunityContext}
+
+销售需求描述：
+${input.prompt}
+
+${docContext ? `参考产品文档：\n${docContext}` : "未选择参考文档；仅可使用已入库商机事实与 AIStorm 通用产品知识，不能编造客户数据。"}`;
 
         const llmResult = await invokeLLM({
           messages: [
-            { role: 'system', content: systemMsg },
+            { role: 'system', content: SALES_METHODOLOGY_SYSTEM_PROMPT },
             { role: 'user', content: userMsg },
           ],
           model: 'claude-sonnet-4-5',

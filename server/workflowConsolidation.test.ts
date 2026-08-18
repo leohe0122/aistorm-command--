@@ -141,6 +141,23 @@ describe("作战工作流入口收敛", () => {
     expect(workstation).not.toContain("coachQuestions");
   });
 
+  it("将方案定制绑定统一方法论与商机 Deal Map 事实，并将 Champion/竞品能力迁回商机作战室", () => {
+    const routers = projectFile("server/routers.ts");
+    const diagnosticContext = projectFile("server/diagnosticContext.ts");
+    const arsenal = projectFile("client/src/pages/Arsenal.tsx");
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    expect(routers).toContain("opportunityId: z.number().optional()");
+    expect(routers).toContain("getArsenalOpportunityContext");
+    expect(routers).toContain("content: SALES_METHODOLOGY_SYSTEM_PROMPT");
+    expect(diagnosticContext).toContain("当前商机的已入库 Deal Map 事实");
+    expect(diagnosticContext).toContain("当前最弱 Win 因子");
+    expect(arsenal).toContain("opportunityId: weaponContext?.opportunityId");
+    expect(arsenal).not.toContain('value="champion"');
+    expect(arsenal).not.toContain('value="killsheets"');
+    expect(opportunityRoom).toContain("Champion 突破话术");
+    expect(opportunityRoom).toContain("竞品对比作战卡");
+  });
+
   it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");

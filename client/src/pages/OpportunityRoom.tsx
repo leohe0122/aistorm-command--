@@ -133,7 +133,7 @@ function AIWarJudgement({
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-400/15 text-cyan-300"><Sparkles className="h-4 w-4" /></span>
           <div><div className="text-sm font-semibold text-cyan-100">AI 作战判断</div><div className="text-[11px] text-cyan-100/55">商机级 AI Review 只读取已入库拜访、关键人、评分、情报与效能基线。</div></div>
         </div>
-        <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" className="h-8 w-fit gap-1.5 border-amber-300/30 bg-amber-400/10 text-xs text-amber-100 hover:bg-amber-400/20" onClick={() => { const query = new URLSearchParams({ tab: "ai", clientId: String(clientId), clientName, opportunity: String(opportunity.name || ""), stage: String(opportunity.stage || ""), product: String(productName || ""), competitor: String(opportunity.blueSheetCompetitor || opportunity.competitorName || ""), focus: lowDimensions.join("、") }); setLocation(`/arsenal?${query.toString()}`); }}><Swords className="h-3.5 w-3.5" />生成武器</Button><Button size="sm" variant="outline" className="h-8 w-fit gap-1.5 border-cyan-300/30 bg-cyan-400/10 text-xs text-cyan-100 hover:bg-cyan-400/20" onClick={() => reviewMutation.mutate({ clientId, opportunityId })} disabled={reviewMutation.isPending || !hasEvidence}>
+        <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" className="h-8 w-fit gap-1.5 border-amber-300/30 bg-amber-400/10 text-xs text-amber-100 hover:bg-amber-400/20" onClick={() => { const query = new URLSearchParams({ tab: "ai", clientId: String(clientId), opportunityId: String(opportunityId), clientName, opportunity: String(opportunity.name || ""), stage: String(opportunity.stage || ""), product: String(productName || ""), competitor: String(opportunity.blueSheetCompetitor || opportunity.competitorName || ""), focus: lowDimensions.join("、") }); setLocation(`/arsenal?${query.toString()}`); }}><Swords className="h-3.5 w-3.5" />生成武器</Button><Button size="sm" variant="outline" className="h-8 w-fit gap-1.5 border-cyan-300/30 bg-cyan-400/10 text-xs text-cyan-100 hover:bg-cyan-400/20" onClick={() => reviewMutation.mutate({ clientId, opportunityId })} disabled={reviewMutation.isPending || !hasEvidence}>
           {reviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
           {reviewMutation.isPending ? "分析中…" : "生成 / 更新 AI Review"}
         </Button></div>
@@ -257,6 +257,47 @@ function SpinWorkspace({ opportunity, meddpicc }: { opportunity: any; meddpicc: 
   return <div className="space-y-4"><div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4"><div className="text-sm font-semibold text-slate-100">SPIN 证据导向提问</div><p className="mt-1 text-xs leading-5 text-slate-500">问题根据本商机尚未闭合的 MEDDPICC 维度生成。回答必须回填到拜访记录与证据备注，才能改善商机判断。</p></div><div className="grid gap-3 xl:grid-cols-2">{prompts.map(prompt => <article key={prompt.code} className={cn("rounded-xl border p-4", prompt.tone)}><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold">{prompt.code} · {prompt.title}</span><span className="text-[10px] opacity-70">{prompt.owner}</span></div><p className="text-sm leading-6 text-slate-100/90">{prompt.text}</p><p className="mt-3 text-[11px] leading-5 text-slate-300/75">会后动作：将客户原话、关键人反应及下一步承诺录入拜访作战日志；AI 之后才会重新评估对应维度。</p></article>)}</div></div>;
 }
 
+function DealBattleTools({ client, opportunity, contacts }: { client: any; opportunity: any; contacts: any[] }) {
+  const championContact = contacts.find((contact: any) => contact.buyingRole === "Champion") || contacts.find((contact: any) => contact.name === opportunity.champion);
+  const championName = opportunity.champion || championContact?.name || "";
+  const competitor = String(opportunity.blueSheetCompetitor || opportunity.competitorName || "").trim();
+  const { data: killSheets = [] } = trpc.killSheets.list.useQuery();
+  const [ammoContent, setAmmoContent] = useState<string | null>(null);
+  const ammoMutation = trpc.champion.generate.useMutation({
+    onSuccess: (data: any) => { setAmmoContent(data.content || null); toast.success("Champion 突破话术已生成，请审核后使用"); },
+    onError: (error) => toast.error(`Champion 弹药生成失败：${error.message}`),
+  });
+  const matchingSheets = (killSheets as any[]).filter((item: any) => {
+    const known = `${item.competitorName || ""} ${item.productLine || ""}`.toLowerCase();
+    return competitor && known.includes(competitor.toLowerCase());
+  }).slice(0, 2);
+  const generateAmmo = () => {
+    if (!championName) { toast.warning("尚未形成 Champion 事实；请先在 Blue Sheet 或关键人图谱补录后再生成话术。"); return; }
+    ammoMutation.mutate({
+      clientId: client.id,
+      clientName: client.name,
+      industry: client.industry || undefined,
+      securityAngle: client.securityAngle || undefined,
+      notes: `${opportunity.name} · ${opportunity.stage} · ${opportunity.winStrategy || "赢单策略待补"}`,
+      championName,
+      ammoType: competitor ? "竞品对标" : "ROI测算",
+    });
+  };
+  return <section className="grid gap-4 xl:grid-cols-2">
+    <article className="rounded-xl border border-violet-400/20 bg-violet-400/[0.045] p-4">
+      <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold text-violet-100"><ShieldAlert className="h-4 w-4" />Champion 突破话术</div><p className="mt-1 text-xs leading-5 text-slate-400">只面向本商机已入库的 Champion 与 Blue Sheet 事实生成，不以销售主观判断替代关键人证据。</p></div><Button size="sm" variant="outline" onClick={generateAmmo} disabled={ammoMutation.isPending} className="h-8 shrink-0 gap-1.5 border-violet-400/30 text-xs text-violet-100 hover:bg-violet-400/10">{ammoMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}{ammoMutation.isPending ? "生成中…" : "生成话术"}</Button></div>
+      <p className="mt-3 rounded-lg border border-violet-400/15 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">当前 Champion：{championName || "数据不足，暂不生成"}</p>
+      {ammoContent && <div className="prose prose-invert prose-sm mt-3 max-w-none rounded-lg border border-violet-400/20 bg-slate-950/55 p-3 text-xs"><ReactMarkdown>{ammoContent}</ReactMarkdown></div>}
+    </article>
+    <article className="rounded-xl border border-amber-400/20 bg-amber-400/[0.045] p-4">
+      <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold text-amber-100"><Swords className="h-4 w-4" />竞品对比作战卡</div><p className="mt-1 text-xs leading-5 text-slate-400">从已入库的 Kill Sheet 中匹配本商机已确认竞品；未命中时不虚构对比结论。</p></div></div>
+      <p className="mt-3 rounded-lg border border-amber-400/15 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">已确认竞品：{competitor || "数据不足，暂不判断"}</p>
+      {competitor && matchingSheets.length === 0 && <p className="mt-3 text-xs leading-5 text-amber-100/80">未找到对应 Kill Sheet。请使用上方“生成武器”，针对当前 Deal Map 事实生成待审核的竞争材料。</p>}
+      {matchingSheets.map((sheet: any) => <div key={sheet.id} className="mt-3 rounded-lg border border-amber-400/15 bg-slate-950/55 p-3"><div className="text-xs font-semibold text-amber-100">{sheet.competitorName || competitor} · {sheet.productLine || "产品线待补"}</div><p className="mt-1 text-[11px] leading-5 text-slate-300">{sheet.aiGeneratedTalk || sheet.ourAdvantages || sheet.keyDiffs || "已有 Kill Sheet，但核心差异化内容待补充。"}</p></div>)}
+    </article>
+  </section>;
+}
+
 function ActionWorkspace({ clientId, opportunityId }: { clientId: number; opportunityId: number }) {
   const utils = trpc.useUtils();
   const { data: podTasks = [], isLoading } = trpc.pod.listByOpportunity.useQuery({ opportunityId });
@@ -355,7 +396,7 @@ export default function OpportunityRoom() {
     threewhy: <DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="threewhy" />,
     value: <DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="value" />,
     gonogo: <DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="gonogo" />,
-    actions: <div className="space-y-4"><AIProcessGuide methodology="行动闭环：将经人工审核的 AI 建议转化为有责任角色和状态的任务。" facts="只读取已关联本商机的行动指令和 POD 任务；客户级或其他商机任务不会混入。" judgement="未关联、未审核或数据不足的建议不会被自动下发。" action="AD/SAM/SA 明确责任、截止与完成标准，并由负责人显式关闭任务。" /><ActionWorkspace clientId={clientId} opportunityId={opportunityId} /></div>,
+    actions: <div className="space-y-4"><AIProcessGuide methodology="行动闭环：将经人工审核的 AI 建议转化为有责任角色和状态的任务。" facts="只读取已关联本商机的行动指令和 POD 任务；客户级或其他商机任务不会混入。" judgement="未关联、未审核或数据不足的建议不会被自动下发。" action="AD/SAM/SA 明确责任、截止与完成标准，并由负责人显式关闭任务。" /><DealBattleTools client={client} opportunity={opportunity} contacts={contacts as any[]} /><ActionWorkspace clientId={clientId} opportunityId={opportunityId} /></div>,
   };
 
   return <main className="min-h-full bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.12),transparent_28%),linear-gradient(180deg,rgba(10,15,28,0.45),rgba(3,8,18,0.12))] px-4 py-5 lg:px-7 lg:py-7"><div className="mx-auto max-w-[1640px]"><button onClick={() => setLocation(`/clients/${clientId}`)} className="group mb-4 flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-cyan-200"><ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />返回 {client.name} 客户作战台</button><header className="mb-5 overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-950/70 shadow-[0_18px_55px_rgba(0,0,0,0.2)] backdrop-blur-sm"><div className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-start lg:justify-between lg:px-7 lg:py-6"><div className="flex min-w-0 gap-4"><div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-amber-300/20 bg-amber-400/10 text-amber-200"><Target className="h-6 w-6" /></div><div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><h1 className="text-2xl font-semibold tracking-tight text-slate-50">{opportunity.name}</h1><span className="rounded-full border border-amber-300/25 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">独立商机作战室</span></div><p className="text-sm text-slate-400">{[client.name, product?.name || null, opportunity.stage].filter(Boolean).join(" · ")}</p><p className="mt-2 text-xs text-slate-500">本页只承载该商机的赢单方法论、证据与行动；客户级关系经营留在客户作战台。</p></div></div><div className="grid grid-cols-3 gap-2 sm:min-w-[330px]"><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-sm font-semibold text-amber-200">{opportunity.estimatedValue || "—"}</div><div className="text-[10px] text-slate-500">金额</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className="text-sm font-semibold text-cyan-200">{opportunity.expectedCloseDate || "—"}</div><div className="text-[10px] text-slate-500">预计签约</div></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/50 px-3 py-2.5 text-center"><div className={cn("text-sm font-semibold", health === null ? "text-slate-400" : health >= 60 ? "text-emerald-200" : health >= 35 ? "text-amber-200" : "text-rose-200")}>{health === null ? "—" : `${health}%`}</div><div className="text-[10px] text-slate-500">MEDDPICC</div></div></div></div></header><AIWarJudgement clientId={clientId} clientName={client.name} opportunityId={opportunityId} opportunity={opportunity} productName={product?.name} contacts={contacts as any[]} meetings={meetings as any[]} signals={signals as any[]} meddpicc={meddpicc} /><div className="mt-5 grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)]"><aside className="h-fit rounded-2xl border border-slate-700/70 bg-slate-950/60 p-2 xl:sticky xl:top-5"><div className="px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">商机工作流</div><nav className="space-y-1">{roomSections.map(section => { const Icon = section.icon; const active = activeSection === section.id; return <button key={section.id} onClick={() => setActiveSection(section.id)} className={cn("flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs transition-colors", active ? "border border-cyan-300/25 bg-cyan-400/10 font-semibold text-cyan-100" : "border border-transparent text-slate-400 hover:bg-slate-900/70 hover:text-slate-200")}><Icon className="h-3.5 w-3.5" />{section.label}<ChevronRight className={cn("ml-auto h-3 w-3", active ? "text-cyan-200" : "text-slate-600")} /></button>; })}</nav></aside><section className="min-w-0 rounded-2xl border border-slate-700/70 bg-slate-950/55 p-4 shadow-[0_12px_35px_rgba(0,0,0,0.12)] lg:p-5">{sectionContent[activeSection]}</section></div></div></main>;

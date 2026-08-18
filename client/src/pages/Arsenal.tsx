@@ -19,8 +19,6 @@ import {
   Eye, Sparkles, ExternalLink, Loader2, Tag, FilePlus2, Files, Folder, FolderOpen, FolderPlus, Pencil
 } from "lucide-react";
 import { PRODUCT_LINE_GROUPS } from '../../../shared/productLines';
-import KillSheetsTab from "./KillSheetsTab";
-import ChampionAmmo from "./ChampionAmmo";
 import { BookOpen, Star, TrendingUp } from "lucide-react";
 
 // ─── 成功案例库 Tab ──────────────────────────────────────────────────────────
@@ -365,11 +363,6 @@ function CaseStudiesTab() {
   );
 }
 
-
-// Wrapper to embed ChampionAmmo as a tab (no page-level padding)
-function ChampionAmmoTab() {
-  return <ChampionAmmo />;
-}
 
 // ─── 产品文档仓库 Tab ────────────────────────────────────────────────────────
 
@@ -958,7 +951,7 @@ function ProductDocsTab() {
 }
 // ─── AI方案定制 Tab ──────────────────────────────────────────────────────────
 
-type WeaponContext = { clientId?: number; clientName?: string; opportunityName?: string; stage?: string; product?: string; competitor?: string; focus?: string };
+type WeaponContext = { clientId?: number; opportunityId?: number; clientName?: string; opportunityName?: string; stage?: string; product?: string; competitor?: string; focus?: string };
 
 function AIArsenalTab({ weaponContext }: { weaponContext?: WeaponContext }) {
   const [category, setCategory] = useState<"方案类" | "弹药类" | "话术类">("方案类");
@@ -981,7 +974,7 @@ function AIArsenalTab({ weaponContext }: { weaponContext?: WeaponContext }) {
     onSuccess: () => { toast.success("已删除"); refetchHistory(); },
   });
 
-  const contextKey = [weaponContext?.clientId, weaponContext?.opportunityName, weaponContext?.stage, weaponContext?.product, weaponContext?.competitor, weaponContext?.focus].filter(Boolean).join("|");
+  const contextKey = [weaponContext?.clientId, weaponContext?.opportunityId, weaponContext?.opportunityName, weaponContext?.stage, weaponContext?.product, weaponContext?.competitor, weaponContext?.focus].filter(Boolean).join("|");
   useEffect(() => {
     if (!contextKey || hydratedContextKey === contextKey) return;
     const details = [
@@ -1001,7 +994,7 @@ function AIArsenalTab({ weaponContext }: { weaponContext?: WeaponContext }) {
     if (!prompt.trim()) { toast.error("请描述你的需求"); return; }
     setGenerating(true); setResult(null);
     try {
-      await generateMut.mutateAsync({ category, prompt: prompt.trim(), docIds: selectedDocIds.length > 0 ? selectedDocIds : undefined, clientId: weaponContext?.clientId, targetContact: targetContact || undefined, title: weaponContext?.opportunityName ? `${weaponContext.clientName || "客户"} · ${weaponContext.opportunityName} · ${category}` : undefined });
+      await generateMut.mutateAsync({ category, prompt: prompt.trim(), docIds: selectedDocIds.length > 0 ? selectedDocIds : undefined, clientId: weaponContext?.clientId, opportunityId: weaponContext?.opportunityId, targetContact: targetContact || undefined, title: weaponContext?.opportunityName ? `${weaponContext.clientName || "客户"} · ${weaponContext.opportunityName} · ${category}` : undefined });
     } finally { setGenerating(false); }
   };
 
@@ -1371,6 +1364,7 @@ export default function Arsenal() {
   const contextClientId = Number(params.get("clientId"));
   const weaponContext: WeaponContext | undefined = Number.isFinite(contextClientId) && contextClientId > 0 ? {
     clientId: contextClientId,
+    opportunityId: Number(params.get("opportunityId")) || undefined,
     clientName: params.get("clientName") || undefined,
     opportunityName: params.get("opportunity") || undefined,
     stage: params.get("stage") || undefined,
@@ -1383,22 +1377,18 @@ export default function Arsenal() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">武器库</h1>
-        <p className="text-muted-foreground text-sm mt-1">产品文档管理 · AI方案定制 · 成功案例库 · 智能报价工具 · 竞品阻击包</p>
+        <p className="text-muted-foreground text-sm mt-1">产品文档管理 · 成功案例库 · 上下文化 AI 方案定制 · 智能报价工具</p>
       </div>
       <Tabs key={initialTab} defaultValue={initialTab} className="space-y-4">
-        <TabsList className="grid grid-cols-6 w-full max-w-4xl">
+        <TabsList className="grid grid-cols-4 w-full max-w-3xl">
           <TabsTrigger value="docs" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" /> 产品文档</TabsTrigger>
           <TabsTrigger value="cases" className="gap-1.5 text-xs"><BookOpen className="h-3.5 w-3.5" /> 成功案例库</TabsTrigger>
           <TabsTrigger value="ai" className="gap-1.5 text-xs"><Bot className="h-3.5 w-3.5" /> AI方案定制</TabsTrigger>
-          <TabsTrigger value="champion" className="gap-1.5 text-xs"><Shield className="h-3.5 w-3.5" /> Champion弹药</TabsTrigger>
-          <TabsTrigger value="killsheets" className="gap-1.5 text-xs"><Swords className="h-3.5 w-3.5" /> 竞品阻击包</TabsTrigger>
           <TabsTrigger value="quote" className="gap-1.5 text-xs"><Calculator className="h-3.5 w-3.5" /> 报价工具</TabsTrigger>
         </TabsList>
         <TabsContent value="docs"><ProductDocsTab /></TabsContent>
         <TabsContent value="cases"><CaseStudiesTab /></TabsContent>
         <TabsContent value="ai"><AIArsenalTab weaponContext={weaponContext} /></TabsContent>
-        <TabsContent value="champion"><ChampionAmmoTab /></TabsContent>
-        <TabsContent value="killsheets"><KillSheetsTab /></TabsContent>
         <TabsContent value="quote"><QuoteToolTab /></TabsContent>
       </Tabs>
     </div>

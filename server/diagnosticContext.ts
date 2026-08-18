@@ -103,3 +103,55 @@ export async function getDealDiagnosticContext(clientId: number, opportunityId: 
     failedGates,
   });
 }
+
+/**
+ * 武器库方案定制使用的商机级事实摘要。
+ * 只返回数据库中已经存在的 Deal Map 事实；缺失项明确保留为数据不足，禁止补写销售判断。
+ */
+export async function getArsenalOpportunityContext(clientId: number, opportunityId: number): Promise<string> {
+  const db = await getDb();
+  if (!db) return "";
+  const { opportunities, opportunityMeddpicc, threeWhy, painMetrics, competitionMap } = await import("../drizzle/schema");
+  const { eq } = await import("drizzle-orm");
+  const [opportunityRows, meddpiccRows, whyRows, pains, competitors] = await Promise.all([
+    db.select().from(opportunities).where(eq(opportunities.id, opportunityId)).limit(1),
+    db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, opportunityId)).limit(1),
+    db.select().from(threeWhy).where(eq(threeWhy.opportunityId, opportunityId)).limit(1),
+    db.select().from(painMetrics).where(eq(painMetrics.opportunityId, opportunityId)),
+    db.select().from(competitionMap).where(eq(competitionMap.opportunityId, opportunityId)),
+  ]);
+  const opportunity = opportunityRows[0] as any;
+  if (!opportunity || opportunity.clientId !== clientId) return "";
+  const meddpicc = meddpiccRows[0] as any;
+  const why = whyRows[0] as any;
+  const dealLayer = await getDealDiagnosticContext(clientId, opportunityId);
+  const dimensions = [
+    ["M 指标", meddpicc?.metricsScore, meddpicc?.metricsNotes],
+    ["E 经济决策人", meddpicc?.economicBuyerScore, meddpicc?.economicBuyerNotes],
+    ["D1 决策标准", meddpicc?.decisionCriteriaScore, meddpicc?.decisionCriteriaNotes],
+    ["D2 决策流程", meddpicc?.decisionProcessScore, meddpicc?.decisionProcessNotes],
+    ["P 采购流程", meddpicc?.paperProcessScore, meddpicc?.paperProcessNotes],
+    ["I 痛点牵连", meddpicc?.implicatePainScore, meddpicc?.implicatePainNotes],
+    ["C Champion", meddpicc?.championScore, meddpicc?.championNotes],
+    ["C2 竞争", meddpicc?.competitionScore, meddpicc?.competitionNotes],
+  ] as Array<[string, number | null | undefined, string | null | undefined]>;
+  const scored = dimensions.filter(([, score]) => typeof score === "number" && score > 0);
+  const weakest = scored.length ? [...scored].sort((a, b) => Number(a[1]) - Number(b[1]))[0] : null;
+  const painTotal = pains.reduce((sum, item: any) => sum + (Number(item.annualValue) || 0), 0);
+  const painFacts = pains.filter((item: any) => item.painStatement || item.currentBaseline || item.valueLogic).slice(0, 3);
+  const competitorFacts = competitors.filter((item: any) => item.competitorName || item.competitorType || item.controlPoints).slice(0, 3);
+
+  return `\n\n【当前商机的已入库 Deal Map 事实】
+商机：${opportunity.name}；阶段：${opportunity.stage}
+当前最弱 Win 因子：${weakest ? `${weakest[0]}（${Number(weakest[1]) * 25}%）` : "数据不足，暂不判断"}
+决策标准（D1）：${meddpicc?.decisionCriteriaNotes || "数据不足"}
+痛点牵连（I）：${meddpicc?.implicatePainNotes || "数据不足"}
+Why Change：${why?.whyChangeEvidence || why?.whyChangePain || "数据不足"}
+Why Now：${why?.whyNowEvidence || why?.whyNowTrigger || "数据不足"}
+Why Us：${why?.whyUsEvidence || why?.whyUsDifferentiator || "数据不足"}
+已量化年度价值：${painTotal > 0 ? `$${painTotal.toLocaleString()}` : "数据不足，暂不判断"}
+痛点明细：${painFacts.length ? painFacts.map((item: any) => item.painStatement || item.currentBaseline || item.valueLogic).join("；") : "数据不足"}
+已入库竞争事实：${competitorFacts.length ? competitorFacts.map((item: any) => item.competitorName || item.competitorType || item.controlPoints).join("；") : opportunity.blueSheetCompetitor || opportunity.competitorName || "数据不足"}
+
+材料必须围绕上述事实短板设计。不得将缺失维度、未验证竞品主张或客户意图写成确定结论；需要补充时使用“待验证假设”或“数据不足，暂不判断”。${dealLayer}`;
+}
