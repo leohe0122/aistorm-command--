@@ -10,7 +10,6 @@ import IntelRadar from "./pages/IntelRadar";
 import ChampionAmmo from "./pages/ChampionAmmo";
 import PodCenter from "./pages/PodCenter";
 import MeetingMinutes from "./pages/MeetingMinutes";
-import OpportunityPrediction from "./pages/OpportunityPrediction";
 import CrmIntegration from "./pages/CrmIntegration";
 import DailyBriefing from "./pages/DailyBriefing";
 import Arsenal from "./pages/Arsenal";
@@ -133,7 +132,6 @@ function Router() {
         <Route path="/champion-ammo" component={ChampionAmmo} />
         <Route path="/pod-center" component={PodCenter} />
         <Route path="/meeting-minutes" component={MeetingMinutes} />
-        <Route path="/prediction" component={OpportunityPrediction} />
         <Route path="/crm" component={CrmIntegration} />
         <Route path="/daily-briefing" component={DailyBriefing} />
         <Route path="/settings" component={SystemSettings} />

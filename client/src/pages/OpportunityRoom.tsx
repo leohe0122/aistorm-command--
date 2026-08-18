@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import ReactMarkdown from "react-markdown";
 import {
-  ArrowLeft, BrainCircuit, CalendarClock, CheckCircle2, ChevronRight,
+  ArrowLeft, BrainCircuit, CalendarClock, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
   CircleAlert, ClipboardCheck, Crosshair, FileText, Gauge, Loader2,
   Network, Plus, Save, ShieldAlert, Sparkles, Swords, Target, UsersRound
 } from "lucide-react";
@@ -84,6 +84,7 @@ function AIWarJudgement({
   const { data: reviews = [] } = trpc.insights.getLatestReviews.useQuery({ clientId });
   const latestReview = reviews.find((review: any) => review.opportunityId === opportunityId && review.reviewType === "1toN") as any;
   const [generatedReview, setGeneratedReview] = useState("");
+  const [forecastOpen, setForecastOpen] = useState(false);
   const reviewMutation = trpc.insights.reviewOneToN.useMutation({
     onSuccess: (result) => {
       setGeneratedReview(result.content);
@@ -105,6 +106,13 @@ function AIWarJudgement({
       : lowDimensions.length > 0
         ? `当前最需要补强的赢单证据是 ${lowDimensions.join("、")} 维度；在证据补齐前，健康度不应被解读为赢单承诺。`
         : "核心 MEDDPICC 维度已录入；仍需通过最新拜访、Buying Group 和竞争事实持续验证。";
+  const forecastSummary = !hasEvidence
+    ? "数据不足，暂不判断。"
+    : health === null
+      ? "尚未形成可核验的商机证据链，不能输出赢单预测。"
+      : health >= 60
+        ? "当前证据链相对完整，但预测仍需由最新客户事实持续校正。"
+        : "当前证据链存在关键缺口；不应将分数解读为赢单概率承诺。";
 
   return (
     <section className="overflow-hidden rounded-2xl border border-cyan-400/25 bg-gradient-to-br from-cyan-400/[0.10] via-slate-950/65 to-slate-950/85 shadow-[0_16px_45px_rgba(8,145,178,0.08)]">
@@ -131,6 +139,17 @@ function AIWarJudgement({
           <div><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/70">方法论映射</div><p className="text-xs leading-5 text-slate-300"><strong className="text-slate-100">MEDDPICC</strong> 评估商机证据完整度；<strong className="text-slate-100">Blue Sheet</strong> 确认双方目标与竞争位置；<strong className="text-slate-100">Buying Group</strong> 校验决策链覆盖。</p></div>
           <div><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/70">人类控制</div><p className="text-xs leading-5 text-cyan-100">AI 不会自动修改评分、阶段或预测。请在“行动任务”中由 AD、SAM 或 SA 选择并创建执行项。</p></div>
         </div>
+      </div>
+      <div className="border-t border-cyan-300/15 bg-slate-950/45 px-4 py-3">
+        <button type="button" onClick={() => setForecastOpen(value => !value)} className="flex w-full items-center justify-between gap-3 text-left">
+          <span><span className="text-xs font-semibold text-cyan-100">AI 赢单预测（辅助判断）</span><span className="ml-2 text-[10px] text-slate-500">已收敛至本商机作战室，不再作为独立入口</span></span>
+          {forecastOpen ? <ChevronUp className="h-4 w-4 text-cyan-300" /> : <ChevronDown className="h-4 w-4 text-cyan-300" />}
+        </button>
+        {forecastOpen && <div className="mt-3 grid gap-2 lg:grid-cols-3">
+          <div className="rounded-lg border border-slate-700/60 bg-slate-950/55 p-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-300/70">事实依据</div><p className="text-xs leading-5 text-slate-300">已入库 {evidenceCount} 项拜访、关键人、情报及 MEDDPICC 证据；当前商机健康度 {health === null ? "待补充" : `${health}%`}。</p></div>
+          <div className="rounded-lg border border-slate-700/60 bg-slate-950/55 p-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-300/70">预测判断</div><p className="text-xs leading-5 text-slate-300">{forecastSummary}</p></div>
+          <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/[0.045] p-3"><div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-300/70">下一步</div><p className="text-xs leading-5 text-cyan-50">{content ? "已生成 LLM 作战判断。请审阅上方结论并把确认的动作放入行动任务。" : "点击上方“生成 / 更新 AI Review”，由 LLM 根据该商机的真实事实输出详细判断与风险。"}</p></div>
+        </div>}
       </div>
     </section>
   );

@@ -29,7 +29,14 @@ describe("作战工作流入口收敛", () => {
     expect(insightEntry).toContain("生成拜访前洞察");
   });
 
-  it("不再注册或展示独立行动指令、快速 Review 与洞察入口", () => {
+  it("将赢单预测降级为商机作战室内的展开式辅助判断", () => {
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    expect(opportunityRoom).toContain("AI 赢单预测（辅助判断）");
+    expect(opportunityRoom).toContain("生成 / 更新 AI Review");
+    expect(opportunityRoom).toContain("数据不足，暂不判断");
+  });
+
+  it("不再注册或展示独立行动指令、快速 Review、洞察与预测入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");
     expect(app).not.toContain('path="/action-command"');
@@ -41,5 +48,7 @@ describe("作战工作流入口收敛", () => {
     expect(app).not.toContain('path="/ai-insights"');
     expect(app).not.toContain('import AIInsights');
     expect(layout).not.toContain('path: "/ai-insights"');
+    expect(app).not.toContain('path="/prediction"');
+    expect(app).not.toContain('import OpportunityPrediction');
   });
 });
