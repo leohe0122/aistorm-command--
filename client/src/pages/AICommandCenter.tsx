@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { AlertTriangle, BarChart3, CheckCircle2, ChevronRight, Clock3, RefreshCw, Sparkles, Target, Users, Zap } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -114,6 +115,18 @@ export function AICommandCenter() {
     onSuccess: () => { toast.success("已记录为本轮不采纳"); utils.adCommand.list.invalidate(); },
     onError: (error) => toast.error(error.message),
   });
+  const [coachAnalyses, setCoachAnalyses] = useState<Record<string, string>>({});
+  const [coachLoadingSam, setCoachLoadingSam] = useState<string | null>(null);
+  const samCoachReview = trpc.adCommand.samCoachReview.useMutation({
+    onSuccess: (result) => {
+      setCoachAnalyses((current) => ({ ...current, [result.samName]: result.content }));
+      setCoachLoadingSam(null);
+    },
+    onError: (error) => {
+      setCoachLoadingSam(null);
+      toast.error(error.message || "SAM 教练分析生成失败");
+    },
+  });
 
   useEffect(() => {
     if (!didRefresh && !refresh.isPending && !dashboardLoading) refresh.mutate();
@@ -205,7 +218,7 @@ export function AICommandCenter() {
         <div className="md:col-span-4 rounded-2xl border bg-card p-5 text-sm text-muted-foreground"><BarChart3 className="mb-2 h-5 w-5 text-cyan-300" />漏斗、MEDDPICC 雷达、拜访频率等详细数据保留为按需分析，不再占用 AD 的决策首屏。</div>
       </section>}
 
-      {view === "coach" && <section className="rounded-2xl border bg-card p-4"><div className="mb-4 flex items-center gap-2"><Users className="h-4 w-4 text-emerald-300" /><div><p className="text-sm font-semibold">SAM 教练</p><p className="text-xs text-muted-foreground">识别跨客户重复出现的能力模式，而不是孤立评价个人。</p></div></div><div className="grid gap-3 md:grid-cols-2">{samWarnings.map(sam => <div key={sam.name} className="rounded-xl border border-border/70 p-4"><p className="font-semibold">{sam.name}</p><p className="mt-1 text-sm text-muted-foreground">负责 {sam.total} 个客户，其中 {sam.gaps} 个存在 Champion 证据缺口。</p><Button className="mt-3" size="sm" variant="outline" onClick={() => setView("boards")}>查看相关客户</Button></div>)}</div></section>}
+      {view === "coach" && <section className="rounded-2xl border bg-card p-4"><div className="mb-4 flex items-center gap-2"><Users className="h-4 w-4 text-emerald-300" /><div><p className="text-sm font-semibold">SAM 教练</p><p className="text-xs text-muted-foreground">按需生成、不持久化；分析只使用已入库的客户、拜访与 Champion 事实。</p></div></div><div className="grid gap-3 md:grid-cols-2">{samWarnings.map(sam => <div key={sam.name} className="rounded-xl border border-border/70 p-4"><p className="font-semibold">{sam.name}</p><p className="mt-1 text-sm text-muted-foreground">负责 {sam.total} 个客户，其中 {sam.gaps} 个存在 Champion 证据缺口。</p><div className="mt-3 flex gap-2"><Button size="sm" variant="outline" disabled={coachLoadingSam === sam.name} onClick={() => { setCoachLoadingSam(sam.name); samCoachReview.mutate({ samName: sam.name }); }}>{coachLoadingSam === sam.name ? <><RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />生成中</> : coachAnalyses[sam.name] ? "刷新教练分析" : "生成教练分析"}</Button><Button size="sm" variant="ghost" onClick={() => setView("boards")}>查看相关客户</Button></div>{coachAnalyses[sam.name] ? <div className="prose prose-invert prose-sm mt-4 max-w-none rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3"><ReactMarkdown>{coachAnalyses[sam.name]}</ReactMarkdown></div> : null}</div>)}</div></section>}
     </main>
   );
 }

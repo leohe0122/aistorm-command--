@@ -5287,11 +5287,12 @@ ${input.aiSuggestion}
     refresh: publicProcedure.mutation(async () => {
       const db = await getDb();
       if (!db) return [];
-      const { clients, meetingMinutes, meddpicc, opportunities, opportunityMeddpicc, actionItems, adCommandRecommendations } = await import('../drizzle/schema');
+      const { clients, meetingMinutes, meddpicc, opportunities, opportunityMeddpicc, actionItems, adCommandRecommendations, customerPurchaseSignals } = await import('../drizzle/schema');
       const { buildAdCommandRecommendations } = await import('../shared/adCommand');
+      const { enrichAdCommandRecommendation } = await import('./adCommandLLM');
       const { desc } = await import('drizzle-orm');
 
-      const [allClients, allMeetings, clientMeddpicc, allOpportunities, oppMeddpicc, pendingActions, existing] = await Promise.all([
+      const [allClients, allMeetings, clientMeddpicc, allOpportunities, oppMeddpicc, pendingActions, existing, purchaseSignals] = await Promise.all([
         db.select().from(clients),
         db.select({ clientId: meetingMinutes.clientId, meetingDate: meetingMinutes.meetingDate }).from(meetingMinutes),
         db.select().from(meddpicc),
@@ -5299,6 +5300,7 @@ ${input.aiSuggestion}
         db.select().from(opportunityMeddpicc),
         db.select().from(actionItems),
         db.select().from(adCommandRecommendations).orderBy(desc(adCommandRecommendations.createdAt)),
+        db.select().from(customerPurchaseSignals),
       ]);
 
       const latestMeeting = new Map<number, Date>();
@@ -5336,7 +5338,40 @@ ${input.aiSuggestion}
         })),
       );
       const knownFingerprints = new Set(existing.map(item => item.fingerprint));
-      const inserts = generated.filter(item => !knownFingerprints.has(item.fingerprint)).map(({ urgency, ...item }) => ({
+      const newGenerated = generated.filter(item => !knownFingerprints.has(item.fingerprint));
+      const enriched = await Promise.all(newGenerated.map(async (item) => {
+        if (item.kind !== 'today_action' && item.kind !== 'anomaly') return item;
+        const client = item.clientId ? allClients.find(candidate => candidate.id === item.clientId) : null;
+        const opportunity = item.opportunityId ? allOpportunities.find(candidate => candidate.id === item.opportunityId) : null;
+        const clientId = item.clientId ?? opportunity?.clientId ?? null;
+        const clientScoreItem = clientId ? clientScore.get(clientId) : null;
+        const opportunityScoreItem = opportunity ? oppScore.get(opportunity.id) : null;
+        const meetingDate = clientId ? latestMeeting.get(clientId) : null;
+        const stageChangedAt = opportunity?.stageChangedAt ?? client?.stageChangedAt ?? null;
+        const stageDays = stageChangedAt ? Math.floor((Date.now() - new Date(stageChangedAt).getTime()) / 86_400_000) : null;
+        const daysSinceVisit = meetingDate ? Math.floor((Date.now() - new Date(meetingDate).getTime()) / 86_400_000) : null;
+        const weakest = opportunityScoreItem ? dimensionLabels
+          .map(([key, label]) => ({ label, score: Number((opportunityScoreItem as any)[key] ?? 0) }))
+          .sort((a, b) => a.score - b.score)[0] : null;
+        return enrichAdCommandRecommendation(item, {
+          clientName: client?.name ?? opportunity?.name ?? '未命名客户',
+          stage: client?.stage ?? opportunity?.stage ?? '数据不足',
+          stageDays,
+          daysSinceVisit,
+          championScore: Number((clientScoreItem as any)?.championScore ?? (opportunityScoreItem as any)?.championScore ?? 0),
+          economicBuyerScore: Number((clientScoreItem as any)?.economicBuyerScore ?? (opportunityScoreItem as any)?.economicBuyerScore ?? 0),
+          painScore: Number((clientScoreItem as any)?.implicatePainScore ?? (opportunityScoreItem as any)?.implicatePainScore ?? 0),
+          decisionCriteriaScore: Number((clientScoreItem as any)?.decisionCriteriaScore ?? (opportunityScoreItem as any)?.decisionCriteriaScore ?? 0),
+          signalCount: clientId ? purchaseSignals.filter(signal => signal.clientId === clientId).length : 0,
+          samName: client?.assignedSamName ?? null,
+          opportunityName: opportunity?.name ?? null,
+          opportunityStage: opportunity?.stage ?? null,
+          opportunityStagnantDays: opportunity?.stageChangedAt ? Math.floor((Date.now() - new Date(opportunity.stageChangedAt).getTime()) / 86_400_000) : null,
+          weakestDimension: weakest?.label ?? null,
+          weakestScore: weakest?.score ?? null,
+        });
+      }));
+      const inserts = enriched.map(({ urgency, ...item }) => ({
         ...item,
         // 数据库遗留字段仅作存储兼容；用户界面与研判逻辑统一使用行动紧迫度。
         priority: urgency === '立即处理' ? 'P0' : urgency === '本周推进' ? 'P1' : 'P2',
@@ -5344,6 +5379,42 @@ ${input.aiSuggestion}
         opportunityId: item.opportunityId ?? undefined,
         dueDate: new Date(Date.now() + (urgency === '立即处理' ? 2 : 7) * 86_400_000),
       }));
+      const { generateGlobalBattleReview, getIsoWeekKey } = await import('./adGlobalReviewLLM');
+      const weeklyKey = getIsoWeekKey();
+      const hasWeeklyReview = knownFingerprints.has(`global-review-${weeklyKey}-summary`);
+      if (!hasWeeklyReview) {
+        const candidateFacts = generated.filter(item => item.clientId && (item.kind === 'today_action' || item.kind === 'anomaly')).slice(0, 6).map(item => {
+          const client = allClients.find(candidate => candidate.id === item.clientId);
+          return { clientId: item.clientId!, clientName: client?.name ?? item.title, stage: client?.stage ?? '数据不足', trigger: item.aiConclusion, facts: item.facts };
+        });
+        const globalReview = await generateGlobalBattleReview(candidateFacts);
+        if (globalReview?.actions.length) {
+          const firstClientId = globalReview.actions[0].clientId;
+          inserts.push({
+            clientId: firstClientId, opportunityId: undefined, kind: 'today_action', priority: 'P1', title: '本周全局战场研判',
+            aiConclusion: globalReview.judgment.slice(0, 80),
+            facts: [
+              { label: '整体漏斗健康度', value: globalReview.funnelHealth },
+              { label: '本季度赢单风险', value: globalReview.winRisk },
+              { label: '团队能力短板', value: globalReview.teamGap },
+            ],
+            methodology: '全局战场五维研判 · AD 指挥节奏',
+            suggestedAction: `优先确认本周三项行动：${globalReview.actions.map(action => action.title).join('；')}`,
+            assignedRole: 'AD', fingerprint: `global-review-${weeklyKey}-summary`, dueDate: new Date(Date.now() + 7 * 86_400_000),
+          } as any);
+          for (let index = 0; index < globalReview.actions.length; index += 1) {
+            const action = globalReview.actions[index];
+            const candidate = candidateFacts.find(item => item.clientId === action.clientId);
+            inserts.push({
+              clientId: action.clientId, opportunityId: undefined, kind: 'today_action', priority: index === 0 ? 'P0' : 'P1',
+              title: action.title.slice(0, 240), aiConclusion: action.evidence.slice(0, 300),
+              facts: candidate?.facts ?? [{ label: '全局研判依据', value: action.evidence }],
+              methodology: '全局战场研判 · AD 本周行动', suggestedAction: action.action.slice(0, 100), assignedRole: 'AD',
+              fingerprint: `global-review-${weeklyKey}-action-${action.clientId}-${index}`, dueDate: new Date(Date.now() + (index === 0 ? 2 : 7) * 86_400_000),
+            } as any);
+          }
+        }
+      }
       if (inserts.length) await db.insert(adCommandRecommendations).values(inserts as any);
       const currentFingerprints = new Set(generated.map(item => item.fingerprint));
       const derivedTypes = new Set(['contact-gap', 'champion-gap', 'opp-stagnant']);
@@ -5406,6 +5477,48 @@ ${input.aiSuggestion}
       const { eq } = await import('drizzle-orm');
       await db.update(adCommandRecommendations).set({ status: 'skipped', skipReason: input.reason || 'AD 当前不采纳' }).where(eq(adCommandRecommendations.id, input.id));
       return { id: input.id };
+    }),
+    samCoachReview: publicProcedure.input(z.object({ samName: z.string().min(1).max(100) })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error('DB unavailable');
+      const { clients, meetingMinutes, meddpicc, opportunities } = await import('../drizzle/schema');
+      const { eq } = await import('drizzle-orm');
+      const { buildSamCoachPrompt } = await import('./samCoachLLM');
+      const [samClients, allMeetings, allScores, allOpportunities] = await Promise.all([
+        db.select().from(clients).where(eq(clients.assignedSamName, input.samName)),
+        db.select({ clientId: meetingMinutes.clientId, meetingDate: meetingMinutes.meetingDate }).from(meetingMinutes),
+        db.select().from(meddpicc),
+        db.select().from(opportunities),
+      ]);
+      if (!samClients.length) return { content: `数据不足，暂不判断。${input.samName} 暂无已分配客户记录。`, samName: input.samName, clientCount: 0 };
+      const clientIds = new Set(samClients.map(client => client.id));
+      const latestMeeting = new Map<number, Date>();
+      for (const meeting of allMeetings.filter(meeting => clientIds.has(meeting.clientId))) {
+        const current = latestMeeting.get(meeting.clientId);
+        if (!current || meeting.meetingDate > current) latestMeeting.set(meeting.clientId, meeting.meetingDate);
+      }
+      const scoreByClient = new Map(allScores.filter(score => clientIds.has(score.clientId)).map(score => [score.clientId, score]));
+      const now = Date.now();
+      const facts = samClients.map(client => {
+        const lastMeeting = latestMeeting.get(client.id);
+        return {
+          clientName: client.name,
+          stage: client.stage,
+          lastMeetingDays: lastMeeting ? Math.floor((now - new Date(lastMeeting).getTime()) / 86_400_000) : null,
+          championScore: Number((scoreByClient.get(client.id) as any)?.championScore ?? 0),
+          activeOpportunityCount: allOpportunities.filter(opp => opp.clientId === client.id && opp.status === '活跃').length,
+        };
+      });
+      const response = await invokeLLM({
+        model: 'gpt-5-mini',
+        messages: [
+          { role: 'system', content: '你是严谨的销售教练，只能依据输入的客户事实生成可执行辅导。' },
+          { role: 'user', content: buildSamCoachPrompt(input.samName, facts) },
+        ],
+        maxTokens: 900,
+      });
+      const content = String(response.choices?.[0]?.message?.content || '').trim() || '数据不足，暂不判断。请补充客户对话或关键人证据后重试。';
+      return { content, samName: input.samName, clientCount: samClients.length };
     }),
   }),
   // ── AD 指挥台聚合接口 ─────────────────────────────────────────────────────
