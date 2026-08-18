@@ -89,12 +89,18 @@ function AIWarJudgement({
   const { data: reviews = [] } = trpc.insights.getLatestReviews.useQuery({ clientId });
   const latestReview = reviews.find((review: any) => review.opportunityId === opportunityId && review.reviewType === "1toN") as any;
   const [generatedReview, setGeneratedReview] = useState("");
+  const [roleTaskReceipt, setRoleTaskReceipt] = useState<{ requested: number; created: number; skipped: number; error: string | null } | null>(null);
   const [forecastOpen, setForecastOpen] = useState(false);
   const reviewMutation = trpc.insights.reviewOneToN.useMutation({
-    onSuccess: (result) => {
+    onSuccess: (result: any) => {
       setGeneratedReview(result.content);
+      setRoleTaskReceipt(result.roleTaskCreation ?? null);
       utils.insights.getLatestReviews.invalidate({ clientId });
-      toast.success("AI 作战判断已基于当前系统事实生成");
+      utils.pod.listByOpportunity.invalidate({ opportunityId });
+      const receipt = result.roleTaskCreation;
+      if (receipt?.error) toast.warning("AI 作战判断已生成，但角色任务未自动创建");
+      else if (receipt?.created > 0) toast.success(`AI 作战判断已生成，并创建 ${receipt.created} 条角色任务`);
+      else toast.success("AI 作战判断已基于当前系统事实生成；未发现新增的可验证角色任务");
     },
     onError: (error) => toast.error(`AI 作战判断生成失败：${error.message}`),
   });
@@ -137,6 +143,7 @@ function AIWarJudgement({
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/70">判断</div>
           <p className="text-sm leading-6 text-slate-100">{judgement}</p>
           {content && <div className="prose prose-invert prose-sm mt-3 max-w-none border-t border-cyan-200/10 pt-3 text-xs leading-6 text-slate-300 prose-headings:text-cyan-100 prose-strong:text-slate-100"><ReactMarkdown>{content}</ReactMarkdown></div>}
+          {roleTaskReceipt && <div className={cn("mt-3 rounded-lg border px-3 py-2.5 text-xs leading-5", roleTaskReceipt.error ? "border-amber-400/25 bg-amber-400/[0.06] text-amber-100" : "border-emerald-400/25 bg-emerald-400/[0.06] text-emerald-100")}><div className="font-semibold">角色任务创建回执</div>{roleTaskReceipt.error ? <p className="mt-1">{roleTaskReceipt.error}</p> : <p className="mt-1">本次从结构化 Review 读取 {roleTaskReceipt.requested} 条任务；已创建 {roleTaskReceipt.created} 条，因相同角色与标题已存在而跳过 {roleTaskReceipt.skipped} 条。请在“行动任务”页确认责任与完成标准。</p>}</div>}
           {!content && hasEvidence && <p className="mt-3 text-xs leading-5 text-slate-500">尚未生成 AI Review。点击右上角按钮后，系统将基于本商机已有事实生成完整判断；生成结果需由负责人审核后才能转化为任务。</p>}
         </div>
         <div className="space-y-3 bg-slate-950/60 p-4">

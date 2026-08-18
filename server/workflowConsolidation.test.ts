@@ -92,6 +92,19 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain("数据不足");
   });
 
+  it("以严格 JSON Schema 输出 1→N Review 的角色行动，并向商机作战室返回可靠创建回执", () => {
+    const routers = projectFile("server/routers.ts");
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    expect(routers).toContain('name: "deal_review_with_role_actions"');
+    expect(routers).toContain('strict: true');
+    expect(routers).toContain("roleTaskCreation");
+    expect(routers).toContain("createdRoleTaskCount");
+    expect(routers).toContain("skippedRoleTaskCount");
+    expect(routers).not.toContain("const actionSection = reviewContent.split");
+    expect(opportunityRoom).toContain("角色任务创建回执");
+    expect(opportunityRoom).toContain("roleTaskReceipt");
+  });
+
   it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");

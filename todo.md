@@ -911,3 +911,7 @@
 - [x] 4-A 商机作战室调兵入场：按阶段自动推荐 SA/RSM/SAM 介入并一键创建角色任务
 - [x] 4-B Deal Review 后角色分工确认：LLM 提取分角色行动并创建 actionItems
 - [x] 数据库迁移：meetingMinutes.aiPostAnalysis / opportunities.assignedSaId+Name / actionItems.sourceReviewId
+
+## Command 3.0 Deal Review 行动闭环强化
+- [x] 用 JSON Schema 结构化输出替代 1→N Review 的 Markdown 正则角色行动解析
+- [x] 在商机作战室明确展示本次 Review 创建的角色任务数量与失败原因

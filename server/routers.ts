@@ -1873,37 +1873,98 @@ AI质疑层规则（内嵌在以上各节中执行）：
 
       // Inject Deal Map diagnostic context for 1→N Review
       const dealDiag = await getDealDiagnosticContext(input.clientId, input.opportunityId);
-      const enrichedDealPrompt = prompt + dealDiag;
+      const enrichedDealPrompt = `${prompt}${dealDiag}
+
+请严格按 JSON Schema 返回，不要在 JSON 外输出任何文字。将上方要求的完整 Markdown Review 放入 reviewContent 字段；roleActions 只保留基于已有事实可执行的 AD、SAM、SA 行动（最多每个角色一项）。没有可验证行动时返回空数组，绝不能为了填满角色而编造任务。`;
       const res = await invokeLLM({
         model: "gpt-5-mini",
+        maxCompletionTokens: 1800,
         messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedDealPrompt }],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "deal_review_with_role_actions",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                reviewContent: { type: "string", description: "完整的 Markdown 格式 1→N 商机 Review" },
+                roleActions: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      role: { type: "string", enum: ["AD", "SAM", "SA"] },
+                      title: { type: "string", description: "不超过 100 字的可执行任务标题" },
+                      description: { type: "string", description: "任务的事实依据、完成标准或协作依赖" },
+                    },
+                    required: ["role", "title", "description"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["reviewContent", "roleActions"],
+              additionalProperties: false,
+            },
+          },
+        },
       });
-      const reviewContent = String(res.choices[0].message.content || "");
-      await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
-      // Command 3.0: Extract role-based actions from review and create actionItems
+      const rawReview = String(res.choices[0].message.content || "");
+      let reviewContent = rawReview;
+      let roleActions: Array<{ role: "AD" | "SAM" | "SA"; title: string; description: string }> = [];
+      let actionTaskError: string | null = null;
       try {
-        const actionSection = reviewContent.split(/##\s*\d+\.\s*本周行动分工/i)[1] || "";
-        const adMatch = actionSection.match(/\*\*AD[：:]\*\*\s*(.+)/);
-        const samMatch = actionSection.match(/\*\*SAM[：:]\*\*\s*(.+)/);
-        const saMatch = actionSection.match(/\*\*SA[：:]\*\*\s*(.+)/);
+        const structured = JSON.parse(rawReview);
+        reviewContent = String(structured.reviewContent || "数据不足，暂不判断。");
+        roleActions = Array.isArray(structured.roleActions)
+          ? structured.roleActions.filter((action: any) => ["AD", "SAM", "SA"].includes(action?.role) && typeof action?.title === "string" && action.title.trim().length > 3)
+          : [];
+      } catch {
+        actionTaskError = "AI Review 未返回可验证的结构化角色行动；本次未自动创建 POD 任务。";
+      }
+      await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
+      let createdRoleTaskCount = 0;
+      let skippedRoleTaskCount = 0;
+      if (!actionTaskError) try {
         const { podTasks } = await import("../drizzle/schema");
-        const { eq: eqFn2 } = await import("drizzle-orm");
-        const roleActions = [
-          { role: "AD", action: adMatch?.[1]?.trim() },
-          { role: "SAM", action: samMatch?.[1]?.trim() },
-          { role: "SA", action: saMatch?.[1]?.trim() },
-        ].filter(r => r.action && r.action.length > 3);
-        if (db) for (const ra of roleActions) {
+        const { and: andFn, eq: eqFn } = await import("drizzle-orm");
+        if (!db) throw new Error("数据库不可用");
+        for (const action of roleActions) {
+          const normalizedTitle = action.title.trim().slice(0, 100);
+          const existing = await db.select({ id: podTasks.id }).from(podTasks).where(andFn(
+            eqFn(podTasks.opportunityId, input.opportunityId),
+            eqFn(podTasks.assignedRole, action.role),
+            eqFn(podTasks.title, normalizedTitle),
+          ));
+          if (existing.length > 0) {
+            skippedRoleTaskCount += 1;
+            continue;
+          }
           await db.insert(podTasks).values({
             clientId: input.clientId,
             opportunityId: input.opportunityId,
-            assignedRole: ra.role as any,
-            title: ra.action!.slice(0, 100),
-            description: "来自 1→N AI Review 的分角色行动建议",
+            assignedRole: action.role,
+            title: normalizedTitle,
+            description: action.description.trim().slice(0, 500) || "来自 1→N AI Review 的分角色行动建议",
           });
+          createdRoleTaskCount += 1;
         }
-      } catch (_) { /* non-blocking */ }
-      return { content: reviewContent, stage: opp.stage, daysInStage, stagnationRisk, championStatus };
+      } catch (error) {
+        actionTaskError = `角色任务创建失败：${error instanceof Error ? error.message : "未知错误"}`;
+      }
+      return {
+        content: reviewContent,
+        stage: opp.stage,
+        daysInStage,
+        stagnationRisk,
+        championStatus,
+        roleTaskCreation: {
+          requested: roleActions.length,
+          created: createdRoleTaskCount,
+          skipped: skippedRoleTaskCount,
+          error: actionTaskError,
+        },
+      };
     }),
 
     // P1c: Buying Group 覆盖分析 — 权力路径分析 + Champion→EB路径完整性
