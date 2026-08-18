@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -957,7 +958,9 @@ function ProductDocsTab() {
 }
 // ─── AI方案定制 Tab ──────────────────────────────────────────────────────────
 
-function AIArsenalTab() {
+type WeaponContext = { clientId?: number; clientName?: string; opportunityName?: string; stage?: string; product?: string; competitor?: string; focus?: string };
+
+function AIArsenalTab({ weaponContext }: { weaponContext?: WeaponContext }) {
   const [category, setCategory] = useState<"方案类" | "弹药类" | "话术类">("方案类");
   const [prompt, setPrompt] = useState("");
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
@@ -966,9 +969,10 @@ function AIArsenalTab() {
   const [result, setResult] = useState<{ id: number; content: string; title: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [hydratedContextKey, setHydratedContextKey] = useState("");
 
   const { data: docs = [] } = trpc.productDocs.list.useQuery(undefined);
-  const { data: history = [], refetch: refetchHistory } = trpc.arsenalAI.list.useQuery(undefined);
+  const { data: history = [], refetch: refetchHistory } = trpc.arsenalAI.list.useQuery(weaponContext?.clientId ? { clientId: weaponContext.clientId } : undefined);
   const generateMut = trpc.arsenalAI.generate.useMutation({
     onSuccess: (data) => { setResult(data); refetchHistory(); },
     onError: (e) => toast.error("生成失败: " + e.message),
@@ -977,11 +981,27 @@ function AIArsenalTab() {
     onSuccess: () => { toast.success("已删除"); refetchHistory(); },
   });
 
+  const contextKey = [weaponContext?.clientId, weaponContext?.opportunityName, weaponContext?.stage, weaponContext?.product, weaponContext?.competitor, weaponContext?.focus].filter(Boolean).join("|");
+  useEffect(() => {
+    if (!contextKey || hydratedContextKey === contextKey) return;
+    const details = [
+      weaponContext?.clientName ? `客户：${weaponContext.clientName}` : "",
+      weaponContext?.opportunityName ? `商机：${weaponContext.opportunityName}` : "",
+      weaponContext?.stage ? `当前阶段：${weaponContext.stage}` : "",
+      weaponContext?.product ? `关联产品：${weaponContext.product}` : "",
+      weaponContext?.competitor ? `已确认竞品：${weaponContext.competitor}` : "",
+      weaponContext?.focus ? `当前需要补强的赢单证据：${weaponContext.focus}` : "",
+    ].filter(Boolean).join("\n");
+    setPrompt(`${details}\n\n请基于以上已入库商机事实，生成可供负责人审核的${weaponContext?.competitor ? "竞争材料或差异化方案" : "方案材料"}。请将未确认事项明确标为待验证假设，不要编造客户承诺或数据。`);
+    if (weaponContext?.competitor) setCategory("弹药类");
+    setHydratedContextKey(contextKey);
+  }, [contextKey, hydratedContextKey, weaponContext]);
+
   const handleGenerate = async () => {
     if (!prompt.trim()) { toast.error("请描述你的需求"); return; }
     setGenerating(true); setResult(null);
     try {
-      await generateMut.mutateAsync({ category, prompt: prompt.trim(), docIds: selectedDocIds.length > 0 ? selectedDocIds : undefined, targetContact: targetContact || undefined });
+      await generateMut.mutateAsync({ category, prompt: prompt.trim(), docIds: selectedDocIds.length > 0 ? selectedDocIds : undefined, clientId: weaponContext?.clientId, targetContact: targetContact || undefined, title: weaponContext?.opportunityName ? `${weaponContext.clientName || "客户"} · ${weaponContext.opportunityName} · ${category}` : undefined });
     } finally { setGenerating(false); }
   };
 
@@ -1008,6 +1028,7 @@ function AIArsenalTab() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="space-y-4">
+        {weaponContext?.opportunityName && <div className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.06] p-3"><div className="flex items-center gap-2 text-xs font-semibold text-cyan-100"><Sparkles className="h-3.5 w-3.5" />来自商机作战室的上下文</div><p className="mt-1 text-[11px] leading-5 text-slate-300">{weaponContext.clientName} · {weaponContext.opportunityName}{weaponContext.stage ? ` · ${weaponContext.stage}` : ""}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">已预填当前作战事实；请在生成前审阅并补充需求，AI 不会把未确认信息写成客户结论。</p></div>}
         <div>
           <label className="text-sm font-medium mb-2 block">输出类型</label>
           <div className="grid grid-cols-3 gap-2">
@@ -1345,13 +1366,26 @@ function QuoteToolTab() {
 // ─── 主页面 ──────────────────────────────────────────────────────────────────
 
 export default function Arsenal() {
+  const [location] = useLocation();
+  const params = new URLSearchParams(location.split("?")[1] || "");
+  const contextClientId = Number(params.get("clientId"));
+  const weaponContext: WeaponContext | undefined = Number.isFinite(contextClientId) && contextClientId > 0 ? {
+    clientId: contextClientId,
+    clientName: params.get("clientName") || undefined,
+    opportunityName: params.get("opportunity") || undefined,
+    stage: params.get("stage") || undefined,
+    product: params.get("product") || undefined,
+    competitor: params.get("competitor") || undefined,
+    focus: params.get("focus") || undefined,
+  } : undefined;
+  const initialTab = params.get("tab") === "ai" ? "ai" : "docs";
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">武器库</h1>
         <p className="text-muted-foreground text-sm mt-1">产品文档管理 · AI方案定制 · 成功案例库 · 智能报价工具 · 竞品阻击包</p>
       </div>
-      <Tabs defaultValue="docs" className="space-y-4">
+      <Tabs key={initialTab} defaultValue={initialTab} className="space-y-4">
         <TabsList className="grid grid-cols-6 w-full max-w-4xl">
           <TabsTrigger value="docs" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" /> 产品文档</TabsTrigger>
           <TabsTrigger value="cases" className="gap-1.5 text-xs"><BookOpen className="h-3.5 w-3.5" /> 成功案例库</TabsTrigger>
@@ -1362,7 +1396,7 @@ export default function Arsenal() {
         </TabsList>
         <TabsContent value="docs"><ProductDocsTab /></TabsContent>
         <TabsContent value="cases"><CaseStudiesTab /></TabsContent>
-        <TabsContent value="ai"><AIArsenalTab /></TabsContent>
+        <TabsContent value="ai"><AIArsenalTab weaponContext={weaponContext} /></TabsContent>
         <TabsContent value="champion"><ChampionAmmoTab /></TabsContent>
         <TabsContent value="killsheets"><KillSheetsTab /></TabsContent>
         <TabsContent value="quote"><QuoteToolTab /></TabsContent>

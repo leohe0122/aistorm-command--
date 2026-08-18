@@ -46,6 +46,17 @@ describe("作战工作流入口收敛", () => {
     expect(dailyBriefing).toContain("RSS 外部情报摘要");
   });
 
+  it("从商机作战室直达武器库，并携带可审核的客户与商机上下文", () => {
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    const arsenal = projectFile("client/src/pages/Arsenal.tsx");
+    expect(opportunityRoom).toContain("生成武器");
+    expect(opportunityRoom).toContain("tab: \"ai\"");
+    expect(opportunityRoom).toContain("clientName");
+    expect(arsenal).toContain("来自商机作战室的上下文");
+    expect(arsenal).toContain("未确认事项明确标为待验证假设");
+    expect(arsenal).toContain("clientId: weaponContext?.clientId");
+  });
+
   it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");
