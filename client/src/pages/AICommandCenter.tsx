@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { AlertTriangle, BarChart3, CheckCircle2, ChevronRight, Clock3, RefreshCw, Sparkles, Target, Users, Zap } from "lucide-react";
+import { AlertTriangle, BarChart3, CheckCircle2, ChevronRight, Clock3, MapPinned, RefreshCw, Sparkles, Target, Users, Wrench, Zap } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -106,6 +106,10 @@ export function AICommandCenter() {
   const [globalExpanded, setGlobalExpanded] = useState(false);
   const { data: dashboard, isLoading: dashboardLoading } = trpc.dashboard.summary.useQuery();
   const { data: me } = trpc.emailAuth.me.useQuery();
+  const userRole = (me as any)?.podRole || "AD";
+  const isSam = userRole === "SAM";
+  const isSaOrRsm = userRole === "SA" || userRole === "RSM";
+  const roleWorkbenchQuery = trpc.roleWorkbench.getMyDashboard.useQuery(undefined, { enabled: isSaOrRsm });
   const recommendationsQuery = trpc.adCommand.list.useQuery(undefined, { refetchInterval: 60_000 });
   const utils = trpc.useUtils();
   const refresh = trpc.adCommand.refresh.useMutation({
@@ -175,8 +179,6 @@ export function AICommandCenter() {
   if (dashboardLoading) return <div className="space-y-4 p-6"><Skeleton className="h-24 rounded-xl" /><Skeleton className="h-52 rounded-xl" /><Skeleton className="h-52 rounded-xl" /></div>;
 
   // Command 3.0: SAM role-specific view
-  const userRole = (me as any)?.podRole || "AD";
-  const isSam = userRole === "SAM";
   const samName = (me as any)?.name || "";
   const myClients = isSam ? ((dashboard as any)?.clients ?? []).filter((c: any) => c.assignedSamName === samName) : [];
   const myRecommendations = isSam ? recommendations.filter(r => r.assignedRole === "SAM" && r.status === "pending") : [];
@@ -224,6 +226,32 @@ export function AICommandCenter() {
             );
           })}
           {myClients.length === 0 && <div className="col-span-2 text-center text-muted-foreground py-8">暂无分配客户</div>}
+        </section>
+      </main>
+    );
+  }
+
+  if (isSaOrRsm) {
+    const workbench = roleWorkbenchQuery.data as any;
+    const roleLabel = userRole === "SA" ? "SA 技术定标工作台" : "RSM 属地推进工作台";
+    const roleDescription = userRole === "SA"
+      ? "仅展示已分配给你的商机；AI 聚焦技术决策人、验收标准与 POC 证据缺口。"
+      : "仅展示你负责客户下的活跃商机；AI 聚焦采购流程、属地渠道与关系推进证据。";
+    const icon = userRole === "SA" ? <Wrench className="h-5 w-5 text-violet-300" /> : <MapPinned className="h-5 w-5 text-amber-300" />;
+    const items = workbench?.workItems ?? [];
+    return (
+      <main className="space-y-5 p-4 md:p-6">
+        <header className="rounded-2xl border border-violet-500/20 bg-gradient-to-r from-violet-950/35 to-slate-950/30 p-5">
+          <div className="flex items-center gap-2">{icon}<h1 className="text-xl font-bold">{roleLabel}</h1></div>
+          <p className="mt-1 text-sm text-muted-foreground">{roleDescription}</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            {[["我的活跃商机", workbench?.summary?.activeDealCount ?? 0], ["需本周处理", workbench?.summary?.urgentDealCount ?? 0], ["待办任务", workbench?.summary?.openTaskCount ?? 0]].map(([label, value]) => <div key={String(label)} className="rounded-lg border border-white/10 bg-black/10 px-3 py-2"><p className="text-[11px] text-muted-foreground">{label}</p><p className="mt-1 text-xl font-semibold text-foreground">{value}</p></div>)}
+          </div>
+        </header>
+        {roleWorkbenchQuery.isLoading ? <div className="grid gap-3 md:grid-cols-2"><Skeleton className="h-40 rounded-xl" /><Skeleton className="h-40 rounded-xl" /></div> : null}
+        {!roleWorkbenchQuery.isLoading && items.length === 0 ? <section className="rounded-2xl border border-dashed bg-card p-10 text-center"><p className="font-medium">当前没有已分配给你的活跃商机</p><p className="mt-2 text-sm text-muted-foreground">系统不会把未分配商机或主观判断当成你的任务。请由 AD/SAM 在商机作战室完成角色分配或调兵入场。</p></section> : null}
+        <section className="grid gap-3 lg:grid-cols-2">
+          {items.map((item: any) => <article key={item.opportunityId} className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm"><div className="flex gap-3"><div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${item.isUrgent ? "border-amber-500/35 bg-amber-500/10 text-amber-200" : "border-violet-500/35 bg-violet-500/10 text-violet-200"}`}>{item.isUrgent ? <AlertTriangle className="h-4 w-4" /> : icon}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-sm font-semibold">{item.clientName} · {item.opportunityName}</h2><Badge variant="outline">{item.stage || "阶段待定义"}</Badge>{item.isUrgent ? <Badge variant="outline" className="border-amber-500/35 text-amber-200">需本周处理</Badge> : <Badge variant="outline" className="border-emerald-500/35 text-emerald-200">持续经营</Badge>}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{item.diagnostic}</p><p className="mt-3 text-xs text-foreground/80">已分配待办：{item.assignedTaskCount} 条{item.assignedTaskCount > 0 ? ` · ${item.tasks.map((task: any) => task.title).join("；")}` : " · 暂无明细任务，请进入作战室确认下一动作"}</p><div className="mt-3 flex gap-2"><Button size="sm" variant="outline" onClick={() => navigate(`/clients/${item.clientId}/opportunities/${item.opportunityId}`)}>进入商机作战室</Button></div></div></div></article>)}
         </section>
       </main>
     );

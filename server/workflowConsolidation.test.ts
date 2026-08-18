@@ -17,7 +17,7 @@ describe("作战工作流入口收敛", () => {
     const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
     expect(workstation).toContain("function ClientRelationshipReview");
     expect(workstation).toContain("trpc.insights.reviewZeroToOne.useMutation");
-    expect(workstation).toContain('client.stage !== "进入商机" && <ClientRelationshipReview');
+    expect(workstation).toContain('client.stage !== "进入商机" && <div id="client-relationship-review"');
   });
 
   it("将拜访前洞察保留在客户作战台，并继续支持 1-Pager 与策略回写", () => {
@@ -110,6 +110,22 @@ describe("作战工作流入口收敛", () => {
     expect(routers).not.toContain("require(");
     expect(routers).toContain('import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2"');
     expect(routers).toContain("samSelfCheck: protectedProcedure");
+  });
+
+  it("为 SA/RSM 提供主动式角色首页，并将 SAM 自检转为可验证事实的补录引导", () => {
+    const routers = projectFile("server/routers.ts");
+    const commandCenter = projectFile("client/src/pages/AICommandCenter.tsx");
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
+    expect(routers).toContain("roleWorkbench: router");
+    expect(routers).toContain("getMyDashboard: protectedProcedure");
+    expect(commandCenter).toContain("SA 技术定标工作台");
+    expect(commandCenter).toContain("RSM 属地推进工作台");
+    expect(commandCenter).toContain("trpc.roleWorkbench.getMyDashboard.useQuery");
+    expect(routers).toContain('name: "sam_fact_backfill_prompts"');
+    expect(routers).toContain("evidenceRequired");
+    expect(workstation).toContain("AI 事实补录引导");
+    expect(workstation).toContain("去补录事实");
+    expect(workstation).not.toContain("coachQuestions");
   });
 
   it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {

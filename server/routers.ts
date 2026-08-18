@@ -5922,24 +5922,59 @@ ${input.aiSuggestion}
       const champScore = m?.championScore ?? 0;
       const ebScore = m?.economicBuyerScore ?? 0;
       const painScore = m?.implicatePainScore ?? 0;
-      const prompt = `为负责客户"${client?.name || "未知"}"（阶段：${client?.stage || "未知"}）的SAM生成3个自检问题。
+      const prompt = `为负责客户"${client?.name || "未知"}"（阶段：${client?.stage || "未知"}）生成最多3项“待补录的可验证事实”。
 当前MEDDPICC：Champion=${champScore}/100, EB=${ebScore}/100, Pain=${painScore}/100
 
-问题要求：
-- 每个问题针对当前最弱的Win因子
-- 问题必须是SAM能用一句话回答的事实性问题
-- 如果SAM无法回答，说明该维度证据不足
+要求：
+- 每项只针对当前最弱的 Win 因子；不得要求 SAM 填写主观看法或猜测客户意图
+- 明确要补录到哪个事实入口：contact（关键人图谱）、signal（购买/外部信号）、meeting（拜访日志）或 meddpicc（已有事实依据备注）
+- evidenceRequired 必须写明可回溯来源，例如客户原话、拜访日期、关键人姓名、邮件/会议纪要或采购文件
+- 若现有数据不足以形成补录指引，返回空数组；不要编造事实
 
-直接输出3个问题，每个一行，前面加序号。不要解释框架。`;
+不要输出问题、评分结论或解释框架。`;
       const res = await invokeLLM({
         model: "gpt-5-mini",
-        maxCompletionTokens: 200,
+        maxCompletionTokens: 500,
         messages: [
           { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
           { role: "user", content: prompt },
         ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "sam_fact_backfill_prompts",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                items: {
+                  type: "array",
+                  maxItems: 3,
+                  items: {
+                    type: "object",
+                    properties: {
+                      target: { type: "string", enum: ["contact", "signal", "meeting", "meddpicc"] },
+                      title: { type: "string" },
+                      evidenceRequired: { type: "string" },
+                      captureHint: { type: "string" },
+                    },
+                    required: ["target", "title", "evidenceRequired", "captureHint"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["items"],
+              additionalProperties: false,
+            },
+          },
+        },
       });
-      return { content: String(res.choices?.[0]?.message?.content || "暂无法生成自检问题") };
+      try {
+        const parsed = JSON.parse(String(res.choices?.[0]?.message?.content || '{"items":[]}'));
+        return { items: Array.isArray(parsed.items) ? parsed.items : [] };
+      } catch {
+        return { items: [] };
+      }
     }),
   }),
   // ── AD 指挥台聚合接口 ─────────────────────────────────────────────────────
@@ -7054,6 +7089,102 @@ ${input.extractedText.slice(0, 4000)}
         ],
       });
       return { content: String(res.choices?.[0]?.message?.content || "数据不足，暂不判断") };
+    }),
+  }),
+
+  // ── Command 3.1：SA / RSM 主动式角色工作台 ────────────────────────────────
+  roleWorkbench: router({
+    getMyDashboard: protectedProcedure.query(async ({ ctx }) => {
+      const role = ctx.user.podRole;
+      if (role !== "SA" && role !== "RSM") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "该工作台仅向 SA 或 RSM 提供" });
+      }
+
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
+      const { clients: clientsTable, opportunities: opportunitiesTable, opportunityMeddpicc, podTasks, keyContacts } = await import("../drizzle/schema");
+      const [allClients, allOpportunities, allScores, allTasks, allContacts] = await Promise.all([
+        db.select().from(clientsTable),
+        db.select().from(opportunitiesTable),
+        db.select().from(opportunityMeddpicc),
+        db.select().from(podTasks),
+        db.select().from(keyContacts),
+      ]);
+
+      const ownedClients = role === "RSM"
+        ? allClients.filter(client => client.assignedRsmId === ctx.user.id)
+        : allClients;
+      const ownedClientIds = new Set(ownedClients.map(client => client.id));
+      const activeOpportunities = allOpportunities.filter(opportunity => opportunity.status === "活跃");
+      const assignedOpportunities = role === "SA"
+        ? activeOpportunities.filter(opportunity => opportunity.assignedSaId === ctx.user.id)
+        : activeOpportunities.filter(opportunity => ownedClientIds.has(opportunity.clientId));
+      const assignedOpportunityIds = new Set(assignedOpportunities.map(opportunity => opportunity.id));
+      const clientById = new Map(allClients.map(client => [client.id, client]));
+      const scoreByOpportunity = new Map(allScores.map(score => [score.opportunityId, score]));
+      const contactsByClient = new Map<number, typeof allContacts>();
+      for (const contact of allContacts) {
+        const current = contactsByClient.get(contact.clientId) ?? [];
+        current.push(contact);
+        contactsByClient.set(contact.clientId, current);
+      }
+
+      const openTasks = allTasks.filter(task => task.assignedRole === role && task.taskStatus !== "done" && (
+        assignedOpportunityIds.has(task.opportunityId ?? -1) || ownedClientIds.has(task.clientId)
+      ));
+      const tasksByOpportunity = new Map<number, typeof openTasks>();
+      for (const task of openTasks) {
+        if (!task.opportunityId) continue;
+        const current = tasksByOpportunity.get(task.opportunityId) ?? [];
+        current.push(task);
+        tasksByOpportunity.set(task.opportunityId, current);
+      }
+
+      const workItems = assignedOpportunities.map(opportunity => {
+        const client = clientById.get(opportunity.clientId);
+        const score = scoreByOpportunity.get(opportunity.id) as any;
+        const contacts = contactsByClient.get(opportunity.clientId) ?? [];
+        const assignedTasks = tasksByOpportunity.get(opportunity.id) ?? [];
+        const technicalDecisionMaker = contacts.find(contact => contact.buyingRole === "技术决策人");
+        const procurementContact = contacts.find(contact => contact.buyingRole === "经济决策人" || /(采购|法务)/.test(contact.title || ""));
+        const decisionCriteriaScore = Number(score?.decisionCriteriaScore ?? 0);
+        const decisionProcessScore = Number(score?.decisionProcessScore ?? 0);
+        const paperProcessScore = Number(score?.paperProcessScore ?? 0);
+        const isUrgent = role === "SA"
+          ? decisionCriteriaScore < 60 || !technicalDecisionMaker
+          : decisionProcessScore < 60 || paperProcessScore < 60 || !procurementContact;
+        const diagnostic = role === "SA"
+          ? !technicalDecisionMaker
+            ? "未入库技术决策人，不能假设 POC 验收标准已被覆盖"
+            : `D1 决策标准 ${decisionCriteriaScore}/100；需以已确认技术标准校准验证动作`
+          : !procurementContact
+            ? "尚未入库采购或法务联系人，不能假设属地流程已打通"
+            : `D2 决策流程 ${decisionProcessScore}/100，P 采购流程 ${paperProcessScore}/100；需核验本地流程证据`;
+        return {
+          clientId: opportunity.clientId,
+          clientName: client?.name ?? "未知客户",
+          opportunityId: opportunity.id,
+          opportunityName: opportunity.name,
+          stage: opportunity.stage,
+          isUrgent,
+          diagnostic,
+          decisionCriteriaScore,
+          decisionProcessScore,
+          paperProcessScore,
+          assignedTaskCount: assignedTasks.length,
+          tasks: assignedTasks.map(task => ({ id: task.id, title: task.title, dueDate: task.dueDate, taskStatus: task.taskStatus })),
+        };
+      }).sort((a, b) => Number(b.isUrgent) - Number(a.isUrgent));
+
+      return {
+        role,
+        summary: {
+          activeDealCount: workItems.length,
+          urgentDealCount: workItems.filter(item => item.isUrgent).length,
+          openTaskCount: openTasks.length,
+        },
+        workItems,
+      };
     }),
   }),
 
