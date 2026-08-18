@@ -13,6 +13,7 @@ import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildD
 import { calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
+import { getAccountDiagnosticContext, getDealDiagnosticContext } from "./diagnosticContext";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -352,9 +353,12 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
   "securityAngle": "具体的安全切入点（1-2句，结合客户痛点和我们的产品能力，不超过50字）",
   "reasoning": "建议理由（2-3句，说明为什么选这个敲门砖和切入点，引用了哪些情报或产品能力；如引用了待核实数据，必须注明来源）"
 }`;
+      // Inject Account Map diagnostic context if available
+      const accountDiag = await getAccountDiagnosticContext(input.clientId);
+      const enrichedPrompt = prompt + accountDiag;
       const result = await invokeLLM({
         model: 'gpt-4o-mini',
-        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedPrompt }],
       });
       const textContent = result.choices[0]?.message?.content;
       const text = typeof textContent === 'string' ? textContent : JSON.stringify(textContent);
@@ -1566,9 +1570,12 @@ ${contradictionBlock}
 - 如果某项数据缺失，明确标注"缺少X数据，以下判断存在盲区"
 - 如果所有接触均为正式会议，必须在关系深度评估中标注：⚠️ 所有接触为正式场合，客户真实态度存在不确定性`;
 
+      // Inject Account Map diagnostic context for 0→1 Review
+      const reviewAccountDiag = await getAccountDiagnosticContext(input.clientId);
+      const enrichedReviewPrompt = prompt + reviewAccountDiag;
       const res = await invokeLLM({
         model: "gpt-5-mini",
-        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedReviewPrompt }],
       });
       const content = String(res.choices[0].message.content || "");
       await saveAiReview({ clientId: input.clientId, opportunityId: null, reviewType: "0to1", content, createdBy: null });
@@ -1813,9 +1820,12 @@ AI质疑层规则（内嵌在以上各节中执行）：
 - 缺失数据维度：标注📭 数据不足，无法判断，建议优先填补
 - Champion评分高但无非正式接触：在Champion评估中标注⚠️ Political Will真实性待验证`;
 
+      // Inject Deal Map diagnostic context for 1→N Review
+      const dealDiag = await getDealDiagnosticContext(input.clientId, input.opportunityId);
+      const enrichedDealPrompt = prompt + dealDiag;
       const res = await invokeLLM({
         model: "gpt-5-mini",
-        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedDealPrompt }],
       });
       const reviewContent = String(res.choices[0].message.content || "");
       await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
@@ -2812,9 +2822,12 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
 ### 风险与注意事项
 （本次拜访发现的潜在风险或需要注意的信号）`;
 
+      // Inject Account Map diagnostic context for richer analysis
+      const meetingAccountDiag = await getAccountDiagnosticContext(input.clientId);
+      const enrichedMeetingPrompt = prompt + meetingAccountDiag;
       const res = await invokeLLM({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedMeetingPrompt }],
       });
       const aiMinutes = String(res.choices[0].message.content || "");
 
@@ -5205,7 +5218,10 @@ ${baselineContext}
 5. **差异化定位**：针对竞品，如何在客户心中建立独特认知？
 
 请用简洁的中文输出，每项不超过3句话，直接可用于 SAM 作战指导。`;
-        const result = await invokeLLM({ messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }], maxTokens: 1200 });
+        // Inject Account Map diagnostic context for Win Strategy
+        const winAccountDiag = await getAccountDiagnosticContext(input.clientId);
+        const enrichedWinPrompt = prompt + winAccountDiag;
+        const result = await invokeLLM({ messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedWinPrompt }], maxTokens: 1200 });
         const rawContent = result.choices?.[0]?.message?.content;
         const aiSuggestion = typeof rawContent === 'string' ? rawContent : '';
         // Save to DB

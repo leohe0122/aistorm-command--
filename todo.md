@@ -894,3 +894,10 @@
 - [x] 在客户作战台与商机作战室呈现 Account Map、覆盖矩阵、3 Why、商业价值和 Go/No-Go
 - [x] 校准 Command 2.0 六项导航语义、完成 HKT 真实事实验收、生产发布与 GitHub 同步
 - [x] 将 SALES_METHODOLOGY_SYSTEM_PROMPT 注入 routers.ts 中全部 LLM 调用点（31 处），消除独立 prompt 的事实约束不一致
+- [x] 为高频场景（拜访前洞察、会议纪要解析、0→1 Review、1→N Review、Win Strategy）追加 Account/Deal Map 诊断层上下文注入
+- [x] 为高频场景（拜访前洞察、会议纪要解析、0→1 Review、1→N Review、Win Strategy）追加 Account/Deal Map 诊断层上下文注入
+- [ ] 修复 Deal Health 硬编码 null：在原生快照和 1→N Review 中实际计算 11 维加权分数
+- [ ] 事件驱动自动刷新：拜访日志提交、购买信号录入、Go/No-Go 保存、MEDDPICC 变化后非阻塞触发单客户原生研判
+- [ ] 拜访前洞察注入 6 张表上下文：3 Why、Pain 年度价值、Go/No-Go 门控状态和最弱门控
+- [ ] MEDDPICC 录入时的 AI 证据挑战：Champion/EB ≥75 时 LLM 验证并返回挑战结论
+- [ ] Challenger Reframe 由 LLM 检测替换关键词匹配
