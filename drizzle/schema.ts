@@ -261,6 +261,8 @@ export const actionItems = mysqlTable("action_items", {
   taskType: mysqlEnum("taskType", ["external_sales", "internal_resource"]).default("external_sales"), // 对外销售 vs 内部资源协调
   opportunityId: int("opportunityId"),  // 关联子商机（可选）
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  /** 来源于哪次 Deal Review（用于追溯） */
+  sourceReviewId: int("sourceReviewId"),
 });
 
 export type ActionItem = typeof actionItems.$inferSelect;
@@ -318,6 +320,13 @@ export const meetingMinutes = mysqlTable("meeting_minutes", {
   contactType: mysqlEnum("contactType", ["formal_meeting", "dinner_meeting", "phone_call", "video_call", "instant_message", "event", "customer_initiated"]).default("formal_meeting"),
   initiatedBy: mysqlEnum("initiatedBy", ["sam", "customer", "mutual"]).default("sam"),
   entrySource: mysqlEnum("entrySource", ["manual", "feishu_miaoji", "whatsapp_quick", "feishu_bot"]).default("manual"),
+  /** AI 拜访后结论卡（Win进展/MEDDPICC建议/下次优先/风险预警） */
+  aiPostAnalysis: json("aiPostAnalysis").$type<{
+    winProgress: string;
+    meddpiccUpdates: Array<{ dim: string; label: string; suggestedScore: number; reason: string }>;
+    nextMeetingPriority: string;
+    riskWarning: string | null;
+  }>(),
 });
 
 export type MeetingMinute = typeof meetingMinutes.$inferSelect;
@@ -757,6 +766,9 @@ export const opportunities = mysqlTable("opportunities", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   /** 当前商机子阶段开始时间（每次阶段推进时更新）。用于计算商机停滞天数。 */
   stageChangedAt: timestamp("stageChangedAt").defaultNow().notNull(),
+  /** 负责SA */
+  assignedSaId: int("assignedSaId"),
+  assignedSaName: varchar("assignedSaName", { length: 100 }),
 });
 export type Opportunity = typeof opportunities.$inferSelect;
 export type InsertOpportunity = typeof opportunities.$inferInsert;

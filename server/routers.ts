@@ -2945,7 +2945,37 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
       });
       // Event-driven: non-blocking single-client native refresh after meeting log saved
       setImmediate(() => triggerSingleClientRefresh(input.clientId));
-      return { id, aiMinutes, meddpiccSuggestions, hookTopicSuggestion, securityAngleSuggestion, detectedCompetitors };
+      // SAM Post-Meeting Conclusion Card: synchronous LLM analysis
+      let postMeetingCard: any = null;
+      try {
+        const clientForCard = await getClientById(input.clientId);
+        const meddpiccForCard = await getMeddpiccByClientId(input.clientId);
+        const meddpiccSummaryCard = meddpiccForCard ? `Champion=${(meddpiccForCard as any).championScore}/100, EB=${(meddpiccForCard as any).economicBuyerScore}/100, Pain=${(meddpiccForCard as any).implicatePainScore}/100, Competition=${(meddpiccForCard as any).competitionScore}/100` : "暂无评分";
+        const championNameCard = (meddpiccForCard as any)?.championName || "未找到";
+        const cardRes = await invokeLLM({
+          model: "gpt-5-mini",
+          maxCompletionTokens: 600,
+          messages: [
+            { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
+            { role: "user", content: `以下是刚录入的拜访记录。\n\n客户：${input.clientName}，阶段：${clientForCard?.stage || "未知"}\n拜访日期：${input.meetingDate}\n拜访内容：${aiMinutes || input.keyPoints}\n当前MEDDPICC：${meddpiccSummaryCard}\n当前Champion：${championNameCard}\n\n请输出以下四项（必须基于本次拜访内容，不得补充未提到的信息）：\n1. Win公式本次进展：Pain/Power/Champion/Value/Control中哪个因子有实质推进？引用原文。\n2. MEDDPICC建议更新：哪1-2个维度本次有新证据支持评分变化？新评分建议和理由（无新证据不建议变化）。\n3. 下次拜访最高优先任务（一件事）：基于当前最弱Win因子，下次必须验证或推进的一件事。\n4. 风险预警（如无风险可不填）：本次拜访是否出现No Decision信号、竞品动态或关系倒退迹象？\n\n以JSON返回：\n{"winProgress":"...","meddpiccUpdates":[{"dim":"C1","label":"Champion","suggestedScore":50,"reason":"..."}],"nextMeetingPriority":"...","riskWarning":"..." }` }
+          ],
+        });
+        const cardText = String(cardRes.choices?.[0]?.message?.content || "");
+        const jsonMatch = cardText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          postMeetingCard = JSON.parse(jsonMatch[0]);
+          // Persist to DB
+          const db = await getDb();
+          if (db && id) {
+            const { meetingMinutes: mm } = await import("../drizzle/schema");
+            const { eq } = await import("drizzle-orm");
+            await db.update(mm).set({ aiPostAnalysis: postMeetingCard }).where(eq(mm.id, id));
+          }
+        }
+      } catch (e) {
+        console.warn("[Command3] Post-meeting card generation failed:", e);
+      }
+      return { id, aiMinutes, meddpiccSuggestions, hookTopicSuggestion, securityAngleSuggestion, detectedCompetitors, postMeetingCard };
     }),
     quickLog: publicProcedure.input(z.object({
       clientId: z.number(),

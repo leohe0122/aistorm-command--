@@ -174,6 +174,14 @@ export default function MeetingMinutes() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  // Command 3.0: Post-meeting conclusion card
+  const [postMeetingCard, setPostMeetingCard] = useState<{
+    winProgress: string;
+    meddpiccUpdates: Array<{ dim: string; label: string; suggestedScore: number; reason: string }>;
+    nextMeetingPriority: string;
+    riskWarning: string | null;
+  } | null>(null);
+  const [showPostMeetingCard, setShowPostMeetingCard] = useState(false);
 
   const { data: clients = [] } = trpc.clients.list.useQuery();
   const { data: meetings = [], refetch } = trpc.meetings.listByClient.useQuery(
@@ -368,6 +376,11 @@ export default function MeetingMinutes() {
         setDetectedCompetitors(data.detectedCompetitors);
       } else {
         setDetectedCompetitors([]);
+      }
+      // Command 3.0: Show post-meeting conclusion card if available
+      if ((data as any).postMeetingCard) {
+        setPostMeetingCard((data as any).postMeetingCard);
+        setShowPostMeetingCard(true);
       }
       const compMsg = data.detectedCompetitors?.length ? `，识别到竞品: ${data.detectedCompetitors.join(", ")}` : "";
       toast.success(`拜访日志已生成${data.meddpiccSuggestions?.length ? `，发现 ${data.meddpiccSuggestions.length} 条 MEDDPICC 更新建议` : ""}${compMsg}`);
@@ -1129,6 +1142,72 @@ export default function MeetingMinutes() {
           </div>
         </DialogContent>
       </Dialog>
+      {/* Command 3.0: Post-Meeting Conclusion Card Modal */}
+      {showPostMeetingCard && postMeetingCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <span className="text-xl">🎯</span> 拜访结论卡
+              </h3>
+              <button onClick={() => setShowPostMeetingCard(false)} className="text-muted-foreground hover:text-foreground text-xl">&times;</button>
+            </div>
+            <div className="space-y-3">
+              <div className="bg-muted/30 rounded-lg p-3">
+                <div className="text-xs font-medium text-muted-foreground mb-1">Win 公式本次进展</div>
+                <div className="text-sm text-foreground">{postMeetingCard.winProgress}</div>
+              </div>
+              {postMeetingCard.meddpiccUpdates?.length > 0 && (
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                  <div className="text-xs font-medium text-blue-400 mb-2">MEDDPICC 建议更新</div>
+                  {postMeetingCard.meddpiccUpdates.map((u, i) => (
+                    <div key={i} className="text-sm text-foreground mb-1">
+                      <span className="font-medium">{u.label}({u.dim})</span>：建议 {u.suggestedScore}/100 — {u.reason}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                <div className="text-xs font-medium text-emerald-400 mb-1">下次拜访最高优先</div>
+                <div className="text-sm text-foreground">{postMeetingCard.nextMeetingPriority}</div>
+              </div>
+              {postMeetingCard.riskWarning && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <div className="text-xs font-medium text-red-400 mb-1">风险预警</div>
+                  <div className="text-sm text-foreground">{postMeetingCard.riskWarning}</div>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 pt-2">
+              {postMeetingCard.meddpiccUpdates?.length > 0 && (
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => {
+                    // Auto-apply MEDDPICC suggestions
+                    if (selectedClientId && postMeetingCard.meddpiccUpdates?.length) {
+                      const updates: Record<string, number> = {};
+                      for (const u of postMeetingCard.meddpiccUpdates) {
+                        const dimMap: Record<string, string> = { C1: "championScore", E: "economicBuyerScore", D1: "decisionCriteriaScore", D2: "decisionProcessScore", P: "paperProcessScore", I: "implicatePainScore", C2: "competitionScore", M: "metricsScore" };
+                        if (dimMap[u.dim]) updates[dimMap[u.dim]] = u.suggestedScore;
+                      }
+                      // Use the existing meddpicc upsert
+                      (trpc as any).meddpicc.upsert.mutate({ clientId: selectedClientId, ...updates });
+                      toast.success("MEDDPICC 已按 AI 建议更新");
+                    }
+                    setShowPostMeetingCard(false);
+                  }}
+                >
+                  采纳 MEDDPICC 建议
+                </Button>
+              )}
+              <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowPostMeetingCard(false)}>
+                关闭
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -901,3 +901,13 @@
 - [x] 拜访前洞察注入 6 张表上下文：3 Why、Pain 年度价值、Go/No-Go 门控状态和最弱门控
 - [x] MEDDPICC 录入时的 AI 证据挑战：Champion/EB ≥75 时 LLM 验证并返回挑战结论
 - [x] Challenger Reframe 由 LLM 检测替换关键词匹配
+
+## Command 3.0 角色原生化
+- [x] 1-A SAM 拜访后结论卡：LLM 同步分析 Win 进展/MEDDPICC 建议/下次优先/风险预警，前端弹窗可采纳
+- [ ] 1-B SAM 首页分支渲染：按 podRole 显示"我的战场快照"而非 AD 看板
+- [ ] 1-C SAM AI Coach 自检：客户作战台内按需生成 3 个自我检测问题
+- [ ] 2-A/2-B SA 技术定标工作台：sa.getTechReadiness 接口 + PodCenter SA 角色视图
+- [ ] 3-A/3-B RSM 属地工作台：rsm.getLocalActionPlan 接口 + PodCenter RSM 角色视图
+- [ ] 4-A 商机作战室调兵入场：按阶段自动推荐 SA/RSM/SAM 介入并一键创建角色任务
+- [ ] 4-B Deal Review 后角色分工确认：LLM 提取分角色行动并创建 actionItems
+- [ ] 数据库迁移：meetingMinutes.aiPostAnalysis / opportunities.assignedSaId+Name / actionItems.sourceReviewId
