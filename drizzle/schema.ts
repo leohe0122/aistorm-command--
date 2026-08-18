@@ -629,7 +629,11 @@ export const arsenalGenerated = mysqlTable("arsenal_generated", {
   docIds: json("docIds").$type<number[]>(),   // 参考的产品文档ID列表
   generatedContent: text("generatedContent").notNull(),  // AI生成的内容
   clientId: int("clientId"),                 // 关联客户（可选）
+  opportunityId: int("opportunityId"),       // 关联商机（可选）；方案仅在进入该商机时使用
   targetContact: varchar("targetContact", { length: 100 }),  // 目标联系人
+  adoptionStatus: mysqlEnum("adoptionStatus", ["待确认", "已采用", "未采用"]).default("待确认").notNull(),
+  customerFeedback: text("customerFeedback"), // 人工录入的客户反馈；作为下次生成的待验证上下文
+  outcomeUpdatedAt: timestamp("outcomeUpdatedAt"),
   createdBy: varchar("createdBy", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

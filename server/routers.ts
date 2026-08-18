@@ -47,6 +47,7 @@ import { saveAiReview, getLatestReviewsByClient, getLatestReviewByType } from ".
 import { getClientMetrics, upsertClientMetrics } from "./db";
 import { getAllCaseStudies, getCaseStudiesByIndustry, insertCaseStudy, updateCaseStudy, deleteCaseStudy } from "./db";
 import { eq } from "drizzle-orm";
+import { SALES_METHODOLOGY_SYSTEM_PROMPT } from "./salesMethodology";
 
 async function loadCustomerReadiness(clientId: number) {
   const db = await getDb();
@@ -4400,12 +4401,15 @@ ${context}
   arsenalAI: router({
     // 获取AI生成历史
     list: publicProcedure
-      .input(z.object({ clientId: z.number().optional() }).optional())
+      .input(z.object({ clientId: z.number().optional(), opportunityId: z.number().optional() }).optional())
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) return [];
         const { arsenalGenerated } = await import('../drizzle/schema');
         const { eq, desc } = await import('drizzle-orm');
+        if (input?.opportunityId) {
+          return db.select().from(arsenalGenerated).where(eq(arsenalGenerated.opportunityId, input.opportunityId)).orderBy(desc(arsenalGenerated.createdAt));
+        }
         if (input?.clientId) {
           return db.select().from(arsenalGenerated).where(eq(arsenalGenerated.clientId, input.clientId)).orderBy(desc(arsenalGenerated.createdAt));
         }
@@ -4419,14 +4423,15 @@ ${context}
         prompt: z.string().min(1),
         docIds: z.array(z.number()).optional(),
         clientId: z.number().optional(),
+        opportunityId: z.number().optional(),
         targetContact: z.string().optional(),
         title: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
         const db = await getDb();
         if (!db) throw new Error('Database unavailable');
-        const { arsenalGenerated, productDocs } = await import('../drizzle/schema');
-        const { inArray } = await import('drizzle-orm');
+        const { arsenalGenerated, productDocs, opportunities, opportunityMeddpicc, killSheets } = await import('../drizzle/schema');
+        const { inArray, eq, desc } = await import('drizzle-orm');
 
         // 读取参考文档内容
         let docContext = '';
@@ -4444,9 +4449,24 @@ ${context}
         };
 
         const guide = categoryGuide[input.category] || '';
-        const systemMsg = `你是AIStorm（亚信安全）的资深解决方案架构师，专注于网络安全产品的销售支持。你的任务是根据销售的需求描述，结合提供的产品文档，生成高质量的${input.category}材料。\n\n${guide}\n\n输出要求：\n- 使用Markdown格式，结构清晰\n- 语言专业但易懂，适合销售使用\n- 突出AIStorm产品的核心价值\n- 内容要具体，避免空话套话\n- 如有具体数据（来自文档），请引用`;
-
-        const userMsg = `销售需求描述：\n${input.prompt}\n\n${docContext ? `参考产品文档：\n${docContext}` : '（未选择参考文档，请基于AIStorm产品通用知识生成）'}`;
+        let opportunityContext = "【商机作战事实上下文】\n未关联商机：不得假设 MEDDPICC、痛点、竞争或客户决策条件。";
+        let historyContext = "【历史方案处置记录】\n暂无同商机经人工确认的采用或客户反馈记录。";
+        if (input.opportunityId) {
+          const [[opportunity], [meddpicc], relatedKillSheets, priorMaterials] = await Promise.all([
+            db.select().from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1),
+            db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1),
+            input.clientId ? db.select().from(killSheets).where(eq(killSheets.clientId, input.clientId)) : Promise.resolve([] as any[]),
+            db.select().from(arsenalGenerated).where(eq(arsenalGenerated.opportunityId, input.opportunityId)).orderBy(desc(arsenalGenerated.createdAt)).limit(5),
+          ]);
+          const meddpiccFacts = meddpicc ? `MEDDPICC：D1 决策标准 ${meddpicc.decisionCriteriaScore ?? 0}/4（${meddpicc.decisionCriteriaNotes || "证据待补"}）；I 痛点 ${meddpicc.implicatePainScore ?? 0}/4（${meddpicc.implicatePainNotes || "证据待补"}）；Champion ${meddpicc.championScore ?? 0}/4（${meddpicc.championNotes || "证据待补"}）。` : "MEDDPICC：数据不足，暂不判断。";
+          const blueSheetFacts = opportunity ? `客户业务目标：${opportunity.bizObjective || "数据不足"}；已入库价值主张：${opportunity.valueProposition || "数据不足"}；当前 Champion：${opportunity.champion || "数据不足"}；竞争态势：${opportunity.blueSheetCompetitor || opportunity.competitorName || "数据不足"}；当前赢单策略：${opportunity.winStrategy || "数据不足"}` : "Blue Sheet：数据不足，暂不判断。";
+          const competitionFacts = relatedKillSheets.length ? relatedKillSheets.map((row: any) => `竞品：${row.competitorName || "待补"}；差异点：${row.keyDiffs || row.ourAdvantages || "待补"}；反制动作：${row.battleNotes || "待补"}`).join("\n") : "竞争事实：数据不足，暂不判断。";
+          opportunityContext = `【商机作战事实上下文】\n商机：${opportunity?.name || "待确认"}；阶段：${opportunity?.stage || "待确认"}\n${meddpiccFacts}\n${blueSheetFacts}\n${competitionFacts}\n要求：材料必须围绕上述已知短板、客户痛点和决策标准；缺失信息明确写为待验证，不得补造。`;
+          const reviewedHistory = priorMaterials.filter((row: any) => row.adoptionStatus === "已采用" || row.customerFeedback).map((row: any) => `- ${row.title}：人工状态=${row.adoptionStatus}；客户反馈=${row.customerFeedback || "未录入"}`).join("\n");
+          if (reviewedHistory) historyContext = `【历史方案处置记录（仅供待验证参考）】\n${reviewedHistory}\n不得把这些反馈当作新的客户事实；如与当前证据冲突，以当前证据为准。`;
+        }
+        const systemMsg = SALES_METHODOLOGY_SYSTEM_PROMPT;
+        const userMsg = `你是 AIStorm（亚信安全）的资深解决方案架构师。\n${guide}\n\n输出要求：\n- 使用 Markdown 格式，结构清晰\n- 语言专业但易懂，适合销售使用\n- 只引用已给出的产品文档和商机事实；数据不足时明确待验证\n- 不编造客户意图、竞争结论或价值数字\n\n${opportunityContext}\n\n${historyContext}\n\n销售需求描述：\n${input.prompt}\n\n${docContext ? `参考产品文档：\n${docContext}` : '（未选择参考文档；不得伪造具体产品参数或客户案例）'}`;
 
         const llmResult = await invokeLLM({
           messages: [
@@ -4467,10 +4487,22 @@ ${context}
           docIds: input.docIds,
           generatedContent,
           clientId: input.clientId,
+          opportunityId: input.opportunityId,
           targetContact: input.targetContact,
           createdBy: ctx.user?.name || 'unknown',
         });
         return { id: (result as any).insertId, content: generatedContent, title };
+      }),
+
+    updateOutcome: protectedProcedure
+      .input(z.object({ id: z.number(), adoptionStatus: z.enum(["待确认", "已采用", "未采用"]), customerFeedback: z.string().max(3000).optional() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { arsenalGenerated } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.update(arsenalGenerated).set({ adoptionStatus: input.adoptionStatus, customerFeedback: input.customerFeedback?.trim() || null, outcomeUpdatedAt: new Date() } as any).where(eq(arsenalGenerated.id, input.id));
+        return { success: true };
       }),
 
     // 删除生成记录

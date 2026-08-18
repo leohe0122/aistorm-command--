@@ -962,13 +962,24 @@ function AIArsenalTab() {
   const [prompt, setPrompt] = useState("");
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
   const [targetContact, setTargetContact] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState<number | undefined>(() => {
+    const raw = new URLSearchParams(window.location.search).get("clientId");
+    return raw && Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+  });
+  const [selectedOpportunityId, setSelectedOpportunityId] = useState<number | undefined>(() => {
+    const raw = new URLSearchParams(window.location.search).get("opportunityId");
+    return raw && Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+  });
+  const [feedbackById, setFeedbackById] = useState<Record<number, string>>({});
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<{ id: number; content: string; title: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const { data: docs = [] } = trpc.productDocs.list.useQuery(undefined);
-  const { data: history = [], refetch: refetchHistory } = trpc.arsenalAI.list.useQuery(undefined);
+  const { data: clients = [] } = trpc.clients.list.useQuery();
+  const { data: opportunities = [] } = trpc.opportunities.listByClient.useQuery({ clientId: selectedClientId || 0 }, { enabled: Boolean(selectedClientId) });
+  const { data: history = [], refetch: refetchHistory } = trpc.arsenalAI.list.useQuery({ clientId: selectedClientId, opportunityId: selectedOpportunityId });
   const generateMut = trpc.arsenalAI.generate.useMutation({
     onSuccess: (data) => { setResult(data); refetchHistory(); },
     onError: (e) => toast.error("生成失败: " + e.message),
@@ -976,12 +987,16 @@ function AIArsenalTab() {
   const deleteMut = trpc.arsenalAI.delete.useMutation({
     onSuccess: () => { toast.success("已删除"); refetchHistory(); },
   });
+  const outcomeMut = trpc.arsenalAI.updateOutcome.useMutation({
+    onSuccess: () => { toast.success("方案采用状态与客户反馈已记录；下次生成仅将其作为待验证参考"); refetchHistory(); },
+    onError: (error) => toast.error(`更新处置记录失败：${error.message}`),
+  });
 
   const handleGenerate = async () => {
     if (!prompt.trim()) { toast.error("请描述你的需求"); return; }
     setGenerating(true); setResult(null);
     try {
-      await generateMut.mutateAsync({ category, prompt: prompt.trim(), docIds: selectedDocIds.length > 0 ? selectedDocIds : undefined, targetContact: targetContact || undefined });
+      await generateMut.mutateAsync({ category, prompt: prompt.trim(), docIds: selectedDocIds.length > 0 ? selectedDocIds : undefined, clientId: selectedClientId, opportunityId: selectedOpportunityId, targetContact: targetContact || undefined });
     } finally { setGenerating(false); }
   };
 
@@ -1027,6 +1042,11 @@ function AIArsenalTab() {
         <div>
           <label className="text-sm font-medium mb-1 block">目标联系人（可选）</label>
           <Input value={targetContact} onChange={e => setTargetContact(e.target.value)} placeholder="例：IT总监 / 安全负责人 / CTO" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 rounded-lg border border-primary/15 bg-primary/[0.03] p-3">
+          <div><label className="text-sm font-medium mb-1 block">关联客户（可选）</label><Select value={selectedClientId ? String(selectedClientId) : "none"} onValueChange={value => { const nextClientId = value === "none" ? undefined : Number(value); setSelectedClientId(nextClientId); setSelectedOpportunityId(undefined); }}><SelectTrigger><SelectValue placeholder="不关联客户" /></SelectTrigger><SelectContent><SelectItem value="none">不关联客户</SelectItem>{(clients as any[]).map(client => <SelectItem key={client.id} value={String(client.id)}>{client.name}</SelectItem>)}</SelectContent></Select></div>
+          <div><label className="text-sm font-medium mb-1 block">关联商机（可选）</label><Select value={selectedOpportunityId ? String(selectedOpportunityId) : "none"} onValueChange={value => setSelectedOpportunityId(value === "none" ? undefined : Number(value))} disabled={!selectedClientId}><SelectTrigger><SelectValue placeholder={selectedClientId ? "选择商机以注入 Deal Map" : "请先选择客户"} /></SelectTrigger><SelectContent><SelectItem value="none">不关联商机</SelectItem>{(opportunities as any[]).map(opportunity => <SelectItem key={opportunity.id} value={String(opportunity.id)}>{opportunity.name} · {opportunity.stage}</SelectItem>)}</SelectContent></Select></div>
+          <p className="sm:col-span-2 text-xs leading-5 text-muted-foreground">关联商机后，AI 会读取已入库的 MEDDPICC、3 Why、Pain & Metrics、竞争事实及经人工确认的历史反馈；缺失内容保持“待验证”。</p>
         </div>
         <div>
           <label className="text-sm font-medium mb-2 block">
@@ -1094,17 +1114,21 @@ function AIArsenalTab() {
                 <p className="text-xs text-muted-foreground p-4 text-center">暂无历史记录</p>
               ) : (
                 (history as any[]).map((h) => (
-                  <div key={h.id} className="flex items-start justify-between p-3 hover:bg-muted/30 group">
+                  <div key={h.id} className="p-3 hover:bg-muted/30 group">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-xs shrink-0">{h.category}</Badge>
                         <span className="text-sm truncate">{h.title}</span>
+                        <Badge variant={h.adoptionStatus === "已采用" ? "default" : h.adoptionStatus === "未采用" ? "secondary" : "outline"} className="text-[10px] shrink-0">{h.adoptionStatus || "待确认"}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5 truncate">{h.prompt}</p>
+                      {h.opportunityId && <p className="mt-1 text-[10px] text-primary/80">已关联商机 #{h.opportunityId} · 下次生成会仅参考人工处置记录</p>}
                     </div>
-                    <div className="flex items-center gap-1 ml-2 shrink-0">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       <button onClick={() => setResult({ id: h.id, content: h.generatedContent, title: h.title })} className="text-xs text-primary hover:underline">查看</button>
-                      <button onClick={() => deleteMut.mutate({ id: h.id })} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-1">
+                      <Select value={h.adoptionStatus || "待确认"} onValueChange={value => outcomeMut.mutate({ id: h.id, adoptionStatus: value as "待确认" | "已采用" | "未采用", customerFeedback: feedbackById[h.id] ?? h.customerFeedback ?? undefined })}><SelectTrigger className="h-7 w-24 text-[10px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="待确认">待确认</SelectItem><SelectItem value="已采用">已采用</SelectItem><SelectItem value="未采用">未采用</SelectItem></SelectContent></Select>
+                      <Input value={feedbackById[h.id] ?? h.customerFeedback ?? ""} onChange={event => setFeedbackById(prev => ({ ...prev, [h.id]: event.target.value }))} onBlur={() => { const feedback = feedbackById[h.id]; if (feedback !== undefined && feedback !== (h.customerFeedback || "")) outcomeMut.mutate({ id: h.id, adoptionStatus: h.adoptionStatus || "待确认", customerFeedback: feedback }); }} placeholder="客户反馈（可选）" className="h-7 min-w-40 flex-1 text-[10px]" />
+                      <button onClick={() => deleteMut.mutate({ id: h.id })} className="text-muted-foreground hover:text-destructive p-1">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
