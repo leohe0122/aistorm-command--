@@ -154,11 +154,15 @@ describe("作战工作流入口收敛", () => {
     expect(arsenal).toContain("const [selectedOpportunityId, setSelectedOpportunityId]");
     expect(arsenal).toContain("关联商机（可选）");
     expect(arsenal).toContain("opportunityId: selectedOpportunityId");
-    expect(arsenal).toContain('value="champion"');
-    expect(arsenal).toContain('value="killsheets"');
-    expect(arsenal).toContain("建议在商机作战室中使用。");
+    expect(arsenal).toContain('grid grid-cols-4');
+    expect(arsenal).not.toContain('value="champion"');
+    expect(arsenal).not.toContain('value="killsheets"');
     expect(opportunityRoom).toContain("Champion 突破话术");
     expect(opportunityRoom).toContain("竞品对比作战卡");
+    expect(opportunityRoom).toContain("启动 Champion 培育计划");
+    expect(opportunityRoom).toContain("覆盖 Economic Buyer 并建立高层通路");
+    expect(opportunityRoom).toContain("SA 入场推进技术验证");
+    expect(opportunityRoom).toContain("激活属地资源与商务通路");
   });
 
   it("让竞品反制任务、POD 来源 Review 深链与本周闭环率形成可解释的产品化闭环", () => {
@@ -170,7 +174,9 @@ describe("作战工作流入口收敛", () => {
     expect(schema).toContain('sourceType: varchar("sourceType", { length: 50 })');
     expect(routers).toContain('"competition_counter"');
     expect(routers).toContain("reviewClosureMetrics: protectedProcedure");
-    expect(commandCenter).toContain("Review 闭环率 · 本周");
+    expect(commandCenter).toContain("Review 闭环率 · {period}");
+    expect(commandCenter).toContain('period: "week"');
+    expect(commandCenter).toContain('period: "month"');
     expect(opportunityRoom).toContain("转为 POD 任务 →");
     expect(opportunityRoom).toContain('sourceType: "competition_counter"');
     expect(podCenter).toContain("来源: 1→N Deal Review");

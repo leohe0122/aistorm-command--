@@ -6,7 +6,6 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { RoleProvider } from "./contexts/RoleContext";
 import CommandLayout from "./components/CommandLayout";
 import BattleMap from "./pages/BattleMap";
-import ChampionAmmo from "./pages/ChampionAmmo";
 import PodCenter from "./pages/PodCenter";
 import MeetingMinutes from "./pages/MeetingMinutes";
 import DailyBriefing from "./pages/DailyBriefing";
@@ -126,7 +125,6 @@ function Router() {
         <Route path="/battle-map" component={BattleMap} />
         <Route path="/clients/:clientId/opportunities/:opportunityId" component={OpportunityRoom} />
         <Route path="/clients/:clientId" component={ClientWorkstation} />
-        <Route path="/champion-ammo" component={ChampionAmmo} />
         <Route path="/pod-center" component={PodCenter} />
         <Route path="/meeting-minutes" component={MeetingMinutes} />
         <Route path="/daily-briefing" component={DailyBriefing} />

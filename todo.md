@@ -954,3 +954,16 @@
 - [x] 完善竞品反制转 POD 的来源类型、默认责任角色与跳转确认
 - [x] 在任务列表与分析视图呈现来源 Review 链接和本周/月 Review 闭环率
 - [x] 完成回归、生产验证与 GitHub 同步
+
+## 审核发现修复
+- [x] 实现商机 ActionWorkspace 的 deployRecs：基于阶段、MEDDPICC、SA 分配与属地资源产生可解释建议并确认创建任务
+- [x] 以测试和界面核验 AI 指挥台中的周/月 Review 闭环率指标卡真实呈现
+- [x] 完成回归、生产验证与 GitHub 同步
+
+## 武器库边界纠正
+- [x] 从 Arsenal 主 Tab 与内容装配彻底移除 Champion 弹药和竞品 Kill Sheet，仅保留商机作战室行动区入口
+
+## Claude 审核建议最终验收
+- [ ] 截图核验 Arsenal 仅显示产品文档、成功案例库、AI方案定制、报价工具四个 Tab
+- [x] 验证 ActionWorkspace 的 deployRecs 不再为空数组，并覆盖 Champion、Economic Buyer、POC/SA 与属地 RSM 事实规则
+- [x] 验证 AI 指挥台 Analytics 同时呈现本周与本月 Review 闭环率及低于 60% 预警

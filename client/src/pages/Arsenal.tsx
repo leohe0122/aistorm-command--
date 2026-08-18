@@ -20,8 +20,6 @@ import {
 } from "lucide-react";
 import { PRODUCT_LINE_GROUPS } from '../../../shared/productLines';
 import { BookOpen, Star, TrendingUp } from "lucide-react";
-import ChampionAmmo from "./ChampionAmmo";
-import KillSheetsTab from "./KillSheetsTab";
 
 // ─── 成功案例库 Tab ──────────────────────────────────────────────────────────
 const INDUSTRY_OPTIONS = ["金融", "制造", "电信", "政府", "医疗", "科技", "零售", "能源", "教育", "其他"];
@@ -1397,19 +1395,15 @@ export default function Arsenal() {
         <p className="text-muted-foreground text-sm mt-1">产品文档管理 · 成功案例库 · 上下文化 AI 方案定制 · 智能报价工具</p>
       </div>
       <Tabs key={initialTab} defaultValue={initialTab} className="space-y-4">
-        <TabsList className="grid grid-cols-6 w-full max-w-5xl">
+        <TabsList className="grid grid-cols-4 w-full max-w-4xl">
           <TabsTrigger value="docs" className="gap-1.5 text-xs"><FileText className="h-3.5 w-3.5" /> 产品文档</TabsTrigger>
           <TabsTrigger value="cases" className="gap-1.5 text-xs"><BookOpen className="h-3.5 w-3.5" /> 成功案例库</TabsTrigger>
           <TabsTrigger value="ai" className="gap-1.5 text-xs"><Bot className="h-3.5 w-3.5" /> AI方案定制</TabsTrigger>
-          <TabsTrigger value="champion" className="gap-1.5 text-xs"><Sparkles className="h-3.5 w-3.5" /> Champion 弹药</TabsTrigger>
-          <TabsTrigger value="killsheets" className="gap-1.5 text-xs"><Swords className="h-3.5 w-3.5" /> 竞品 Kill Sheet</TabsTrigger>
           <TabsTrigger value="quote" className="gap-1.5 text-xs"><Calculator className="h-3.5 w-3.5" /> 报价工具</TabsTrigger>
         </TabsList>
         <TabsContent value="docs"><ProductDocsTab /></TabsContent>
         <TabsContent value="cases"><CaseStudiesTab /></TabsContent>
         <TabsContent value="ai"><AIArsenalTab weaponContext={weaponContext} /></TabsContent>
-        <TabsContent value="champion" className="space-y-3"><div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs text-amber-100"><span className="font-semibold">建议在商机作战室中使用。</span> 从商机室进入可自动带入 Champion、MEDDPICC 与 Deal Map 事实；此处保留为仓库型备用入口。</div><ChampionAmmo /></TabsContent>
-        <TabsContent value="killsheets" className="space-y-3"><div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-xs text-amber-100"><span className="font-semibold">建议在商机作战室中使用。</span> 从商机室进入可自动带入当前竞品、阶段与反制上下文；此处保留为仓库型维护入口。</div><KillSheetsTab /></TabsContent>
         <TabsContent value="quote"><QuoteToolTab /></TabsContent>
       </Tabs>
     </div>

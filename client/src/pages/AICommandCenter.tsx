@@ -114,7 +114,8 @@ export function AICommandCenter() {
   const isSaOrRsm = userRole === "SA" || userRole === "RSM";
   const roleWorkbenchQuery = trpc.roleWorkbench.getMyDashboard.useQuery(undefined, { enabled: isSaOrRsm });
   const recommendationsQuery = trpc.adCommand.list.useQuery(undefined, { refetchInterval: 60_000 });
-  const reviewClosureQuery = trpc.insights.reviewClosureMetrics.useQuery({ period: "week" });
+  const reviewClosureWeekQuery = trpc.insights.reviewClosureMetrics.useQuery({ period: "week" });
+  const reviewClosureMonthQuery = trpc.insights.reviewClosureMetrics.useQuery({ period: "month" });
   const utils = trpc.useUtils();
   const refresh = trpc.adCommand.refresh.useMutation({
     onSuccess: () => { utils.adCommand.list.invalidate(); setDidRefresh(true); },
@@ -318,7 +319,7 @@ export function AICommandCenter() {
         {[
           ["目标客户", (dashboard as any)?.clientCount ?? 0, "客户组合"], ["高风险", (dashboard as any)?.riskClients?.length ?? 0, "需要 AI 升级"], ["本周拜访", (dashboard as any)?.visitedThisWeekCount ?? 0, "已入库行为"], ["待确认建议", allVisible.length, "AD 人类控制"],
         ].map(([label, value, note]) => <div key={String(label)} className="rounded-2xl border bg-card p-5"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-3xl font-bold">{value}</p><p className="mt-1 text-xs text-muted-foreground">{note}</p></div>)}
-        <div className={cn("rounded-2xl border p-5", (reviewClosureQuery.data?.rate ?? 100) < 60 ? "border-amber-500/35 bg-amber-500/5" : "bg-card")}><p className="text-xs text-muted-foreground">Review 闭环率 · 本周</p><p className="mt-2 text-3xl font-bold">{reviewClosureQuery.data?.rate === null || reviewClosureQuery.data?.rate === undefined ? "数据不足" : `${reviewClosureQuery.data.rate}%`}</p><p className={cn("mt-1 text-xs", (reviewClosureQuery.data?.rate ?? 100) < 60 ? "text-amber-300" : "text-muted-foreground")}>{reviewClosureQuery.data ? `${reviewClosureQuery.data.completed}/${reviewClosureQuery.data.total} 项已完成` : "加载中…"}{(reviewClosureQuery.data?.rate ?? 100) < 60 ? " · 需在下轮 Review 升级未完成任务" : ""}</p></div>
+        {[["本周", reviewClosureWeekQuery], ["本月", reviewClosureMonthQuery]].map(([period, query]: any) => <div key={period} className={cn("rounded-2xl border p-5", (query.data?.rate ?? 100) < 60 ? "border-amber-500/35 bg-amber-500/5" : "bg-card")}><p className="text-xs text-muted-foreground">Review 闭环率 · {period}</p><p className="mt-2 text-3xl font-bold">{query.data?.rate === null || query.data?.rate === undefined ? "数据不足" : `${query.data.rate}%`}</p><p className={cn("mt-1 text-xs", (query.data?.rate ?? 100) < 60 ? "text-amber-300" : "text-muted-foreground")}>{query.data ? `${query.data.completed}/${query.data.total} 项已完成` : "加载中…"}{(query.data?.rate ?? 100) < 60 ? " · 需在下轮 Review 升级未完成任务" : ""}</p></div>)}
         <div className="md:col-span-4 rounded-2xl border bg-card p-5 text-sm text-muted-foreground"><BarChart3 className="mb-2 h-5 w-5 text-cyan-300" />漏斗、MEDDPICC 雷达、拜访频率等详细数据保留为按需分析，不再占用 AD 的决策首屏。</div>
       </section>}
 
