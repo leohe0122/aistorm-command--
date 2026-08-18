@@ -23,6 +23,7 @@ type CommandRecommendation = {
   dueDate: Date | string | null;
   status: "pending" | "confirmed" | "skipped" | "completed";
   podTaskId: number | null;
+  fingerprint?: string;
 };
 
 const URGENCY_STYLE: Record<string, string> = {
@@ -52,6 +53,9 @@ function RecommendationCard({ item, onConfirm, onSkip, onNavigate }: {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className={`border ${URGENCY_STYLE[item.urgency]}`}>{item.urgency}</Badge>
+            <Badge variant="outline" className={item.fingerprint?.startsWith("native-") ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-200" : "border-slate-500/35 text-slate-400"}>
+              {item.fingerprint?.startsWith("native-") ? "AI 原生研判" : "规则触发"}
+            </Badge>
             <h3 className="text-sm font-semibold text-foreground">{item.title}</h3>
           </div>
           <p className="mt-1 text-sm text-foreground/90">{item.aiConclusion}</p>
@@ -99,6 +103,7 @@ export function AICommandCenter() {
   const [, navigate] = useLocation();
   const [view, setView] = useState<"command" | "boards" | "analytics" | "coach">("command");
   const [didRefresh, setDidRefresh] = useState(false);
+  const [globalExpanded, setGlobalExpanded] = useState(false);
   const { data: dashboard, isLoading: dashboardLoading } = trpc.dashboard.summary.useQuery();
   const { data: me } = trpc.emailAuth.me.useQuery();
   const recommendationsQuery = trpc.adCommand.list.useQuery(undefined, { refetchInterval: 60_000 });
@@ -136,7 +141,9 @@ export function AICommandCenter() {
 
   const recommendations = (recommendationsQuery.data ?? []) as CommandRecommendation[];
   const pending = recommendations.filter(item => item.status === "pending");
-  const today = pending.filter(item => item.kind === "today_action" || item.kind === "sam_coaching").slice(0, 3);
+  const globalBattlefield = pending.find(item => !item.clientId && item.fingerprint?.includes("-summary"))
+    ?? recommendations.find(item => !item.clientId && item.fingerprint?.includes("-summary"));
+  const today = pending.filter(item => (item.kind === "today_action" || item.kind === "sam_coaching") && item.id !== globalBattlefield?.id).slice(0, 3);
   const anomalies = pending.filter(item => item.kind === "anomaly");
   const approvals = pending.filter(item => item.kind === "pending_approval");
   const allVisible = [...today, ...anomalies, ...approvals];
@@ -191,6 +198,14 @@ export function AICommandCenter() {
       </nav>
 
       {view === "command" && <>
+        {globalBattlefield ? <section className="rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-950/35 to-cyan-950/20 p-4">
+          <button className="flex w-full items-start gap-3 text-left" onClick={() => setGlobalExpanded(value => !value)}>
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-violet-200" />
+            <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold text-violet-100">本周全局战场研判</p><Badge variant="outline" className={globalBattlefield.fingerprint?.startsWith("native-") ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-200" : "border-slate-500/35 text-slate-400"}>{globalBattlefield.fingerprint?.startsWith("native-") ? "AI 原生研判" : "规则触发"}</Badge></div><p className="mt-1 text-sm text-foreground/90">{globalBattlefield.aiConclusion}</p></div>
+            <span className="text-xs text-muted-foreground">{globalExpanded ? "收起 ▲" : "展开详情 ▼"}</span>
+          </button>
+          {globalExpanded ? <div className="mt-4 grid gap-3 border-t border-violet-500/20 pt-4 md:grid-cols-3">{globalBattlefield.facts.filter(fact => fact.label !== "快照指纹").map((fact, index) => <div key={index} className="rounded-lg bg-background/30 p-3"><p className="text-xs font-medium text-violet-200">{fact.label}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{fact.value}</p></div>)}</div> : null}
+        </section> : null}
         <section className="grid gap-4 xl:grid-cols-3">
           <div className="xl:col-span-2 rounded-2xl border border-cyan-500/25 bg-card p-4">
             <div className="mb-4 flex items-center justify-between"><div><p className="text-sm font-semibold text-cyan-200">AI 今日指令</p><p className="text-xs text-muted-foreground">最多三条；确认后自动进入 AD/POD 作战任务。</p></div><Badge variant="outline">待确认 {today.length}</Badge></div>

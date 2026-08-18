@@ -5324,12 +5324,57 @@ ${input.aiSuggestion}
           weakestDimension: ordered[0]?.label, weakestScore: ordered[0]?.score,
         };
       });
-      const generated = buildAdCommandRecommendations(
-        allClients.map(client => ({
-          id: client.id, name: client.name, stage: client.stage,
-          stageChangedAt: client.stageChangedAt, lastMeetingAt: latestMeeting.get(client.id) ?? null,
-          championScore: clientScore.get(client.id)?.championScore ?? 0, assignedSamName: client.assignedSamName,
-        })),
+      const stageDays = (value: Date | null | undefined) => value ? Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000)) : null;
+      const clientInputs = allClients.map(client => ({
+        id: client.id, name: client.name, stage: client.stage,
+        stageChangedAt: client.stageChangedAt, lastMeetingAt: latestMeeting.get(client.id) ?? null,
+        championScore: clientScore.get(client.id)?.championScore ?? 0, assignedSamName: client.assignedSamName,
+      }));
+      const { runNativeAdAnalysis, snapshotFingerprint } = await import('./adNativeAnalysis');
+      const nativeSnapshot = {
+        generatedAt: new Date().toISOString(),
+        clients: allClients.map(client => {
+          const score = clientScore.get(client.id) as any;
+          const lastMeeting = latestMeeting.get(client.id) ?? null;
+          return {
+            id: client.id,
+            name: client.name,
+            stage: client.stage,
+            stageDays: stageDays(client.stageChangedAt),
+            daysSinceLastMeeting: lastMeeting ? stageDays(lastMeeting) : null,
+            totalMeetings: allMeetings.filter(meeting => meeting.clientId === client.id).length,
+            purchaseSignalCount: purchaseSignals.filter(signal => signal.clientId === client.id).length,
+            meddpicc: {
+              champion: Number(score?.championScore ?? 0), economicBuyer: Number(score?.economicBuyerScore ?? 0),
+              decisionCriteria: Number(score?.decisionCriteriaScore ?? 0), decisionProcess: Number(score?.decisionProcessScore ?? 0),
+              paperProcess: Number(score?.paperProcessScore ?? 0), pain: Number(score?.implicatePainScore ?? 0),
+              competition: Number(score?.competitionScore ?? 0), metrics: Number(score?.metricsScore ?? 0),
+            },
+            assignedSam: client.assignedSamName ?? null,
+            activeOpportunities: allOpportunities.filter(opportunity => opportunity.clientId === client.id && opportunity.status !== '丢单').map(opportunity => {
+              const scoreItem = oppScore.get(opportunity.id) as any;
+              const weakest = dimensionLabels.map(([key, label]) => ({ label, score: Number(scoreItem?.[key] ?? 0) })).sort((a, b) => a.score - b.score)[0];
+              return {
+                id: opportunity.id, name: opportunity.name, stage: opportunity.stage, stageDays: stageDays(opportunity.stageChangedAt),
+                estimatedValue: (opportunity as any).estimatedValue ? String((opportunity as any).estimatedValue) : null,
+                weakestDimension: weakest?.label ?? '数据不足', weakestScore: weakest?.score ?? 0,
+              };
+            }),
+          };
+        }),
+        teamStats: {
+          totalClients: allClients.length,
+          stageDistribution: allClients.reduce((result, client) => ({ ...result, [client.stage]: (result[client.stage] ?? 0) + 1 }), {} as Record<string, number>),
+          totalActiveOpportunities: allOpportunities.filter(opportunity => opportunity.status !== '丢单').length,
+          samList: Array.from(new Map(allClients.map(client => [client.assignedSamName || '未分配 SAM', allClients.filter(item => (item.assignedSamName || '未分配 SAM') === (client.assignedSamName || '未分配 SAM')).length])).entries()).map(([name, clientCount]) => ({ name, clientCount })),
+        },
+      };
+      const nativeHash = snapshotFingerprint(nativeSnapshot);
+      const nativeSummaryFingerprint = `native-${nativeHash}-summary`;
+      const nativeAlreadyExists = existing.some(item => item.fingerprint === nativeSummaryFingerprint);
+      const nativeOutput = nativeAlreadyExists ? null : await runNativeAdAnalysis(nativeSnapshot);
+      const fallbackGenerated = buildAdCommandRecommendations(
+        clientInputs,
         oppInputs,
         new Date(),
         pendingActions.filter(action => !action.isCompleted).map(action => ({
@@ -5338,7 +5383,7 @@ ${input.aiSuggestion}
         })),
       );
       const knownFingerprints = new Set(existing.map(item => item.fingerprint));
-      const newGenerated = generated.filter(item => !knownFingerprints.has(item.fingerprint));
+      const newGenerated = fallbackGenerated.filter(item => !knownFingerprints.has(`fallback-${item.fingerprint}`));
       const enriched = await Promise.all(newGenerated.map(async (item) => {
         if (item.kind !== 'today_action' && item.kind !== 'anomaly') return item;
         const client = item.clientId ? allClients.find(candidate => candidate.id === item.clientId) : null;
@@ -5371,19 +5416,49 @@ ${input.aiSuggestion}
           weakestScore: weakest?.score ?? null,
         });
       }));
-      const inserts = enriched.map(({ urgency, ...item }) => ({
+      const fallbackInserts = enriched.map(({ urgency, ...item }) => ({
         ...item,
         // 数据库遗留字段仅作存储兼容；用户界面与研判逻辑统一使用行动紧迫度。
         priority: urgency === '立即处理' ? 'P0' : urgency === '本周推进' ? 'P1' : 'P2',
+        fingerprint: `fallback-${item.fingerprint}`,
         clientId: item.clientId ?? undefined,
         opportunityId: item.opportunityId ?? undefined,
         dueDate: new Date(Date.now() + (urgency === '立即处理' ? 2 : 7) * 86_400_000),
       }));
+      const nativeFactsFor = (recommendation: any) => {
+        const client = nativeSnapshot.clients.find(item => item.id === recommendation.clientId);
+        const opportunity = recommendation.opportunityId ? client?.activeOpportunities.find(item => item.id === recommendation.opportunityId) : null;
+        const facts = [
+          { label: '客户阶段', value: client?.stage ?? '数据不足' },
+          { label: '阶段停留', value: client?.stageDays === null || client?.stageDays === undefined ? '数据不足' : `${client.stageDays}天` },
+          { label: '距上次拜访', value: client?.daysSinceLastMeeting === null || client?.daysSinceLastMeeting === undefined ? '无记录' : `${client.daysSinceLastMeeting}天` },
+          { label: '购买信号', value: `${client?.purchaseSignalCount ?? 0}/3` },
+        ];
+        if (opportunity) facts.push({ label: '商机最弱维度', value: `${opportunity.weakestDimension} ${opportunity.weakestScore}/4` });
+        return facts;
+      };
+      const nativeInserts = nativeOutput?.recommendations.length ? [
+        {
+          clientId: undefined, opportunityId: undefined, kind: 'today_action', priority: 'P1', title: '本周全局战场研判',
+          aiConclusion: nativeOutput.battlefieldSummary, facts: [
+            { label: '漏斗健康', value: nativeOutput.funnelHealth }, { label: '赢单风险', value: nativeOutput.winRisk }, { label: '团队模式', value: nativeOutput.teamPattern }, { label: '快照指纹', value: nativeHash },
+          ], methodology: 'AI 原生全量战场研判', suggestedAction: '展开全局判断后确认需要进入 POD 的行动。', assignedRole: 'AD',
+          fingerprint: nativeSummaryFingerprint, dueDate: new Date(Date.now() + 7 * 86_400_000),
+        },
+        ...nativeOutput.recommendations.map((recommendation, index) => ({
+          clientId: recommendation.clientId, opportunityId: recommendation.opportunityId ?? undefined, kind: recommendation.kind,
+          priority: recommendation.urgency === '立即处理' ? 'P0' : recommendation.urgency === '本周推进' ? 'P1' : 'P2',
+          title: recommendation.title, aiConclusion: recommendation.judgment, facts: nativeFactsFor(recommendation), methodology: recommendation.methodology,
+          suggestedAction: recommendation.adAction, assignedRole: 'AD', fingerprint: `native-${nativeHash}-${recommendation.clientId}-${recommendation.opportunityId ?? 'client'}-${index}`,
+          dueDate: new Date(Date.now() + (recommendation.urgency === '立即处理' ? 2 : recommendation.urgency === '本周推进' ? 7 : 14) * 86_400_000),
+        })),
+      ] : [];
+      const inserts = nativeInserts.length ? nativeInserts : fallbackInserts;
       const { generateGlobalBattleReview, getIsoWeekKey } = await import('./adGlobalReviewLLM');
       const weeklyKey = getIsoWeekKey();
       const hasWeeklyReview = knownFingerprints.has(`global-review-${weeklyKey}-summary`);
-      if (!hasWeeklyReview) {
-        const candidateFacts = generated.filter(item => item.clientId && (item.kind === 'today_action' || item.kind === 'anomaly')).slice(0, 6).map(item => {
+      if (!nativeInserts.length && !hasWeeklyReview) {
+        const candidateFacts = fallbackGenerated.filter(item => item.clientId && (item.kind === 'today_action' || item.kind === 'anomaly')).slice(0, 6).map(item => {
           const client = allClients.find(candidate => candidate.id === item.clientId);
           return { clientId: item.clientId!, clientName: client?.name ?? item.title, stage: client?.stage ?? '数据不足', trigger: item.aiConclusion, facts: item.facts };
         });
@@ -5415,7 +5490,7 @@ ${input.aiSuggestion}
         }
       }
       if (inserts.length) await db.insert(adCommandRecommendations).values(inserts as any);
-      const currentFingerprints = new Set(generated.map(item => item.fingerprint));
+      const currentFingerprints = new Set(fallbackGenerated.map(item => `fallback-${item.fingerprint}`));
       const derivedTypes = new Set(['contact-gap', 'champion-gap', 'opp-stagnant']);
       for (const item of existing) {
         const isDerived = Array.from(derivedTypes).some(prefix => item.fingerprint.startsWith(prefix));
