@@ -30,10 +30,15 @@ describe("adNativeAnalysis", () => {
   });
 
   it("把 Win 公式与 Account/Deal Map 的事实边界放入原生研判提示词", () => {
-    const prompt = buildNativeAnalysisPrompt(snapshot);
+    const enriched: AdBattlefieldSnapshot = { ...snapshot, clients: [{ ...snapshot.clients[0], accountFitScore: 4, execCoverageCount: 2, competitorAdvantageCount: 1, threeWhyScore: { change: 4, now: 3, us: 2 }, painMetricsTotal: 500000, goNoGoScore: 14, dealHealthScore: null }] };
+    const prompt = buildNativeAnalysisPrompt(enriched);
     expect(prompt).toContain("Win = Pain × Power × Champion × Value × Control");
     expect(prompt).toContain("Account Map");
     expect(prompt).toContain("Deal Map");
-    expect(prompt).toContain("数据不足");
+    expect(prompt).toContain("3 Why：Change=4｜Now=3｜Us=2");
+    expect(prompt).toContain("Pain 年度价值：$500,000");
+    expect(prompt).toContain("Go/No-Go：14/20");
+    expect(prompt).toContain("Deal Health：数据不足/100");
+    expect(snapshotFingerprint(enriched)).not.toBe(snapshotFingerprint(snapshot));
   });
 });

@@ -15,12 +15,12 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
 const navItems = [
-  { path: "/dashboard", label: "AD 指挥台", icon: LayoutDashboard, desc: "Portfolio Review 看板" },
-  { path: "/battle-map", label: "战场地图", icon: Map, desc: "MEDDPICC看板" },
+  { path: "/dashboard", label: "AD 指挥台", icon: LayoutDashboard, desc: "AI 今日指令 · 异常预警 · 挂起确认" },
+  { path: "/battle-map", label: "战场地图", icon: Map, desc: "Account Map · Deal Map · 全局态势" },
   { path: "/meeting-minutes", label: "拜访作战日志", icon: MessageSquare, desc: "拜访录入·AI解析·更新战场" },
-  { path: "/pod-center", label: "POD 协同", icon: Users, desc: "次级任务汇总" },
+  { path: "/pod-center", label: "POD 协同", icon: Users, desc: "角色任务视图 · 跨部门协同（次级汇总）" },
   { path: "/arsenal", label: "武器库 Arsenal", icon: Crosshair, desc: "产品文档·AI方案·竞品阻击包" },
-  { path: "/daily-briefing", label: "每日情报简报", icon: Bell, desc: "战场事实 · RSS 外部情报" },
+  { path: "/daily-briefing", label: "每日情报简报", icon: Bell, desc: "战场动态 · 合规信号 · 行业情报" },
 ];
 
 const settingsNavItems = [
