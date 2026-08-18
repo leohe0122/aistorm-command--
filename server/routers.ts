@@ -324,8 +324,7 @@ export const appRouter = router({
         ? `最近拜访（${new Date((lastVisit as any).meetingDate).toLocaleDateString('zh-CN')}）：${((lastVisit as any).aiMinutes || (lastVisit as any).keyPoints || '').slice(0, 200)}`
         : '暂无拜访记录';
       const clientStage = (clientData as any)?.stage || '未知阶段';
-      const prompt = `你是一位顶级企业销售战略顾问，专注于网络安全行业。
-请根据以下信息，为销售团队建议最佳的「敲门砖话题」和「安全切入点」，用于拜访 ${input.clientName}（${input.industry || '企业'}）的高层。
+      const prompt = `请根据以下信息，为销售团队建议最佳的「敲门砖话题」和「安全切入点」，用于拜访 ${input.clientName}（${input.industry || '企业'}）的高层。
 
 【客户当前阶段】
 ${clientStage}
@@ -569,8 +568,7 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
       opportunityId: z.number().optional().nullable(),
     })).mutation(async ({ input }) => {
       // AI analyze the signal
-      const prompt = `你是一位顶级企业销售情报分析师，专注于网络安全行业的大客户销售。
-
+      const prompt = `
 客户：${input.clientName}（${input.industry || "科技企业"}）
 原始信号：${input.rawSignal}
 
@@ -671,8 +669,7 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
         `- ${c.name}（${c.industry || "未知行业"}，当前阶段：${c.stage}）`
       ).join("\n");
 
-      const prompt = `你是一位企业级安全销售情报分析师。
-
+      const prompt = `
 情报信号：
 类型：${signal.signalType}
 紧急度：${signal.urgency}
@@ -980,8 +977,7 @@ ${candidateList}
           }).join("\n")
         : "暂无最新信号";
 
-      const prompt = `你是一位顶级企业销售教练，专注于网络安全行业的战略大客户销售。
-
+      const prompt = `
 客户：${input.clientName}（${input.industry || "科技企业"}）
 当前销售阶段：${input.stage}
 敲门砖话题：${input.hookTopic || "待定"}
@@ -1158,8 +1154,7 @@ ${signalsSummary}
       meddpiccSummary: z.string().optional(),
       context: z.string().optional(), // e.g., "SA 需要确认 AI Pentest 能力"
     })).mutation(async ({ input }) => {
-      const prompt = `你是亚信安全 AIStorm 的销售团队内部协作指挥师。
-
+      const prompt = `
 客户：${input.clientName}
 当前销售阶段：${input.stage}
 MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
@@ -1300,8 +1295,7 @@ ${signalSummary}
       }
       // ─────────────────────────────────────────────────────────────────────
 
-      const prompt = `你是一位顶级企业销售战略顾问，专注于网络安全行业的C-Level高层拜访准备。
-
+      const prompt = `
 请为以下拜访生成一份《高层会面简报（1-Pager）》，格式为Markdown，内容必须具体、可直接使用，不得使用空泛语言。
 
 客户：${input.clientName}（${input.industry || "科技企业"}）
@@ -1891,8 +1885,7 @@ AI质疑层规则（内嵌在以上各节中执行）：
         return `${c.name}（${c.buyingRole || c.relationship}）：非正式接触${informalCount}次，客户主动发起${customerInitCount}次，私信渠道[${channels.join("/") || "无"}]，关系深度[${depthLabel}]${lastInformal ? `，最近非正式接触${lastInformal}` : ""}`;
       }).join("\n") || "暂无关系深度数据";
 
-      const prompt = `你是一位专注于大客户Buying Group分析的销售战略顾问。
-
+      const prompt = `
 客户：${client.name}（${client.industry || "未知行业"}）
 当前阶段：${client.stage}
 
@@ -1990,8 +1983,7 @@ ${recentVisits || "暂无拜访记录"}
           : (olderCount > 0 ? `【历史拜访】共${olderCount}次历史拜访（暂无压缩叙事，本次生成后将自动保存）` : ''),
         recentTwo.length > 0 ? `【最近${recentTwo.length}次完整拜访记录（时间倒序）】\n${recentTwoLog}` : ''
       ].filter(Boolean).join("\n\n");
-      const prompt = `你是一位大客户销售教练，专注于分析客户关系演变趋势。
-客户：${client.name}（${client.industry || "未知行业"}）
+      const prompt = `客户：${client.name}（${client.industry || "未知行业"}）
 当前阶段：${client.stage}
 总拜访次数：${meetings.length}次
 拜访记录（滚动叙事架构）：
@@ -2175,8 +2167,7 @@ ${contactStances || "暂无关键人数据"}
       const noChampionNames = noChampionIn1N.map(c => c.name).join('、') || '无';
       const noEBNames = noEBIn1N.map(c => c.name).join('、') || '无';
 
-      const prompt = `你是一位经验丰富的销售总监（AD），正在对整个销售团队的战场态势进行全局 Review。
-
+      const prompt = `
 以下是当前所有客户的战场数据摘要：
 
 【阶段漏斗分布】
@@ -2307,7 +2298,7 @@ ${clientLines}
         return `- **${c.name}**（${c.stage}）MEDDPICC均分:${mAvg}% Champion:${hasChampion?'✓':'✗'} EB:${hasEB?'✓':'✗'} 拜访:${visitCountMap.get(c.id)??0}次 距上次:${daysSince!==null?daysSince+'天':'从未'} 活跃商机:${opps.filter(o=>o.status==='活跃').length}个`;
       }).join('\n');
 
-      const prompt = `你是一位经验丰富的销售总监（AD），正在对 SAM **${input.samName}** 进行教练 Review。
+      const prompt = `正在对 SAM **${input.samName}** 进行教练 Review。
 
 【${input.samName} 负责的客户概览】
 ${clientSummaryLines}
@@ -2494,8 +2485,7 @@ ${Object.entries(stageDistribution).map(([s, n]) => `- ${s}: ${n}个`).join('\n'
         { name: "C2（竞争态势）", score: meddpicc.competitionScore },
       ].sort((a, b) => a.score - b.score).slice(0, 3).map(d => `${d.name}：${d.score}分`).join("，") : "暂无评分";
 
-      const prompt = `你是一位销售总监（AD），正在对SAM进行Review。
-生成3个针对性问题，帮助AD判断SAM的数据录入是否真实、推进判断是否准确。
+      const prompt = `生成3个针对性问题，帮助AD判断SAM的数据录入是否真实、推进判断是否准确。
 问题必须是"只有真正做过这件事的人才能回答的"，不能是可以靠猜测回答的问题。
 
 当前阶段类型: ${input.stageType === "0to1" ? "0→1（客户开发阶段）" : "1→N（商机赢单阶段）"}
@@ -2542,8 +2532,7 @@ ${input.stageType === "0to1" ? `如果是0→1阶段，问题聚焦于：
       const stageContext = is0to1
         ? `这是0→1阶段（当前：${client.stage}），核心是"人的问题"——关系建立、信任深度、真实信息获取。辅导重点应聚焦于：关系质量判断、非正式接触能力、Champion识别和培育方法。不要给产品或方案建议。`
         : `这是1→N阶段（当前：${client.stage}），核心是"赢单的问题"——商机健康度、Champion推动力、决策流程掌握。辅导重点应聚焦于：MEDDPICC薄弱维度补强、Champion行动力提升、竞争态势应对。`;
-      const prompt = `你是一位销售总监（AD），刚刚完成了对 SAM 的问询 Review。
-
+      const prompt = `
 客户：${client.name}（阶段：${client.stage}）
 Review类型：${stageLabel}
 阶段背景：${stageContext}
@@ -2661,8 +2650,7 @@ ${input.samAnswerNotes}
         : `\n\n⚠️ 知识来源说明：武器库暂无产品文档，本内容完全基于AI通用知识生成，请务必结合实际产品资料核实后再使用。`;
       let prompt = "";
       if (input.ammoType === "竞品对标") {
-        prompt = `你是一位网络安全行业资深竞争分析师。
-请为${input.clientName}的内部Champion（${input.championName}）生成一份《竞品对标分析》，用于其在内部推动立项时使用。
+        prompt = `请为${input.clientName}的内部Champion（${input.championName}）生成一份《竞品对标分析》，用于其在内部推动立项时使用。
 安全切入点：${input.securityAngle || "综合安全方案"}
 客户背景：${input.notes || "无"}
 
@@ -2683,8 +2671,7 @@ ${docsSection}
 （Champion向决策层推荐时可直接使用的3句话）
 ${knowledgeNote}`;
       } else if (input.ammoType === "合规风险量化") {
-        prompt = `你是一位网络安全合规风险专家。
-请为${input.clientName}的内部Champion（${input.championName}）生成一份《合规风险量化分析》，用于其在内部推动立项时使用。
+        prompt = `请为${input.clientName}的内部Champion（${input.championName}）生成一份《合规风险量化分析》，用于其在内部推动立项时使用。
 行业：${input.industry || "科技"}
 客户背景：${input.notes || "无"}
 
@@ -2705,8 +2692,7 @@ ${docsSection}
 （安全投入 vs. 潜在损失的对比，给出明确的投资回报比）
 ${knowledgeNote}`;
       } else {
-        prompt = `你是一位企业IT投资分析师。
-请为${input.clientName}的内部Champion（${input.championName}）生成一份《ROI测算初稿》，用于其在内部申请预算时使用。
+        prompt = `请为${input.clientName}的内部Champion（${input.championName}）生成一份《ROI测算初稿》，用于其在内部申请预算时使用。
 安全切入点：${input.securityAngle || "综合安全方案"}
 客户背景：${input.notes || "无"}
 
@@ -2786,8 +2772,7 @@ ${knowledgeNote}`;
         ? `\n接触方式：${contactTypeLabel[input.contactType] || input.contactType}\n发起方：${initiatedByLabel[input.initiatedBy || "sam"] || input.initiatedBy}`
         : "";
 
-      const prompt = `你是一位专业的大客户销售顾问，擅长从拜访记录中提炼战略洞察，帮助销售团队推进大客户商机。
-
+      const prompt = `
 客户：${input.clientName}
 拜访日期：${input.meetingDate}
 拜访类型：${input.visitType || '拜访'}
@@ -2838,7 +2823,7 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         // Call 2: extract structured MEDDPICC suggestions (using gpt-5-mini — JSON extraction task)
        invokeLLM({
          model: "gpt-4o-mini",
-          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: `你是一位MEDDPICC销售方法论专家。根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以如下JSON格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n{"items": [\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]}\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点识别, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n必须返回JSON对象，key为items，value为数组。` }],
+          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: `根据以下会议纪要内容，分析哪些MEDDPICC维度有了新进展，给出结构化的打分建议。\n\n会议纪要：\n${aiMinutes}\n\n请以如下JSON格式返回，只包含有明确证据支持的维度更新建议（没有进展的维度不要包含）：\n{"items": [\n  {\n    "dim": "C1",\n    "label": "Champion",\n    "suggestedScore": 50,\n    "reason": "吴悠确认对GLM方案感兴趣，已从潜在支持者升级为Champion已确认",\n    "confidence": "medium"\n  }\n]}\n\n维度说明：M=可量化价值, E=预算决策人, D1=决策标准, D2=决策流程, P=合同流程, I=痛点识别, C1=Champion, C2=竞争态势\n分数档位：0, 25, 50, 75, 100\n置信度：high（有明确陈述）, medium（有间接证据）, low（推断）\n\n必须返回JSON对象，key为items，value为数组。` }],
         }).then(r => {
           try {
             const parsed = JSON.parse(extractJSON(String(r.choices[0].message.content || "")));
@@ -2858,7 +2843,7 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         // Call 3: extract hookTopic and securityAngle
        invokeLLM({
          model: "gpt-4o-mini",
-          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: `你是一位大客户销售策略专家。根据以下拜访日志，提炼两个关键建议。\n\n拜访日志：\n${aiMinutes}\n\n请以JSON格式返回：\n{\n  "hookTopic": "基于本次拜访揭示的客户痛点和关注点，下次拜访最有效的敲门砖话题（一句话，具体、有针对性）",\n  "securityAngle": "基于客户痛点，建议的为信安全产品切入角度（具体产品线或解决方案）"\n}\n\n只返回JSON，不要其他文字。` }],
+          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: `根据以下拜访日志，提炼两个关键建议。\n\n拜访日志：\n${aiMinutes}\n\n请以JSON格式返回：\n{\n  "hookTopic": "基于本次拜访揭示的客户痛点和关注点，下次拜访最有效的敲门砖话题（一句话，具体、有针对性）",\n  "securityAngle": "基于客户痛点，建议的为信安全产品切入角度（具体产品线或解决方案）"\n}\n\n只返回JSON，不要其他文字。` }],
         }).then(r => {
           try {
             return JSON.parse(extractJSON(String(r.choices[0].message.content || "{}")));
@@ -3198,8 +3183,7 @@ ${clientSummaries}
       // 根据阶段分别构建 prompt
       let prompt: string;
       if (isOpportunityStage) {
-        prompt = `你是一位顶级销售预测分析师，专注于企业级网络安全大客户销售。
-
+        prompt = `
 客户：${input.clientName}（${input.industry || "科技企业"}）
 当前阶段：进入商机（共${input.oppCount ?? 0}条并行商机，MEDDPICC为各商机评分的加权均值）
 商机组合健康度：${overallScore}/100（${riskLevel}）
@@ -3227,8 +3211,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
 返回JSON：
 { "analysis": "判断文本", "warnings": ["风险点1", "风险点2"] }`;
       } else {
-        prompt = `你是一位顶级销售预测分析师，专注于企业级网络安全大客户销售。
-
+        prompt = `
 客户：${input.clientName}（${input.industry || "科技企业"}）
 当前阶段：${input.stage}（客户开发阶段，尚未进入正式商机）
 客户健康度：${overallScore}/100（${riskLevel}）
@@ -3351,8 +3334,7 @@ ${vq?.recentKeyPoints ? `最近拜访要点：${vq.recentKeyPoints}` : ''}
         `- ${c.name}（${c.title || '职位未知'}，${c.department || '部门未知'}，影响力：${c.influence}，关系：${c.relationship}${c.reportingTo ? `，汇报给：${c.reportingTo}` : ''}）`
       ).join('\n');
 
-      const prompt = `你是一位顶级大客户销售教练，专注于帮助 SAM 突破关键人认知壁垒。
-
+      const prompt = `
 客户：${input.clientName}
 关键人列表：
 ${contactList}
@@ -3726,8 +3708,7 @@ ${contactList}
       const [ks] = await db.select().from(killSheets).where(eq(killSheets.id, input.id));
       if (!ks) throw new Error('Kill sheet not found');
 
-      const prompt = `你是亚信安全（AIStorm/AsiaInfo Security）的竞品对抗专家。
-
+      const prompt = `
 竞品：${ks.competitorName}
 竞品类型：${ks.competitorType || '未指定'}
 我方对应产品：${ks.ourProduct || '亚信安全全线产品'}
@@ -3767,8 +3748,7 @@ ${contactList}
       clientContext: z.string().optional(),
       sourceClientId: z.number().optional(),
     })).mutation(async ({ input }) => {
-      const prompt = `你是亚信安全（AsiaInfo Security）的竞品对抗专家，擅长帮助销售团队在竞争性销售场景中击败对手。
-
+      const prompt = `
 竞品：${input.competitorName}
 竞品产品线：${input.productLine || '未指定'}
 我方对应产品：${input.ourProduct || '亚信安全全线产品'}
@@ -4319,7 +4299,7 @@ ${contactList}
             const textSnippet = doc.extractedText
               ? doc.extractedText.slice(0, 1500)
               : `文件名：${doc.filename || doc.title}`;
-            const prompt = `你是亚信科技/亚信安全产品专家。请根据文档信息判断该文档属于哪个产品线。\n\n【可选产品线列表】\n${productLinePromptText}\n\n【文档标题】${doc.title}\n【文档内容摘录】\n${textSnippet}\n\n只返回产品线的 value 值（如：AI XDR、TrustOne），不含其他文字。无法判断返回"未知"。`;
+            const prompt = `请根据文档信息判断该文档属于哪个产品线。\n\n【可选产品线列表】\n${productLinePromptText}\n\n【文档标题】${doc.title}\n【文档内容摘录】\n${textSnippet}\n\n只返回产品线的 value 值（如：AI XDR、TrustOne），不含其他文字。无法判断返回"未知"。`;
             const result = await invokeLLM({ model: 'gpt-4o-mini', messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }], maxTokens: 50 });
             const rawText = result.choices?.[0]?.message?.content;
             const productLine = (typeof rawText === 'string' ? rawText : '').trim().replace(/["""'']/g, '').trim();
@@ -4362,7 +4342,7 @@ ${contactList}
         const context = doc.extractedText
           ? `文档内容摘录：\n${doc.extractedText.slice(0, 3000)}`
           : `文档名称：${doc.title}\n产品线：${doc.productLine || '未知'}\n描述：${doc.description || '无'}`;
-        const prompt = `你是一位网络安全产品专家。请分析以下产品文档，提取核心摘要和关键卖点。
+        const prompt = `请分析以下产品文档，提取核心摘要和关键卖点。
 
 ${context}
 
@@ -5044,8 +5024,7 @@ ${context}
 - 每次安全事件损失：${baseline.estimatedIncidentCost || "未知"}
 - 数据来源：${baseline.dataSource || "AI估算"}` : "暂无效能基线数据，请使用行业基准估算";
 
-      const prompt = `你是一位企业级安全销售顾问，专注于将技术问题转化为业务价值陈述。
-
+      const prompt = `
 客户：${client.name}（${client.industry || "未知行业"}）
 当前阶段：${client.stage}
 
@@ -5104,8 +5083,7 @@ ${recentPainPoints || "暂无拜访记录"}
 - 每年安全事件损失：${baseline.estimatedIncidentCost || "行业基准$150K/次"}
 - 数据来源：${baseline.dataSource || "AI估算"}` : "使用行业基准数据估算";
 
-      const prompt = `你是一位企业级安全销售ROI分析师。
-
+      const prompt = `
 客户：${client.name}（${client.industry || "未知行业"}）
 拟推方案：${input.proposedProducts || "亚信安全整体方案"}
 ${champion ? `Champion：${champion.name}（${champion.title || ""}）` : ""}
@@ -5205,7 +5183,7 @@ ${baselineText}
         const recentSignalsWin = signals.slice(0, 3).map((s: any) =>
           `[${s.signalType}/${s.urgency}] ${s.rawSignal.slice(0, 80)}`
         ).join("\n") || "暂无情报信号";
-        const prompt = `你是一位顶级大客户销售顾问，请基于以下信息，为 SAM 生成一份 IBM Blue Sheet 风格的 Win Strategy 建议。
+        const prompt = `基于以下信息，为 SAM 生成一份 IBM Blue Sheet 风格的 Win Strategy 建议。
 
 客户：${input.clientName}
 当前阶段：${input.stage}
@@ -5274,7 +5252,7 @@ ${baselineContext}
       aiSuggestion: z.string(),
       stage: z.string(),
     })).mutation(async ({ input }) => {
-      const prompt = `你是一位销售行动计划提取助手。从以下 Win Strategy 文本中提取3个最优先的可执行行动，分配给对应角色。
+      const prompt = `从以下 Win Strategy 文本中提取3个最优先的可执行行动，分配给对应角色。
 
 Win Strategy 内容：
 ${input.aiSuggestion}
@@ -6626,7 +6604,7 @@ ${input.aiSuggestion}
       extractedText: z.string(),
       filename: z.string().optional(),
     })).mutation(async ({ input }) => {
-      const prompt = `你是一位企业销售案例分析专家。请从以下文档内容中提取成功案例的结构化信息。
+      const prompt = `请从以下文档内容中提取成功案例的结构化信息。
 
 文档名称：${input.filename || "未知"}
 文档内容：
