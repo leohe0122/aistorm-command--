@@ -319,4 +319,43 @@ describe("作战工作流入口收敛", () => {
     expect(confirmationCard).toContain("确认并写入");
     expect(confirmationCard).toContain("你无需理解 MEDDPICC、3 Why 或 Win 公式");
   });
+
+  it("让 AI 在客户和商机作战台主动提出一个问题，并只在 SAM 确认后沉淀回答中的事实", () => {
+    const routers = projectFile("server/routers.ts");
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    const guidancePanel = projectFile("client/src/components/AIActiveGuidancePanel.tsx");
+    expect(routers).toContain("aiGuidance: router");
+    expect(routers).toContain("customerGuide: protectedProcedure");
+    expect(routers).toContain("opportunityGuide: protectedProcedure");
+    expect(routers).toContain("interpretAnswer: protectedProcedure");
+    expect(routers).toContain("数据不足，暂不判断");
+    expect(routers).toContain('candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] }');
+    expect(workstation).toContain('<AIActiveGuidancePanel scope="customer" clientId={clientId} />');
+    expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} />');
+    expect(guidancePanel).toContain("让 AI 开始引导");
+    expect(guidancePanel).toContain("AI 当前判断");
+    expect(guidancePanel).toContain("确认写入事实");
+    expect(guidancePanel).toContain("暂不写入");
+    expect(guidancePanel).toContain("trpc.purchaseSignals.create.useMutation");
+    expect(guidancePanel).toContain("trpc.opportunities.upsertMeddpicc.useMutation");
+  });
+
+  it("在推进商机阶段前由 AI 展示硬性证据缺口，并只允许证据满足后受控推进", () => {
+    const routers = projectFile("server/routers.ts");
+    const guidance = projectFile("server/aiNativeGuidance.ts");
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    const stagePanel = projectFile("client/src/components/StageAdvanceGuidance.tsx");
+    expect(routers).toContain("getStageGuidance: protectedProcedure");
+    expect(routers).toContain("advanceWithEvidence: protectedProcedure");
+    expect(routers).toContain("尚不能推进至");
+    expect(routers).toContain("stageChangedAt: new Date()");
+    expect(guidance).toContain("STAGE_REQUIREMENTS");
+    expect(opportunityRoom).toContain("<StageAdvanceGuidance");
+    expect(stagePanel).toContain("AI 阶段推进引导");
+    expect(stagePanel).toContain("AI 建议这样问：");
+    expect(stagePanel).toContain("让 AI 引导补证");
+    expect(stagePanel).toContain("确认推进至");
+    expect(stagePanel).toContain("data-ai-active-guidance");
+  });
 });

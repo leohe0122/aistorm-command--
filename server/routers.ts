@@ -14,7 +14,7 @@ import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../sha
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
-import { AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, normalizeFullMeetingSignals } from "./aiNativeGuidance";
+import { AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -109,6 +109,64 @@ async function advanceCustomerStageByEvidence(clientId: number, requestedStage: 
   return { stage: requestedStage, evidence: readiness.standardActions };
 }
 
+const AI_GUIDANCE_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    dataSufficiency: { type: "string", enum: ["sufficient", "partial", "insufficient"] },
+    factSummary: { type: "string" },
+    primaryQuestion: { type: "string" },
+    whyThisQuestion: { type: "string" },
+    answerFocus: { type: "string", enum: ["purchase_signal", "decision_chain", "trigger_event", "meddpicc", "three_why", "competition"] },
+    winFactors: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          factor: { type: "string", enum: ["Pain", "Power", "Champion", "Value", "Control"] },
+          status: { type: "string", enum: ["supported", "needs_evidence", "unknown"] },
+          evidence: { type: "string" },
+        },
+        required: ["factor", "status", "evidence"],
+        additionalProperties: false,
+      },
+    },
+    doNotAssume: { type: "array", items: { type: "string" } },
+  },
+  required: ["dataSufficiency", "factSummary", "primaryQuestion", "whyThisQuestion", "answerFocus", "winFactors", "doNotAssume"],
+  additionalProperties: false,
+} as const;
+
+const AI_ANSWER_INTERPRETATION_SCHEMA = {
+  type: "object",
+  properties: {
+    message: { type: "string" },
+    nextQuestion: { type: "string" },
+    candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] },
+    signalType: { type: "string", enum: ["intent_subject", "decision_chain", "trigger_event", ""] },
+    meddpiccDim: { type: "string", enum: ["M", "E", "D1", "D2", "P", "I", "C1", "C2", ""] },
+    subjectName: { type: "string" },
+    evidence: { type: "string" },
+    suggestedScore: { type: "number", enum: [0, 25, 50, 75, 100] },
+    confidence: { type: "string", enum: ["high", "medium", "low"] },
+  },
+  required: ["message", "nextQuestion", "candidateTarget", "signalType", "meddpiccDim", "subjectName", "evidence", "suggestedScore", "confidence"],
+  additionalProperties: false,
+} as const;
+
+async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
+  const prompt = `你是 AIStorm Command 的主动式销售引导 AI。你的任务不是让 SAM 填 MEDDPICC、3 Why 或 Win 公式；而是阅读已入库原始事实后，用 SAM 能听懂的自然语言提出“当前只需要回答的一个问题”。\n\n${snapshot}\n\n必须遵守：\n1. 直接从原始事实识别未知、矛盾或证据薄弱处；不要根据销售自评推断。\n2. primaryQuestion 必须可由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要问“请填写 Champion”等方法论术语。\n3. factSummary 只能复述已有事实；没有充分事实时明确写“数据不足，暂不判断”。\n4. whyThisQuestion 要用业务语言说明为什么现在问它，而不出现 MEDDPICC、3 Why、Win Formula 等术语。\n5. winFactors 只做证据状态提示，evidence 为空或不足时必须写“数据不足，暂不判断”。\n6. doNotAssume 列出本次不得假定的客户意图或事实。\n7. 请严格按 JSON Schema 输出，不输出 JSON 外文字。`;
+  const result = await invokeLLM({
+    model: "gpt-5-mini",
+    maxCompletionTokens: 1600,
+    reasoning: { effort: "low" },
+    messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
+    response_format: { type: "json_schema", json_schema: { name: `${scope}_active_guidance`, strict: true, schema: AI_GUIDANCE_RESPONSE_SCHEMA } },
+  });
+  const raw = getLLMTextContent(result.choices[0]?.message.content);
+  if (!raw) throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回下一步引导问题，请稍后重试。" });
+  try { return JSON.parse(extractJSON(raw)); } catch { throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 引导格式无效，请稍后重试。" }); }
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -117,6 +175,47 @@ export const appRouter = router({
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
+    }),
+  }),
+
+  aiGuidance: router({
+    customerGuide: protectedProcedure.input(z.object({ clientId: z.number() })).mutation(async ({ input }) => {
+      const { client, contacts, meetings, signals, readiness } = await loadCustomerReadiness(input.clientId);
+      const meddpicc = await getMeddpiccByClientId(input.clientId);
+      const snapshot = `【客户作战台原始事实】\n客户：${client.name}\n当前阶段：${client.stage}\n购买信号门控：${JSON.stringify(readiness.checks || [])}\n当前缺口：${JSON.stringify(readiness.blockers || [])}\n关键人：${JSON.stringify(contacts.map((item: any) => ({ name: item.name, title: item.title, buyingRole: item.buyingRole, relationship: item.relationship, notes: item.notes })))}\n近三次拜访：${JSON.stringify(meetings.slice(0, 3).map((item: any) => ({ date: item.meetingDate, attendees: item.attendees, keyPoints: item.keyPoints })))}\n已入库外部信号：${JSON.stringify(signals.slice(0, 5))}\n客户级证据：${JSON.stringify(meddpicc || {})}`;
+      return generateAIGuidance("customer", snapshot);
+    }),
+    opportunityGuide: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number() })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { opportunities, opportunityMeddpicc, threeWhy, painMetrics, competitionMap } = await import("../drizzle/schema");
+      const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1);
+      if (!opportunity || opportunity.clientId !== input.clientId) throw new TRPCError({ code: "NOT_FOUND", message: "未找到商机" });
+      const [meddpicc, why] = await Promise.all([
+        db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1),
+        db.select().from(threeWhy).where(eq(threeWhy.opportunityId, input.opportunityId)).limit(1),
+      ]);
+      const [pains, competitions, dealContext] = await Promise.all([
+        db.select().from(painMetrics).where(eq(painMetrics.opportunityId, input.opportunityId)),
+        db.select().from(competitionMap).where(eq(competitionMap.opportunityId, input.opportunityId)),
+        getDealDiagnosticContext(input.clientId, input.opportunityId),
+      ]);
+      const snapshot = `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}\n\n${dealContext}`;
+      return generateAIGuidance("opportunity", snapshot);
+    }),
+    interpretAnswer: protectedProcedure.input(z.object({
+      scope: z.enum(["customer", "opportunity"]), clientId: z.number(), opportunityId: z.number().optional(), question: z.string().min(3), answer: z.string().min(3).max(6000),
+    })).mutation(async ({ input }) => {
+      if (input.scope === "opportunity" && !input.opportunityId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机引导需要关联商机。" });
+      const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、原话、决策接触、触发事件或商机证据，可返回一个待确认候选。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 如果回答只是主观判断、计划或信息不充分，candidateTarget 必须为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- nextQuestion 继续只问一个最关键的自然语言问题；不要出现 MEDDPICC、3 Why、Win Formula 等术语。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。`;
+      const result = await invokeLLM({
+        model: "gpt-5-mini", maxCompletionTokens: 1100, reasoning: { effort: "low" },
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
+        response_format: { type: "json_schema", json_schema: { name: "ai_guidance_answer_interpretation", strict: true, schema: AI_ANSWER_INTERPRETATION_SCHEMA } },
+      });
+      const raw = getLLMTextContent(result.choices[0]?.message.content);
+      if (!raw) throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回可确认的事实候选，请稍后重试。" });
+      try { return JSON.parse(extractJSON(raw)); } catch { throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 事实候选格式无效，请稍后重试。" }); }
     }),
   }),
 
@@ -3892,6 +3991,52 @@ ${contactList}
       }
       await db.update(opportunities).set(updateData).where(eq(opportunities.id, id));
       return { success: true };
+    }),
+    getStageGuidance: protectedProcedure.input(z.object({
+      clientId: z.number(), opportunityId: z.number(), targetStage: z.enum(['初步需求', '需求挖掘', '技术验证', '方案提案', '商务谈判', '赢单', '丢单']),
+    })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { opportunities, opportunityMeddpicc, competitionMap } = await import("../drizzle/schema.js");
+      const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1);
+      if (!opportunity || opportunity.clientId !== input.clientId) throw new TRPCError({ code: "NOT_FOUND", message: "未找到商机" });
+      const [meddpicc, competitions] = await Promise.all([
+        db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1),
+        db.select().from(competitionMap).where(eq(competitionMap.opportunityId, input.opportunityId)),
+      ]);
+      const requirements = (STAGE_REQUIREMENTS[input.targetStage as keyof typeof STAGE_REQUIREMENTS] || []).map(requirement => {
+        const isCompetition = requirement.key === "gate8CompDefensible";
+        const notesField = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP]?.notes;
+        const scoreField = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP]?.score;
+        const evidence = isCompetition
+          ? competitions.find((item: any) => String(item.counterAction || item.competitorName || "").trim())?.counterAction || ""
+          : String((meddpicc[0] as any)?.[notesField || ""] || "").trim();
+        const score = isCompetition ? 0 : Number((meddpicc[0] as any)?.[scoreField || ""] || 0);
+        const met = isCompetition ? evidence.length >= 8 : score >= 2 && evidence.length >= 10;
+        return { ...requirement, met, evidence: met ? evidence : "数据不足，暂不判断" };
+      });
+      return { currentStage: opportunity.stage, targetStage: input.targetStage, requirements, isReady: requirements.every(item => item.met), missing: requirements.filter(item => !item.met) };
+    }),
+    advanceWithEvidence: protectedProcedure.input(z.object({
+      clientId: z.number(), opportunityId: z.number(), targetStage: z.enum(['初步需求', '需求挖掘', '技术验证', '方案提案', '商务谈判', '赢单', '丢单']),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { opportunities, opportunityMeddpicc, competitionMap } = await import("../drizzle/schema.js");
+      const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1);
+      if (!opportunity || opportunity.clientId !== input.clientId) throw new TRPCError({ code: "NOT_FOUND", message: "未找到商机" });
+      const [meddpicc, competitions] = await Promise.all([
+        db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1),
+        db.select().from(competitionMap).where(eq(competitionMap.opportunityId, input.opportunityId)),
+      ]);
+      const missing = (STAGE_REQUIREMENTS[input.targetStage as keyof typeof STAGE_REQUIREMENTS] || []).filter(requirement => {
+        if (requirement.key === "gate8CompDefensible") return !competitions.some((item: any) => String(item.counterAction || item.competitorName || "").trim().length >= 8);
+        const mapping = MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
+        return Number((meddpicc[0] as any)?.[mapping.score] || 0) < 2 || String((meddpicc[0] as any)?.[mapping.notes] || "").trim().length < 10;
+      });
+      if (missing.length > 0) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `尚不能推进至${input.targetStage}；请先补充：${missing.map(item => item.label).join("、")}。` });
+      await db.update(opportunities).set({ stage: input.targetStage, stageChangedAt: new Date() }).where(eq(opportunities.id, input.opportunityId));
+      return { success: true, stage: input.targetStage };
     }),
     delete: publicProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
       const db = await getDb();

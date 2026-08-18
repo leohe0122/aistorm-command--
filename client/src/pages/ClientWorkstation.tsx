@@ -19,6 +19,7 @@ import { KeyContactsPanel, ProductCoverageBar } from "./BattleMap";
 import PreVisitInsightButton from "@/components/PreVisitInsightButton";
 import ExternalSignalWorkbench from "@/components/ExternalSignalWorkbench";
 import { AIConfidenceBar } from "@/components/AIConfidenceBar";
+import { AIActiveGuidancePanel } from "@/components/AIActiveGuidancePanel";
 
 const CUSTOMER_STAGES = ["建图", "进门", "定痛", "找人", "进入商机"];
 
@@ -563,6 +564,7 @@ export default function ClientWorkstation() {
 
         {client.stage !== "进入商机" && <AccountMapPanel clientId={clientId} />}
         <StageTaskCenter readiness={readiness} customTasks={customClientTasks} taskSubmitting={addTask.isPending} onAddTask={(title, description) => addTask.mutate({ clientId, assignedRole: "SAM", title, description: description || undefined })} onToggleTask={(task) => updateTask.mutate({ id: task.id, taskStatus: task.isCompleted || task.taskStatus === "done" ? "pending" : "done" })} />
+        <AIActiveGuidancePanel scope="customer" clientId={clientId} />
         {client.stage === "进入商机" && <ClientActionDesk client={client} clientId={clientId} meddpicc={meddpicc} signals={signals as any[]} />}
 
         <OpportunityApplicationPanel readiness={readiness} client={client} products={products as any[]} submitting={applyForOpportunity.isPending} onSubmit={(payload) => applyForOpportunity.mutate({ clientId, ...payload })} />

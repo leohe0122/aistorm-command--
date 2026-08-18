@@ -1,0 +1,84 @@
+import { useMemo, useState } from "react";
+import { CheckCircle2, CircleAlert, Loader2, MessageSquareText, RefreshCw, Sparkles } from "lucide-react";
+import { toast } from "sonner";
+import { AIChatBox, type Message } from "@/components/AIChatBox";
+import { Button } from "@/components/ui/button";
+import { trpc } from "@/lib/trpc";
+
+type Guidance = {
+  dataSufficiency: "sufficient" | "partial" | "insufficient";
+  factSummary: string;
+  primaryQuestion: string;
+  whyThisQuestion: string;
+  answerFocus: string;
+  winFactors: Array<{ factor: string; status: "supported" | "needs_evidence" | "unknown"; evidence: string }>;
+  doNotAssume: string[];
+};
+type Candidate = {
+  message: string; nextQuestion: string; candidateTarget: "purchase_signal" | "meddpicc" | "none";
+  signalType: "intent_subject" | "decision_chain" | "trigger_event" | ""; meddpiccDim: "M" | "E" | "D1" | "D2" | "P" | "I" | "C1" | "C2" | "";
+  subjectName: string; evidence: string; suggestedScore: 0 | 25 | 50 | 75 | 100; confidence: "high" | "medium" | "low";
+};
+const MEDDPICC_FIELDS: Record<Exclude<Candidate["meddpiccDim"], "">, { score: string; notes: string }> = {
+  M: { score: "metricsScore", notes: "metricsNotes" }, E: { score: "economicBuyerScore", notes: "economicBuyerNotes" }, D1: { score: "decisionCriteriaScore", notes: "decisionCriteriaNotes" }, D2: { score: "decisionProcessScore", notes: "decisionProcessNotes" }, P: { score: "paperProcessScore", notes: "paperProcessNotes" }, I: { score: "implicatePainScore", notes: "implicatePainNotes" }, C1: { score: "championScore", notes: "championNotes" }, C2: { score: "competitionScore", notes: "competitionNotes" },
+};
+
+export function AIActiveGuidancePanel({ scope, clientId, opportunityId, className }: { scope: "customer" | "opportunity"; clientId: number; opportunityId?: number; className?: string }) {
+  const utils = trpc.useUtils();
+  const [guide, setGuide] = useState<Guidance | null>(null);
+  const [candidate, setCandidate] = useState<Candidate | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const customerGuideMutation = trpc.aiGuidance.customerGuide.useMutation();
+  const opportunityGuideMutation = trpc.aiGuidance.opportunityGuide.useMutation();
+  const interpretMutation = trpc.aiGuidance.interpretAnswer.useMutation();
+  const createSignal = trpc.purchaseSignals.create.useMutation();
+  const updateMeddpicc = trpc.opportunities.upsertMeddpicc.useMutation();
+  const startGuide = () => {
+    setCandidate(null);
+    const onSuccess = (data: Guidance) => {
+      setGuide(data);
+      setMessages([{ role: "assistant", content: `**AI 当前判断**\n${data.factSummary}\n\n**我现在只想确认一件事：** ${data.primaryQuestion}\n\n*为什么现在问：${data.whyThisQuestion}*` }]);
+    };
+    if (scope === "customer") customerGuideMutation.mutate({ clientId }, { onSuccess, onError: error => toast.error(`AI 引导暂不可用：${error.message}`) });
+    else if (opportunityId) opportunityGuideMutation.mutate({ clientId, opportunityId }, { onSuccess, onError: error => toast.error(`AI 引导暂不可用：${error.message}`) });
+  };
+  const sendAnswer = (answer: string) => {
+    if (!guide) return;
+    setMessages(current => current.concat({ role: "user", content: answer }));
+    interpretMutation.mutate({ scope, clientId, opportunityId, question: guide.primaryQuestion, answer }, {
+      onSuccess: (data: Candidate) => {
+        setCandidate(data);
+        setGuide(current => current ? { ...current, primaryQuestion: data.nextQuestion } : current);
+        setMessages(current => current.concat({ role: "assistant", content: `${data.message}\n\n**下一步我想确认：** ${data.nextQuestion}` }));
+      },
+      onError: error => toast.error(`AI 未能解释这条回答：${error.message}`),
+    });
+  };
+  const confirmCandidate = () => {
+    if (!candidate || candidate.candidateTarget === "none") return;
+    if (candidate.candidateTarget === "purchase_signal") {
+      if (!candidate.signalType || !candidate.subjectName || !candidate.evidence) return toast.error("AI 未识别到可确认的客户事实，请继续补充。" );
+      createSignal.mutate({ clientId, signalType: candidate.signalType, subjectName: candidate.subjectName, occurredAt: new Date().toISOString(), statement: candidate.evidence, sourceType: "other_evidence", sourceReference: "AI 主动引导问答，经 SAM 确认" }, {
+        onSuccess: () => { toast.success("已确认并写入客户购买事实"); setCandidate(null); utils.purchaseSignals.listByClient.invalidate({ clientId }); utils.opportunities.customerReadiness.invalidate({ clientId }); },
+        onError: error => toast.error(`写入事实失败：${error.message}`),
+      });
+      return;
+    }
+    if (!opportunityId || !candidate.meddpiccDim || !candidate.evidence) return toast.error("当前回答不足以写入商机事实，请继续补充。" );
+    const field = MEDDPICC_FIELDS[candidate.meddpiccDim];
+    updateMeddpicc.mutate({ opportunityId, clientId, [field.score]: candidate.suggestedScore / 25, [field.notes]: `[AI 主动引导问答 · 经 SAM 确认] ${candidate.evidence}` } as any, {
+      onSuccess: () => { toast.success("已确认并写入商机证据"); setCandidate(null); utils.opportunities.getMeddpicc.invalidate({ opportunityId }); },
+      onError: error => toast.error(`写入商机证据失败：${error.message}`),
+    });
+  };
+  const working = customerGuideMutation.isPending || opportunityGuideMutation.isPending || interpretMutation.isPending;
+  const targetLabel = scope === "customer" ? "客户事实" : "商机证据";
+  const factorSummary = useMemo(() => guide?.winFactors.filter(item => item.status !== "supported") || [], [guide]);
+  return <section data-ai-active-guidance className={`rounded-2xl border border-fuchsia-400/25 bg-gradient-to-br from-fuchsia-400/[0.07] via-slate-950/70 to-slate-950/85 p-4 shadow-[0_14px_40px_rgba(192,132,252,0.08)] ${className || ""}`}>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-fuchsia-400/15 text-fuchsia-100"><Sparkles className="h-4.5 w-4.5" /></span><div><h2 className="text-sm font-semibold text-fuchsia-50">AI 主动引导</h2><p className="mt-1 text-xs leading-5 text-fuchsia-100/55">AI 先读已入库事实，再一次只问一个最该验证的问题；SAM 只需如实回答。</p></div></div><Button type="button" size="sm" variant="outline" className="h-8 gap-1.5 border-fuchsia-400/30 bg-fuchsia-400/10 text-xs text-fuchsia-100 hover:bg-fuchsia-400/20" onClick={startGuide} disabled={working}>{customerGuideMutation.isPending || opportunityGuideMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}{guide ? "更新 AI 问题" : "让 AI 开始引导"}</Button></div>
+    {!guide ? <div className="mt-4 rounded-xl border border-dashed border-fuchsia-400/20 bg-slate-950/35 p-4 text-xs leading-5 text-slate-400">不需要先填写方法论表格。点击“让 AI 开始引导”，系统会基于已经存在的拜访、关键人、购买信号和商机事实，提出当前最有价值的问题。</div> : <>
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]"><AIChatBox messages={messages} onSendMessage={sendAnswer} isLoading={working} height="330px" placeholder="用自然语言描述客户说过什么、做过什么，或你还不知道什么…" emptyStateMessage="AI 正在准备第一个问题" /><aside className="space-y-3 rounded-xl border border-slate-700/70 bg-slate-950/50 p-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/70">事实状态</div><p className="mt-1 text-xs leading-5 text-slate-300">{guide.dataSufficiency === "sufficient" ? "现有事实足够支持当前判断。" : guide.dataSufficiency === "partial" ? "已有部分事实，但关键处仍需验证。" : "数据不足，暂不判断。"}</p></div><div><div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/70">暂不假定</div>{guide.doNotAssume.length ? <ul className="mt-1 space-y-1 text-[11px] leading-4 text-slate-400">{guide.doNotAssume.slice(0, 3).map((item, index) => <li key={index}>• {item}</li>)}</ul> : <p className="mt-1 text-[11px] text-slate-500">无</p>}</div>{factorSummary.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/70">仍需补证</div><div className="mt-1 flex flex-wrap gap-1">{factorSummary.map(item => <span key={item.factor} className="rounded border border-amber-400/20 bg-amber-400/[0.08] px-1.5 py-0.5 text-[10px] text-amber-100">{item.factor}</span>)}</div></div>}</aside></div>
+      {candidate && <div className="mt-3 rounded-xl border border-cyan-400/25 bg-cyan-400/[0.055] p-3"><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-cyan-200" /><div className="min-w-0 flex-1"><div className="text-xs font-semibold text-cyan-100">AI 识别到一条待确认的{targetLabel}</div><p className="mt-1 text-xs leading-5 text-slate-300">{candidate.evidence || "数据不足，暂不判断。"}</p><p className="mt-1 text-[10px] text-slate-500">置信度：{candidate.confidence === "high" ? "高（回答中有明确事实）" : candidate.confidence === "medium" ? "中（建议继续核对）" : "低（不建议写入）"}</p></div></div>{candidate.candidateTarget !== "none" ? <div className="mt-3 flex justify-end gap-2"><Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={() => setCandidate(null)}>暂不写入</Button><Button type="button" size="sm" className="h-8 gap-1 text-xs" onClick={confirmCandidate} disabled={createSignal.isPending || updateMeddpicc.isPending}><CheckCircle2 className="h-3.5 w-3.5" />确认写入事实</Button></div> : <p className="mt-3 rounded-lg border border-slate-700/60 bg-slate-950/45 px-3 py-2 text-[11px] text-slate-400">本次不会写入系统。请直接回答 AI 的下一问，或保留为待验证事项。</p>}</div>}
+    </>}
+  </section>;
+}

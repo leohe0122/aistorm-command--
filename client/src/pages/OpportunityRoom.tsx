@@ -19,6 +19,8 @@ import { MEDDPICC_DIMENSIONS } from "@shared/meddpicc";
 import { calculateOpportunityHealth, OPPORTUNITY_MEDDPICC_FIELDS } from "@/lib/opportunityHealth";
 import { mergeOpportunityTasks } from "@/lib/opportunityTasks";
 import { calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "@shared/command2";
+import { AIActiveGuidancePanel } from "@/components/AIActiveGuidancePanel";
+import { StageAdvanceGuidance } from "@/components/StageAdvanceGuidance";
 
 type RoomSection = "overview" | "meddpicc" | "bluesheet" | "strategy" | "spin" | "threewhy" | "value" | "gonogo" | "actions";
 
@@ -152,6 +154,8 @@ function AIWarJudgement({
         </Button></div>
       </div>
       <div className="px-4 pt-4"><EntryPurchaseSignals snapshot={opportunity.entryEvidenceSnapshot} /></div>
+      <div className="px-4 pt-4"><AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} /></div>
+      <div className="px-4 pt-4"><StageAdvanceGuidance clientId={clientId} opportunityId={opportunityId} currentStage={opportunity.stage} /></div>
       <div className="grid gap-px bg-cyan-300/10 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="bg-slate-950/60 p-4">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/70">判断</div>
