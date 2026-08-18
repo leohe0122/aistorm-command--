@@ -9,6 +9,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "./_core/llm";
 import { buildDailyBriefingPrompt, getComplianceRssDigest } from "./dailyBriefingRss";
+import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildDealMapDiagnosticLayer } from "./salesMethodology";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
 // Admin-only procedure: requires login + admin role
@@ -1483,6 +1484,15 @@ ${situationSnapshot}
       }
       // 所有接触均为正式会议检查
       const allFormal = contacts.every(c => (c as any).informalContactCount === 0 || (c as any).informalContactCount === null);
+      const executiveTitles = ["CEO", "CFO", "CIO", "CISO"];
+      const executiveCoverageCount = contacts.filter(contact => executiveTitles.some(title => `${contact.title || ""} ${contact.department || ""}`.toUpperCase().includes(title))).length;
+      const uncoveredPriorityLayers = Math.max(0, executiveTitles.length - executiveCoverageCount);
+      const reframeMeeting = meetings.find((meeting: any) => `${meeting.aiMinutes || ""}${meeting.keyPoints || ""}${meeting.summary || ""}`.includes("之前没这样想"));
+      const accountMapBlock = buildAccountMapDiagnosticLayer({
+        executiveCoverageCount,
+        uncoveredPriorityLayers,
+        reframeEvidence: reframeMeeting ? `拜访记录 ${new Date(reframeMeeting.meetingDate).toLocaleDateString("zh-CN")} 出现客户认知重构表述` : null,
+      });
       const contradictionBlock = contradictions.length > 0
         ? `\n【⚠️ AI一致性矛盾检测（${contradictions.length}项）】\n${contradictions.join("\n")}`
         : "\n【✅ AI一致性检测：未发现明显矛盾】";
@@ -1498,9 +1508,7 @@ ${situationSnapshot}
         `[${s.signalType}/${s.urgency}] ${s.rawSignal.slice(0, 100)}`
       ).join("\n");
 
-      const prompt = `你是一位大客户销售关系教练，专注于企业级安全产品的客户开发阶段（0→1）。
-你的工作是帮SAM判断关系走到哪一层，找出推进阻碍，给出加深信任的具体行动。
-不要给价值主张建议，不要给产品介绍建议。这个阶段的核心是人，不是产品。
+      const prompt = `针对企业级安全客户的 0→1 Account Map 阶段进行关系与认知诊断。这个阶段的核心是人，不是产品；不要给产品介绍或方案建议。
 
 当前客户阶段: ${stage}
 该阶段的退出标准: ${exitCriteria[stage] || "推进到下一阶段"}
@@ -1519,6 +1527,7 @@ ${recentSignals || "暂无情报信号"}
 
 当前MEDDPICC I维度（Identify Pain）得分: ${painScore}
 当前MEDDPICC C维度（Champion）得分: ${championScore}
+${accountMapBlock}
 
 SPIN话术阶段映射（供行动建议使用，不要在输出中解释框架）:
 当前阶段建议使用：${spinMapping[stage] || "综合运用SPIN提问"}
@@ -1563,8 +1572,8 @@ ${contradictionBlock}
 - 如果所有接触均为正式会议，必须在关系深度评估中标注：⚠️ 所有接触为正式场合，客户真实态度存在不确定性`;
 
       const res = await invokeLLM({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        model: "gpt-5-mini",
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const content = String(res.choices[0].message.content || "");
       await saveAiReview({ clientId: input.clientId, opportunityId: null, reviewType: "0to1", content, createdBy: null });
@@ -1727,9 +1736,11 @@ ${(baseline as any).roiSummary ? `ROI摘要已生成，可作为方案提案依�
       const contradiction1NBlock = contradictions1N.length > 0
         ? `\n【⚠️ AI一致性矛盾检测（${contradictions1N.length}项）】\n${contradictions1N.join("\n")}`
         : "\n【✅ AI一致性检测：未发现明显矛盾】";
+      const dealMapBlock = buildDealMapDiagnosticLayer({
+        competitorInfluencesCriteria: opp.competitorName ? `主竞品已登记为“${opp.competitorName}”；其是否影响 Decision Criteria：数据不足` : null,
+      });
 
-      const prompt = `你是一位MEDDPICC认证的销售战略顾问，专注于企业级安全产品的商机赢单。
-你的工作是识别商机漏洞、评估赢单风险、给出有数据支撑的下一步行动。
+      const prompt = `针对企业级安全客户的 1→N Deal Map 阶段进行赢单质量诊断。先识别 Win = Pain × Power × Champion × Value × Control 中最弱的因子，再给出有数据支撑的下一步行动。
 
 商机: ${opp.name}
 当前阶段: ${opp.stage}，在当前阶段已停留 ${daysInStage} 天（${stagnationRisk}，预警阈值：黄${threshold.yellow}天/红${threshold.red}天）
@@ -1754,6 +1765,7 @@ Blue Sheet内容:
 ${blueSheet}
 ${comCheck}
 ${contradiction1NBlock}
+${dealMapBlock}
 
 请按以下格式输出（格式固定，不得省略）:
 
@@ -1807,8 +1819,8 @@ AI质疑层规则（内嵌在以上各节中执行）：
 - Champion评分高但无非正式接触：在Champion评估中标注⚠️ Political Will真实性待验证`;
 
       const res = await invokeLLM({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
+        model: "gpt-5-mini",
+        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
       });
       const reviewContent = String(res.choices[0].message.content || "");
       await saveAiReview({ clientId: input.clientId, opportunityId: input.opportunityId, reviewType: "1toN", content: reviewContent, createdBy: null });
@@ -5375,7 +5387,9 @@ ${input.aiSuggestion}
       const nativeSummaryFingerprint = `native-${nativeHash}-summary`;
       const nativeAlreadyExists = existing.some(item => item.fingerprint === nativeSummaryFingerprint);
       const nativeOutput = nativeAlreadyExists ? null : await runNativeAdAnalysis(nativeSnapshot);
-      const fallbackGenerated = buildAdCommandRecommendations(
+      // 规则只在原生 LLM 调用失败或未给出任何建议时兜底；已缓存的原生结果不重复触发规则与二次 LLM。
+      const shouldUseFallback = !nativeAlreadyExists && (!nativeOutput || !nativeOutput.recommendations.length);
+      const fallbackGenerated = shouldUseFallback ? buildAdCommandRecommendations(
         clientInputs,
         oppInputs,
         new Date(),
@@ -5383,7 +5397,7 @@ ${input.aiSuggestion}
           id: action.id, clientId: action.clientId, opportunityId: action.opportunityId, clientName: allClients.find(client => client.id === action.clientId)?.name ?? `客户#${action.clientId}`,
           title: action.title, objective: action.objective, priority: action.priority, timeframe: action.timeframe, responsibleRole: action.responsibleRole,
         })),
-      );
+      ) : [];
       const knownFingerprints = new Set(existing.map(item => item.fingerprint));
       const newGenerated = fallbackGenerated.filter(item => !knownFingerprints.has(`fallback-${item.fingerprint}`));
       const enriched = await Promise.all(newGenerated.map(async (item) => {
@@ -5582,16 +5596,17 @@ ${input.aiSuggestion}
           stage: client.stage,
           lastMeetingDays: lastMeeting ? Math.floor((now - new Date(lastMeeting).getTime()) / 86_400_000) : null,
           championScore: Number((scoreByClient.get(client.id) as any)?.championScore ?? 0),
+          economicBuyerScore: Number((scoreByClient.get(client.id) as any)?.economicBuyerScore ?? 0),
           activeOpportunityCount: allOpportunities.filter(opp => opp.clientId === client.id && opp.status === '活跃').length,
         };
       });
       const response = await invokeLLM({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5-mini',
         messages: [
-          { role: 'system', content: '你是严谨的销售教练，只能依据输入的客户事实生成可执行辅导。' },
+          { role: 'system', content: SALES_METHODOLOGY_SYSTEM_PROMPT },
           { role: 'user', content: buildSamCoachPrompt(input.samName, facts) },
         ],
-        maxTokens: 900,
+        maxCompletionTokens: 900,
       });
       const content = String(response.choices?.[0]?.message?.content || '').trim() || '数据不足，暂不判断。请补充客户对话或关键人证据后重试。';
       return { content, samName: input.samName, clientCount: samClients.length };

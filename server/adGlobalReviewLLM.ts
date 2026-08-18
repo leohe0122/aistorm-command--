@@ -1,4 +1,5 @@
 import { invokeLLM } from "./_core/llm";
+import { SALES_METHODOLOGY_SYSTEM_PROMPT } from "./salesMethodology";
 
 export type GlobalCandidateFact = {
   clientId: number;
@@ -56,13 +57,12 @@ export async function generateGlobalBattleReview(candidates: GlobalCandidateFact
   if (!candidates.length) return null;
   try {
     const response = await invokeLLM({
-      // 使用当前系统 AI 配置已经验证的快速模型；JSON 由提示词和解析校验共同约束。
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
       messages: [
-        { role: "system", content: "你是严谨的销售指挥官，只基于输入事实生成结构化周度战场研判。" },
+        { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
         { role: "user", content: buildGlobalBattleReviewPrompt(candidates) },
       ],
-      maxTokens: 1400,
+      maxCompletionTokens: 1400,
     });
     const parsed = JSON.parse(String(response.choices?.[0]?.message?.content || "{}")) as GlobalBattleReview;
     const validIds = new Set(candidates.map((candidate) => candidate.clientId));

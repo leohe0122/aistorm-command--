@@ -1,5 +1,6 @@
 import { invokeLLM } from "./_core/llm";
 import type { GeneratedCommandRecommendation } from "../shared/adCommand";
+import { SALES_METHODOLOGY_SYSTEM_PROMPT } from "./salesMethodology";
 
 export type RecommendationLlmContext = {
   clientName: string;
@@ -56,6 +57,8 @@ Champion：${scoreToFour(context.championScore)}
 规则触发事实：${recommendation.aiConclusion}
 规则事实清单：${recommendation.facts.map((fact) => `${fact.label}=${fact.value}`).join("；")}
 
+判断锚点：先确认当前是 Account Map（0→1）还是 Deal Map（1→N）。Account Map 只判断关系和认知推进；Deal Map 必须用 Win = Pain × Power × Champion × Value × Control 找最弱项。Deal Health <60 或 Go/No-Go <10 的事实若已提供，不得表述为 Commit。judgment 必须包含“Win公式中X维度最弱”与事实依据。
+
 请输出 JSON，不要 Markdown：
 {
   "judgment":"不超过40字。明确当前最大推进障碍及其事实依据；事实不足时固定写数据不足，暂不判断。",
@@ -71,12 +74,12 @@ export async function enrichAdCommandRecommendation(
   try {
     const response = await invokeLLM({
       // 复用系统 AI 模型配置中已验证的快速模型，避免特定供应商不支持目录模型而返回 400。
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
       messages: [
-        { role: "system", content: "你是严谨的大客户销售总监。只根据输入事实研判，绝不编造。" },
+        { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
         { role: "user", content: buildRecommendationLlmPrompt(recommendation, context) },
       ],
-      maxTokens: 420,
+      maxCompletionTokens: 420,
     });
     const raw = String(response.choices?.[0]?.message?.content || "");
     const parsed = JSON.parse(raw) as LlmMethodologyOutput;

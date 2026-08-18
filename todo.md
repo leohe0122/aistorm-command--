@@ -884,3 +884,12 @@
 - [x] 在商机作战室加入“生成武器”直达 Arsenal 的入口
 - [x] 将 CRM 集成降级至系统设置，将 POD 中枢降为次级任务汇总入口
 - [x] 收敛主导航至 AD 指挥台、战场地图、拜访作战日志、POD 协同、武器库和每日情报简报
+
+## Command 2.0 升级（v2.0）
+- [x] 审计现有原生研判、Review、方法论字段和 HKT 真实数据的差距，锁定第一批可交付边界
+- [x] 新建统一销售方法论层，并让全部关键服务端 LLM 调用使用同一系统提示词与事实约束
+- [ ] 扩展全量战场原生研判：以 Win 公式、Account Map 与 Deal Map 识别风险，规则仅作失败兜底
+- [x] 改写 0→1 Review、1→N Deal Review、SAM 教练、规则兜底研判与 MEDDPICC 真实性提示
+- [ ] 建立 Account Map、关系覆盖、3 Why、Pain & Metrics、竞争态势、Go/No-Go 数据模型及接口
+- [ ] 在客户作战台与商机作战室呈现 Account Map、覆盖矩阵、3 Why、商业价值和 Go/No-Go
+- [ ] 校准 Command 2.0 六项导航语义、完成 HKT 真实事实验收、生产发布与 GitHub 同步

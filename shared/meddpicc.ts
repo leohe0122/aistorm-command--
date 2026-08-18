@@ -65,7 +65,7 @@ export const MEDDPICC_DIMENSIONS: MeddpiccDimension[] = [
     code: "E",
     fullName: "Economic Buyer",
     chineseName: "预算决策人",
-    question: "我们是否已经接触到有权批准这笔预算的人？",
+    question: "谁能对这笔预算说“是”？这不是职位最高的人；我们是否与其直接对话过？",
     levels: [
       {
         score: 0,
@@ -77,13 +77,13 @@ export const MEDDPICC_DIMENSIONS: MeddpiccDimension[] = [
         score: 25,
         label: "已识别但未接触",
         description: "已通过调研或内部人员确认了 EB 的姓名和职位，但尚未有任何直接接触",
-        evidence: "有 EB 姓名、职位的记录，来源可靠",
+        evidence: "有 EB 姓名、职位及信息来源记录；尚未直接对话不得抬高评分",
       },
       {
         score: 50,
         label: "已有一次会面",
         description: "与 EB 已有过至少一次正式或非正式会面，EB 知道我们的存在",
-        evidence: "会议纪要或邮件往来记录，EB 参与其中",
+        evidence: "写明直接接触的时间、场合、EB 的原话或行为；仅转述不等于已接触",
       },
       {
         score: 75,
@@ -221,7 +221,7 @@ export const MEDDPICC_DIMENSIONS: MeddpiccDimension[] = [
     code: "I",
     fullName: "Implicate Pain",
     chineseName: "痛点识别",
-    question: "客户的痛点是否足够紧迫，必须现在解决？",
+    question: "客户是否说出不解决的具体后果与时间压力？只有客户原话或行为才算 Pain 被激活。",
     levels: [
       {
         score: 0,
@@ -233,13 +233,13 @@ export const MEDDPICC_DIMENSIONS: MeddpiccDimension[] = [
         score: 25,
         label: "客户感知到痛",
         description: "客户意识到存在问题，但尚未感到紧迫，可以暂时搁置",
-        evidence: "客户提到了问题，但没有明确的解决时间表",
+        evidence: "记录客户原话或具体行为；SAM 的主观判断不能作为痛点证据",
       },
       {
         score: 50,
         label: "痛点已量化损失",
         description: "痛点已用具体损失数字描述（合规罚款、数据泄露损失、运营成本等）",
-        evidence: "有量化的潜在损失数据，客户认可",
+        evidence: "有客户认可的量化损失、风险或业务后果；无客户确认时需标注数据不足",
       },
       {
         score: 75,
@@ -260,7 +260,7 @@ export const MEDDPICC_DIMENSIONS: MeddpiccDimension[] = [
     code: "C1",
     fullName: "Champion",
     chineseName: "内部推手",
-    question: "客户内部是否有人在主动为我们的方案发声？",
+    question: "他有没有用自己的政治资本替我们争取过内部资源？仅“表示支持”不是 Champion。",
     levels: [
       {
         score: 0,
@@ -278,7 +278,7 @@ export const MEDDPICC_DIMENSIONS: MeddpiccDimension[] = [
         score: 50,
         label: "Champion 已确认",
         description: "已确认一位 Champion，他/她明确表示支持我们的方案",
-        evidence: "Champion 明确表态，愿意在内部推动",
+        evidence: "写下一个具体行动：安排 EB 会面、在内部发声或主动提供内部文件；没有行动不得视为 Champion",
       },
       {
         score: 75,
@@ -299,7 +299,7 @@ export const MEDDPICC_DIMENSIONS: MeddpiccDimension[] = [
     code: "C2",
     fullName: "Competition",
     chineseName: "竞争态势",
-    question: "我们相对于竞争对手的优势是否明确？",
+    question: "真正的竞争对手是谁？No Decision（今年先不做）是否正在控制客户的 Decision Criteria？",
     levels: [
       {
         score: 0,
@@ -311,7 +311,7 @@ export const MEDDPICC_DIMENSIONS: MeddpiccDimension[] = [
         score: 25,
         label: "知道竞品存在",
         description: "知道有竞争对手参与，但不了解具体是谁以及他们的方案",
-        evidence: "客户或内部人员提到有其他供应商在评估",
+        evidence: "记录竞品、No Decision 或内部自研的来源，以及其影响的关键人或 Decision Criteria",
       },
       {
         score: 50,

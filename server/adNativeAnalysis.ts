@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { invokeLLM } from "./_core/llm";
+import { SALES_METHODOLOGY_SYSTEM_PROMPT } from "./salesMethodology";
 
 export type NativeEvidenceFact = { label: string; value: string };
+export const NATIVE_METHODOLOGY_VERSION = "command-2.0";
 
 export type AdBattlefieldSnapshot = {
   generatedAt: string;
@@ -24,6 +26,13 @@ export type AdBattlefieldSnapshot = {
       metrics: number;
     };
     assignedSam: string | null;
+    accountFitScore?: number | null;
+    execCoverageCount?: number | null;
+    competitorAdvantageCount?: number | null;
+    threeWhyScore?: { change: number | null; now: number | null; us: number | null } | null;
+    painMetricsTotal?: number | null;
+    goNoGoScore?: number | null;
+    dealHealthScore?: number | null;
     activeOpportunities: Array<{
       id: number;
       name: string;
@@ -71,6 +80,7 @@ function safeText(value: unknown, limit: number) {
 
 export function snapshotFingerprint(snapshot: AdBattlefieldSnapshot) {
   const stable = {
+    methodologyVersion: NATIVE_METHODOLOGY_VERSION,
     clients: snapshot.clients.map((client) => ({ ...client, activeOpportunities: client.activeOpportunities.slice().sort((a, b) => a.id - b.id) })).sort((a, b) => a.id - b.id),
     teamStats: snapshot.teamStats,
   };
@@ -78,7 +88,7 @@ export function snapshotFingerprint(snapshot: AdBattlefieldSnapshot) {
 }
 
 export function buildNativeAnalysisPrompt(snapshot: AdBattlefieldSnapshot) {
-  return `你是一位有15年经验的企业软件大客户销售总监（AD）。以下是你负责的完整战场原始事实快照。
+  return `以下是完整战场原始事实快照。系统没有预先判断哪些客户有问题；你必须独立识别真正需要 AD 介入的风险与机会。
 
 今天是 ${snapshot.generatedAt}。你必须独立从全量数据识别真正需要 AD 介入的问题和机会；系统没有预先判断哪些客户有问题。
 
@@ -88,6 +98,9 @@ ${snapshot.clients.map((client) => `
 阶段：${client.stage}｜停留：${client.stageDays ?? "未知"}天｜距上次拜访：${client.daysSinceLastMeeting ?? "无记录"}天｜累计拜访：${client.totalMeetings}次
 购买信号：${client.purchaseSignalCount}/3｜负责 SAM：${client.assignedSam ?? "未分配"}
 MEDDPICC：Champion=${client.meddpicc.champion}/4｜EB=${client.meddpicc.economicBuyer}/4｜Pain=${client.meddpicc.pain}/4｜DC=${client.meddpicc.decisionCriteria}/4｜DP=${client.meddpicc.decisionProcess}/4｜Paper=${client.meddpicc.paperProcess}/4｜Comp=${client.meddpicc.competition}/4｜Metrics=${client.meddpicc.metrics}/4
+Account 战略评分：${client.accountFitScore ?? "数据不足"}/5｜高层覆盖：${client.execCoverageCount ?? "数据不足"}/4｜竞品关系优势人数：${client.competitorAdvantageCount ?? "数据不足"}
+3 Why：Change=${client.threeWhyScore?.change ?? "数据不足"}｜Now=${client.threeWhyScore?.now ?? "数据不足"}｜Us=${client.threeWhyScore?.us ?? "数据不足"}
+Pain 年度价值：${client.painMetricsTotal == null ? "数据不足" : `$${client.painMetricsTotal.toLocaleString()}`}｜Deal Health：${client.dealHealthScore ?? "数据不足"}/100｜Go/No-Go：${client.goNoGoScore ?? "数据不足"}/20
 活跃商机：${client.activeOpportunities.length}个${client.activeOpportunities.map((opportunity) => `
   - ${opportunity.name}（ID=${opportunity.id}，${opportunity.stage}，停留${opportunity.stageDays ?? "未知"}天，最弱维度：${opportunity.weakestDimension} ${opportunity.weakestScore}/4${opportunity.estimatedValue ? `，预估${opportunity.estimatedValue}` : ""}）`).join("")}`).join("\n")}
 
@@ -102,6 +115,8 @@ SAM 负荷：${snapshot.teamStats.samList.map((sam) => `${sam.name}(${sam.client
 3. recommendations 最多8条，优先季度业绩影响最大的 AD 介入事项。
 4. judgment 与 adAction 必须具体可执行，adAction 必须是 AD 动作而非泛化的“跟进”。
 5. evidenceFacts 必须从上方快照逐字可验证地摘取，最多4条。
+6. 分析前先用 Win = Pain × Power × Champion × Value × Control 定位每条建议的最弱因子；judgment 必须明确写出“Win公式中X维度最弱”及其事实依据。
+7. 0→1 客户使用 Account Map 判断关系与认知；1→N 商机使用 Deal Map 判断赢单质量。Deal Health 与 Go/No-Go 未提供时不得臆测分数。
 
 请只输出合法 JSON：
 {
@@ -161,7 +176,8 @@ export function parseNativeAdOutput(raw: string, snapshot: AdBattlefieldSnapshot
       teamPattern: safeText(parsed.teamPattern, 160) || "数据不足，暂不判断",
       recommendations,
     };
-  } catch {
+  } catch (error) {
+    console.warn("[Command2][NativeAnalysis] 结构化输出解析失败", error instanceof Error ? error.message : error);
     return null;
   }
 }
@@ -170,15 +186,67 @@ export async function runNativeAdAnalysis(snapshot: AdBattlefieldSnapshot): Prom
   if (!snapshot.clients.length) return null;
   try {
     const response = await invokeLLM({
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
       messages: [
-        { role: "system", content: "你是严谨的企业软件大客户销售总监。仅基于原始事实快照输出可解析 JSON。" },
+        { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
         { role: "user", content: buildNativeAnalysisPrompt(snapshot) },
       ],
-      maxTokens: 2600,
+      // 全量快照最多输出八条建议；保留足够 JSON 输出空间，且同一快照只调用一次。
+      maxCompletionTokens: 5000,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "command2_native_ad_analysis",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              battlefieldSummary: { type: "string" },
+              funnelHealth: { type: "string" },
+              winRisk: { type: "string" },
+              teamPattern: { type: "string" },
+              recommendations: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    clientId: { type: "number" },
+                    opportunityId: { type: ["number", "null"] },
+                    kind: { type: "string", enum: ["today_action", "anomaly", "sam_coaching"] },
+                    urgency: { type: "string", enum: ["立即处理", "本周推进", "持续跟进"] },
+                    title: { type: "string" },
+                    judgment: { type: "string" },
+                    adAction: { type: "string" },
+                    methodology: { type: "string" },
+                    evidenceFacts: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: { label: { type: "string" }, value: { type: "string" } },
+                        required: ["label", "value"],
+                        additionalProperties: false,
+                      },
+                    },
+                  },
+                  required: ["clientId", "opportunityId", "kind", "urgency", "title", "judgment", "adAction", "methodology", "evidenceFacts"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["battlefieldSummary", "funnelHealth", "winRisk", "teamPattern", "recommendations"],
+            additionalProperties: false,
+          },
+        },
+      },
     });
-    return parseNativeAdOutput(String(response.choices?.[0]?.message?.content || ""), snapshot);
-  } catch {
+    const raw = String(response.choices?.[0]?.message?.content || "");
+    const parsed = parseNativeAdOutput(raw, snapshot);
+    if (!parsed) {
+      console.warn("[Command2][NativeAnalysis] 模型输出未通过结构化校验", { finishReason: response.choices?.[0]?.finish_reason, outputLength: raw.length });
+    }
+    return parsed;
+  } catch (error) {
+    console.warn("[Command2][NativeAnalysis] LLM 调用失败", error instanceof Error ? error.message : error);
     return null;
   }
 }

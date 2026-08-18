@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseNativeAdOutput, snapshotFingerprint, type AdBattlefieldSnapshot } from "./adNativeAnalysis";
+import { buildNativeAnalysisPrompt, NATIVE_METHODOLOGY_VERSION, parseNativeAdOutput, snapshotFingerprint, type AdBattlefieldSnapshot } from "./adNativeAnalysis";
 
 const snapshot: AdBattlefieldSnapshot = {
   generatedAt: "2026-08-18",
@@ -26,5 +26,14 @@ describe("adNativeAnalysis", () => {
 
   it("相同事实快照生成稳定指纹", () => {
     expect(snapshotFingerprint(snapshot)).toBe(snapshotFingerprint({ ...snapshot, generatedAt: "2026-08-19" }));
+    expect(NATIVE_METHODOLOGY_VERSION).toBe("command-2.0");
+  });
+
+  it("把 Win 公式与 Account/Deal Map 的事实边界放入原生研判提示词", () => {
+    const prompt = buildNativeAnalysisPrompt(snapshot);
+    expect(prompt).toContain("Win = Pain × Power × Champion × Value × Control");
+    expect(prompt).toContain("Account Map");
+    expect(prompt).toContain("Deal Map");
+    expect(prompt).toContain("数据不足");
   });
 });
