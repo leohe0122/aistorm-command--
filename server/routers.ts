@@ -4587,12 +4587,15 @@ ${context}
   arsenalAI: router({
     // 获取AI生成历史
     list: publicProcedure
-      .input(z.object({ clientId: z.number().optional() }).optional())
+      .input(z.object({ clientId: z.number().optional(), opportunityId: z.number().optional() }).optional())
       .query(async ({ input }) => {
         const db = await getDb();
         if (!db) return [];
         const { arsenalGenerated } = await import('../drizzle/schema');
         const { eq, desc } = await import('drizzle-orm');
+        if (input?.opportunityId) {
+          return db.select().from(arsenalGenerated).where(eq(arsenalGenerated.opportunityId, input.opportunityId)).orderBy(desc(arsenalGenerated.createdAt));
+        }
         if (input?.clientId) {
           return db.select().from(arsenalGenerated).where(eq(arsenalGenerated.clientId, input.clientId)).orderBy(desc(arsenalGenerated.createdAt));
         }
@@ -4635,6 +4638,16 @@ ${context}
         const opportunityContext = input.clientId && input.opportunityId
           ? await getArsenalOpportunityContext(input.clientId, input.opportunityId)
           : "";
+        let historyContext = "【历史方案处置记录】\n暂无同商机经人工确认的采用或客户反馈记录。";
+        if (input.opportunityId) {
+          const { eq, desc } = await import('drizzle-orm');
+          const priorMaterials = await db.select().from(arsenalGenerated).where(eq(arsenalGenerated.opportunityId, input.opportunityId)).orderBy(desc(arsenalGenerated.createdAt)).limit(5);
+          const reviewedHistory = priorMaterials
+            .filter((row: any) => row.adoptionStatus === "已采用" || row.customerFeedback)
+            .map((row: any) => `- ${row.title}：人工状态=${row.adoptionStatus}；客户反馈=${row.customerFeedback || "未录入"}`)
+            .join("\n");
+          if (reviewedHistory) historyContext = `【历史方案处置记录（仅供待验证参考）】\n${reviewedHistory}\n不得把这些反馈当作新的客户事实；如与当前证据冲突，以当前商机事实为准。`;
+        }
         const userMsg = `你是 AIStorm 的资深解决方案架构师，负责将已核验的作战事实转化为可供人工审核的${input.category}材料。
 
 ${guide}
@@ -4645,6 +4658,7 @@ ${guide}
 - 仅引用已提供的产品文档和商机事实；无来源数据不得编造
 - 未确认事项必须标为“待验证假设”或“数据不足，暂不判断”
 ${opportunityContext}
+${historyContext}
 
 销售需求描述：
 ${input.prompt}
@@ -4670,10 +4684,22 @@ ${docContext ? `参考产品文档：\n${docContext}` : "未选择参考文档�
           docIds: input.docIds,
           generatedContent,
           clientId: input.clientId,
+          opportunityId: input.opportunityId,
           targetContact: input.targetContact,
           createdBy: ctx.user?.name || 'unknown',
         });
         return { id: (result as any).insertId, content: generatedContent, title };
+      }),
+
+    updateOutcome: protectedProcedure
+      .input(z.object({ id: z.number(), adoptionStatus: z.enum(["待确认", "已采用", "未采用"]), customerFeedback: z.string().max(3000).optional() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { arsenalGenerated } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        await db.update(arsenalGenerated).set({ adoptionStatus: input.adoptionStatus, customerFeedback: input.customerFeedback?.trim() || null, outcomeUpdatedAt: new Date() } as any).where(eq(arsenalGenerated.id, input.id));
+        return { success: true };
       }),
 
     // 删除生成记录

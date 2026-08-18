@@ -963,15 +963,24 @@ function AIArsenalTab({ weaponContext }: { weaponContext?: WeaponContext }) {
   const [copied, setCopied] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [hydratedContextKey, setHydratedContextKey] = useState("");
+  const [feedbackById, setFeedbackById] = useState<Record<number, string>>({});
+  const [selectedClientId, setSelectedClientId] = useState<number | undefined>(weaponContext?.clientId);
+  const [selectedOpportunityId, setSelectedOpportunityId] = useState<number | undefined>(weaponContext?.opportunityId);
 
   const { data: docs = [] } = trpc.productDocs.list.useQuery(undefined);
-  const { data: history = [], refetch: refetchHistory } = trpc.arsenalAI.list.useQuery(weaponContext?.clientId ? { clientId: weaponContext.clientId } : undefined);
+  const { data: clients = [] } = trpc.clients.list.useQuery();
+  const { data: opportunities = [] } = trpc.opportunities.listByClient.useQuery({ clientId: selectedClientId || 0 }, { enabled: Boolean(selectedClientId) });
+  const { data: history = [], refetch: refetchHistory } = trpc.arsenalAI.list.useQuery(selectedOpportunityId ? { clientId: selectedClientId, opportunityId: selectedOpportunityId } : selectedClientId ? { clientId: selectedClientId } : undefined);
   const generateMut = trpc.arsenalAI.generate.useMutation({
     onSuccess: (data) => { setResult(data); refetchHistory(); },
     onError: (e) => toast.error("生成失败: " + e.message),
   });
   const deleteMut = trpc.arsenalAI.delete.useMutation({
     onSuccess: () => { toast.success("已删除"); refetchHistory(); },
+  });
+  const outcomeMut = trpc.arsenalAI.updateOutcome.useMutation({
+    onSuccess: () => { toast.success("已记录采用状态与客户反馈；下次生成仅将其作为待验证参考"); refetchHistory(); },
+    onError: (error) => toast.error(`更新方案处置记录失败：${error.message}`),
   });
 
   const contextKey = [weaponContext?.clientId, weaponContext?.opportunityId, weaponContext?.opportunityName, weaponContext?.stage, weaponContext?.product, weaponContext?.competitor, weaponContext?.focus].filter(Boolean).join("|");
@@ -994,7 +1003,8 @@ function AIArsenalTab({ weaponContext }: { weaponContext?: WeaponContext }) {
     if (!prompt.trim()) { toast.error("请描述你的需求"); return; }
     setGenerating(true); setResult(null);
     try {
-      await generateMut.mutateAsync({ category, prompt: prompt.trim(), docIds: selectedDocIds.length > 0 ? selectedDocIds : undefined, clientId: weaponContext?.clientId, opportunityId: weaponContext?.opportunityId, targetContact: targetContact || undefined, title: weaponContext?.opportunityName ? `${weaponContext.clientName || "客户"} · ${weaponContext.opportunityName} · ${category}` : undefined });
+      const linkedOpportunity = (opportunities as any[]).find((item: any) => item.id === selectedOpportunityId);
+      await generateMut.mutateAsync({ category, prompt: prompt.trim(), docIds: selectedDocIds.length > 0 ? selectedDocIds : undefined, clientId: selectedClientId, opportunityId: selectedOpportunityId, targetContact: targetContact || undefined, title: linkedOpportunity ? `${(clients as any[]).find((item: any) => item.id === selectedClientId)?.name || "客户"} · ${linkedOpportunity.name} · ${category}` : undefined });
     } finally { setGenerating(false); }
   };
 
@@ -1022,6 +1032,7 @@ function AIArsenalTab({ weaponContext }: { weaponContext?: WeaponContext }) {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="space-y-4">
         {weaponContext?.opportunityName && <div className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.06] p-3"><div className="flex items-center gap-2 text-xs font-semibold text-cyan-100"><Sparkles className="h-3.5 w-3.5" />来自商机作战室的上下文</div><p className="mt-1 text-[11px] leading-5 text-slate-300">{weaponContext.clientName} · {weaponContext.opportunityName}{weaponContext.stage ? ` · ${weaponContext.stage}` : ""}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">已预填当前作战事实；请在生成前审阅并补充需求，AI 不会把未确认信息写成客户结论。</p></div>}
+        <div className="grid gap-3 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.03] p-3 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-medium">关联客户（可选）</label><Select value={selectedClientId ? String(selectedClientId) : "none"} onValueChange={value => { const nextClientId = value === "none" ? undefined : Number(value); setSelectedClientId(nextClientId); setSelectedOpportunityId(undefined); }}><SelectTrigger className="h-9 text-xs"><SelectValue placeholder="不关联客户" /></SelectTrigger><SelectContent><SelectItem value="none">不关联客户</SelectItem>{(clients as any[]).map((item: any) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}</SelectContent></Select></div><div><label className="mb-1 block text-xs font-medium">关联商机（可选）</label><Select value={selectedOpportunityId ? String(selectedOpportunityId) : "none"} disabled={!selectedClientId} onValueChange={value => setSelectedOpportunityId(value === "none" ? undefined : Number(value))}><SelectTrigger className="h-9 text-xs"><SelectValue placeholder={selectedClientId ? "选择商机" : "请先选择客户"} /></SelectTrigger><SelectContent><SelectItem value="none">不关联商机</SelectItem>{(opportunities as any[]).map((item: any) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}</SelectContent></Select></div><p className="sm:col-span-2 text-[10px] leading-4 text-slate-500">关联商机后，历史材料按该商机筛选；下一次生成只参考人工标记的采用状态和客户反馈，并始终标为待验证上下文。</p></div>
         <div>
           <label className="text-sm font-medium mb-2 block">输出类型</label>
           <div className="grid grid-cols-3 gap-2">
@@ -1108,17 +1119,21 @@ function AIArsenalTab({ weaponContext }: { weaponContext?: WeaponContext }) {
                 <p className="text-xs text-muted-foreground p-4 text-center">暂无历史记录</p>
               ) : (
                 (history as any[]).map((h) => (
-                  <div key={h.id} className="flex items-start justify-between p-3 hover:bg-muted/30 group">
+                  <div key={h.id} className="p-3 hover:bg-muted/30 group">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-xs shrink-0">{h.category}</Badge>
                         <span className="text-sm truncate">{h.title}</span>
+                        <Badge variant={h.adoptionStatus === "已采用" ? "default" : h.adoptionStatus === "未采用" ? "secondary" : "outline"} className="text-[10px] shrink-0">{h.adoptionStatus || "待确认"}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5 truncate">{h.prompt}</p>
+                      {h.opportunityId && <p className="mt-1 text-[10px] text-primary/80">商机 #{h.opportunityId} · 此处置记录仅供后续方案待验证参考</p>}
                     </div>
-                    <div className="flex items-center gap-1 ml-2 shrink-0">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       <button onClick={() => setResult({ id: h.id, content: h.generatedContent, title: h.title })} className="text-xs text-primary hover:underline">查看</button>
-                      <button onClick={() => deleteMut.mutate({ id: h.id })} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-1">
+                      <Select value={h.adoptionStatus || "待确认"} onValueChange={value => outcomeMut.mutate({ id: h.id, adoptionStatus: value as "待确认" | "已采用" | "未采用", customerFeedback: feedbackById[h.id] ?? h.customerFeedback ?? undefined })}><SelectTrigger className="h-7 w-24 text-[10px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="待确认">待确认</SelectItem><SelectItem value="已采用">已采用</SelectItem><SelectItem value="未采用">未采用</SelectItem></SelectContent></Select>
+                      <Input value={feedbackById[h.id] ?? h.customerFeedback ?? ""} onChange={event => setFeedbackById(prev => ({ ...prev, [h.id]: event.target.value }))} onBlur={() => { const feedback = feedbackById[h.id]; if (feedback !== undefined && feedback !== (h.customerFeedback || "")) outcomeMut.mutate({ id: h.id, adoptionStatus: h.adoptionStatus || "待确认", customerFeedback: feedback }); }} placeholder="客户反馈（可选）" className="h-7 min-w-40 flex-1 text-[10px]" />
+                      <button onClick={() => deleteMut.mutate({ id: h.id })} className="text-muted-foreground hover:text-destructive p-1">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>

@@ -263,9 +263,14 @@ function DealBattleTools({ client, opportunity, contacts }: { client: any; oppor
   const competitor = String(opportunity.blueSheetCompetitor || opportunity.competitorName || "").trim();
   const { data: killSheets = [] } = trpc.killSheets.list.useQuery();
   const [ammoContent, setAmmoContent] = useState<string | null>(null);
+  const [counterRole, setCounterRole] = useState<(typeof roleOptions)[number]>("SAM");
   const ammoMutation = trpc.champion.generate.useMutation({
     onSuccess: (data: any) => { setAmmoContent(data.content || null); toast.success("Champion 突破话术已生成，请审核后使用"); },
     onError: (error) => toast.error(`Champion 弹药生成失败：${error.message}`),
+  });
+  const counterTaskMutation = trpc.pod.addTask.useMutation({
+    onSuccess: () => toast.success("竞品反制动作已创建为 POD 任务"),
+    onError: (error) => toast.error(`创建竞品反制任务失败：${error.message}`),
   });
   const matchingSheets = (killSheets as any[]).filter((item: any) => {
     const known = `${item.competitorName || ""} ${item.productLine || ""}`.toLowerCase();
@@ -293,7 +298,7 @@ function DealBattleTools({ client, opportunity, contacts }: { client: any; oppor
       <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 text-sm font-semibold text-amber-100"><Swords className="h-4 w-4" />竞品对比作战卡</div><p className="mt-1 text-xs leading-5 text-slate-400">从已入库的 Kill Sheet 中匹配本商机已确认竞品；未命中时不虚构对比结论。</p></div></div>
       <p className="mt-3 rounded-lg border border-amber-400/15 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">已确认竞品：{competitor || "数据不足，暂不判断"}</p>
       {competitor && matchingSheets.length === 0 && <p className="mt-3 text-xs leading-5 text-amber-100/80">未找到对应 Kill Sheet。请使用上方“生成武器”，针对当前 Deal Map 事实生成待审核的竞争材料。</p>}
-      {matchingSheets.map((sheet: any) => <div key={sheet.id} className="mt-3 rounded-lg border border-amber-400/15 bg-slate-950/55 p-3"><div className="text-xs font-semibold text-amber-100">{sheet.competitorName || competitor} · {sheet.productLine || "产品线待补"}</div><p className="mt-1 text-[11px] leading-5 text-slate-300">{sheet.aiGeneratedTalk || sheet.ourAdvantages || sheet.keyDiffs || "已有 Kill Sheet，但核心差异化内容待补充。"}</p></div>)}
+      {matchingSheets.map((sheet: any) => { const counterAction = sheet.battleNotes || sheet.aiGeneratedTalk || sheet.ourAdvantages || sheet.keyDiffs; return <div key={sheet.id} className="mt-3 rounded-lg border border-amber-400/15 bg-slate-950/55 p-3"><div className="text-xs font-semibold text-amber-100">{sheet.competitorName || competitor} · {sheet.productLine || "产品线待补"}</div><p className="mt-1 text-[11px] leading-5 text-slate-300">{counterAction || "已有 Kill Sheet，但反制动作待补充。"}</p>{counterAction && <div className="mt-3 flex flex-wrap items-center gap-2"><Select value={counterRole} onValueChange={value => setCounterRole(value as (typeof roleOptions)[number])}><SelectTrigger className="h-8 w-24 border-amber-400/25 bg-slate-950/65 text-[11px]"><SelectValue /></SelectTrigger><SelectContent>{roleOptions.map(role => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select><Button size="sm" variant="outline" disabled={counterTaskMutation.isPending} onClick={() => counterTaskMutation.mutate({ clientId: client.id, opportunityId: opportunity.id, assignedRole: counterRole, title: `竞品反制：${sheet.competitorName || competitor}`, description: `${counterAction}\n\n来源：Kill Sheet #${sheet.id} · 已确认竞品：${competitor}` })} className="h-8 border-amber-400/35 text-xs text-amber-100 hover:bg-amber-400/10">{counterTaskMutation.isPending ? "创建中…" : "确认并创建 POD 任务"}</Button></div>}</div>; })}
     </article>
   </section>;
 }

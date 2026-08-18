@@ -54,7 +54,7 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain("clientName");
     expect(arsenal).toContain("来自商机作战室的上下文");
     expect(arsenal).toContain("未确认事项明确标为待验证假设");
-    expect(arsenal).toContain("clientId: weaponContext?.clientId");
+    expect(arsenal).toContain("clientId: selectedClientId");
   });
 
   it("将 CRM 收敛至系统设置，并将 POD 定位为次级任务汇总", () => {
@@ -151,7 +151,9 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("content: SALES_METHODOLOGY_SYSTEM_PROMPT");
     expect(diagnosticContext).toContain("当前商机的已入库 Deal Map 事实");
     expect(diagnosticContext).toContain("当前最弱 Win 因子");
-    expect(arsenal).toContain("opportunityId: weaponContext?.opportunityId");
+    expect(arsenal).toContain("const [selectedOpportunityId, setSelectedOpportunityId]");
+    expect(arsenal).toContain("关联商机（可选）");
+    expect(arsenal).toContain("opportunityId: selectedOpportunityId");
     expect(arsenal).not.toContain('value="champion"');
     expect(arsenal).not.toContain('value="killsheets"');
     expect(opportunityRoom).toContain("Champion 突破话术");

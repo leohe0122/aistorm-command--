@@ -9,7 +9,7 @@ const opportunityRoomSource = readFileSync(new URL("../client/src/pages/Opportun
 describe("武器库作战上下文", () => {
   it("统一方法论明确要求数据不足时不做虚构判断", () => {
     expect(SALES_METHODOLOGY_SYSTEM_PROMPT).toContain("数据不足，暂不判断");
-    expect(SALES_METHODOLOGY_SYSTEM_PROMPT).toContain("Win 公式");
+    expect(SALES_METHODOLOGY_SYSTEM_PROMPT).toContain("Win = Pain × Power × Champion × Value × Control");
   });
 
   it("方案生成接收商机上下文，并持久化采用状态和客户反馈", () => {
@@ -28,7 +28,7 @@ describe("武器库作战上下文", () => {
 
   it("商机作战室要求人工确认后才创建竞品反制 POD 任务", () => {
     expect(opportunityRoomSource).toContain("确认并创建 POD 任务");
-    expect(opportunityRoomSource).toContain("竞争事实 #");
+    expect(opportunityRoomSource).toContain("来源：Kill Sheet #");
     expect(opportunityRoomSource).toContain("Champion 突破话术");
   });
 });
