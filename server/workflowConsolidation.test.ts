@@ -188,6 +188,29 @@ describe("作战工作流入口收敛", () => {
     expect(layout).toContain("产品文档·成功案例库·报价工具");
   });
 
+  it("让销售阶段条具备建图专属配色，并能按点击阶段筛选客户", () => {
+    const battleMap = projectFile("client/src/pages/BattleMap.tsx");
+    const pipeline = projectFile("client/src/components/SalesPipelineSteps.tsx");
+    expect(pipeline).toContain('"建图": {');
+    expect(pipeline).toContain("bg-violet-500/15");
+    expect(pipeline).toContain("onStageSelect?: (stage: string | null) => void");
+    expect(pipeline).toContain('onStageSelect?.(selectedStage === stage ? null : stage)');
+    expect(battleMap).toContain('if (STAGES.includes(stageFilter) && c.stage !== stageFilter) return false;');
+    expect(battleMap).toContain('onStageSelect={stage => setStageFilter(stage ?? "all")}');
+    expect(battleMap).toContain("显示全部客户");
+  });
+
+  it("在战场地图客户名称旁渲染可信品牌标识，并在资产不可用时保留文字回退", () => {
+    const battleMap = projectFile("client/src/pages/BattleMap.tsx");
+    const brandMark = projectFile("client/src/components/ClientBrandMark.tsx");
+    expect(battleMap).toContain('<ClientBrandMark clientName={client.name} />');
+    expect(brandMark).toContain('"美的集团"');
+    expect(brandMark).toContain('"香港电讯"');
+    expect(brandMark).toContain('"星展银行"');
+    expect(brandMark).toContain("onError={event => event.currentTarget.classList.add");
+    expect(brandMark).toContain("clientName.slice(0, 2)");
+  });
+
   it("让竞品反制任务、POD 来源 Review 深链与本周闭环率形成可解释的产品化闭环", () => {
     const routers = projectFile("server/routers.ts");
     const schema = projectFile("drizzle/schema.ts");

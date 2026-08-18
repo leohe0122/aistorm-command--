@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import ClientBrandMark from "@/components/ClientBrandMark";
 
 const MEDDPICC_ITEMS = [
   { key: "metrics", label: "M", fullLabel: "M — Metrics 可量化价值", tooltipTerm: "Metrics", scoreKey: "metricsScore", notesKey: "metricsNotes", placeholder: "例：减少80%响应时间，节省150万港元/年" },
@@ -45,11 +46,11 @@ const buyingRoleColor: Record<string, string> = {
 const RELATIONSHIP_OPTIONS = ["待接触", "已识别", "初步接触", "已接触", "建立关系", "Champion", "已拒绝"];
 
 const stageColor: Record<string, string> = {
-  "建图": "bg-muted/50 text-muted-foreground",
-  "进门": "bg-blue-500/20 text-blue-400",
-  "定痛": "bg-yellow-500/20 text-yellow-400",
-  "找人": "bg-orange-500/20 text-orange-400",
-  "进入商机": "bg-primary/20 text-primary",
+  "建图": "bg-violet-500/15 text-violet-200 border-violet-400/30",
+  "进门": "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  "定痛": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  "找人": "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  "进入商机": "bg-primary/20 text-primary border-primary/30",
 };
 
 const oppStageColor: Record<string, string> = {
@@ -1453,9 +1454,12 @@ function ClientDiscoveryCard({ client }: { client: any }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="rounded-md bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{client.stage ?? "建图"}</span>
+            <span className={cn("rounded-md border px-2 py-0.5 text-[10px]", stageColor[client.stage ?? "建图"] ?? stageColor["建图"])}>{client.stage ?? "建图"}</span>
           </div>
-          <h3 className="mt-3 truncate text-lg font-semibold text-foreground">{client.name}</h3>
+          <div className="mt-3 flex min-w-0 items-center gap-2">
+            <ClientBrandMark clientName={client.name} />
+            <h3 className="truncate text-lg font-semibold text-foreground">{client.name}</h3>
+          </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{client.englishName || client.industry || "客户档案待完善"}</p>
         </div>
         <Target className="mt-1 h-5 w-5 shrink-0 text-cyan-300" />
@@ -3596,7 +3600,7 @@ export default function BattleMap() {
   // SAM 筛选 + 阶段筛选 + 健康度筛选
   const [samFilter, setSamFilter] = useState<string>("all"); // "all" | samName | "__unassigned__"
   const [rsmFilter, setRsmFilter] = useState<string>("all"); // "all" | rsmName | "__unassigned__"
-  const [stageFilter, setStageFilter] = useState<string>("all"); // "all" | "0to1" | "1toN"
+  const [stageFilter, setStageFilter] = useState<string>("all"); // "all" | "0to1" | "1toN" | 单个销售阶段
   const [healthFilter, setHealthFilter] = useState<string>("all"); // "all" | "healthy" | "watch" | "risk"
   const { data: samUsers = [] } = trpc.clients.listSamUsers.useQuery();
 
@@ -3643,6 +3647,7 @@ export default function BattleMap() {
     const ONE_TO_N_STAGES = ["进入商机"];
     if (stageFilter === "0to1" && !ZERO_TO_ONE_STAGES.includes(c.stage)) return false;
     if (stageFilter === "1toN" && !ONE_TO_N_STAGES.includes(c.stage)) return false;
+    if (STAGES.includes(stageFilter) && c.stage !== stageFilter) return false;
     // Health filter (based on meddpiccAvg)
     const avg = (c as any).meddpiccAvg ?? 0;
     if (healthFilter === "healthy" && avg < 60) return false;
@@ -3878,9 +3883,12 @@ export default function BattleMap() {
       <div className="mb-5 p-4 rounded-xl bg-card border border-border">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">销售流程进度</span>
-          <span className="text-[10px] text-muted-foreground/60">点击阶段节点查看实操指南</span>
+          <div className="flex items-center gap-2">
+            {STAGES.includes(stageFilter) && <span className="text-[10px] font-medium text-violet-200">当前筛选：{stageFilter}</span>}
+            <button onClick={() => setStageFilter("all")} className={cn("text-[10px] transition-colors", stageFilter === "all" ? "cursor-default text-muted-foreground/50" : "text-cyan-300 hover:text-cyan-100")} disabled={stageFilter === "all"}>显示全部客户</button>
+          </div>
         </div>
-        <SalesPipelineSteps />
+        <SalesPipelineSteps selectedStage={STAGES.includes(stageFilter) ? stageFilter : null} onStageSelect={stage => setStageFilter(stage ?? "all")} />
       </div>
 
       {/* Client cards */}

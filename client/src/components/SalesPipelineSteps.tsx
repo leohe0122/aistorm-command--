@@ -2,8 +2,8 @@
  * SalesPipelineSteps — 销售流程可视化步骤条
  *
  * 展示客户关系5步漏斗：建图 → 进门 → 定痛 → 找人 → 进入商机
- * 点击任意节点可展开该阶段的实操指南。
- * currentStage 高亮当前所在阶段，已完成阶段显示勾选状态。
+ * 点击任意节点可展开该阶段的实操指南，并可通知父级筛选该阶段客户。
+ * currentStage 高亮当前所在阶段，selectedStage 高亮当前筛选。
  */
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -23,10 +23,10 @@ export const STAGE_GUIDES: Record<string, {
 }> = {
   "建图": {
     icon: <Map className="w-4 h-4" />,
-    color: "bg-muted/50 text-muted-foreground border-muted",
-    activeColor: "bg-slate-500/20 text-slate-300 border-slate-500/50 ring-2 ring-slate-500/30",
-    doneColor: "bg-slate-500/10 text-slate-400 border-slate-500/30",
-    connectorColor: "bg-slate-500/30",
+    color: "bg-violet-500/15 text-violet-200 border-violet-400/35",
+    activeColor: "bg-violet-500/30 text-violet-100 border-violet-300/70 ring-2 ring-violet-400/30",
+    doneColor: "bg-violet-500/10 text-violet-200/75 border-violet-400/25",
+    connectorColor: "bg-violet-500/40",
     shortDesc: "摸清客户地图",
     goal: "在不接触客户的情况下，通过公开信息和内部情报，绘制出客户的组织架构、决策链和关键人物关系图。",
     keyActions: [
@@ -129,16 +129,19 @@ const STAGES_ORDER = ["建图", "进门", "定痛", "找人", "进入商机"];
 
 interface SalesPipelineStepsProps {
   currentStage?: string;
+  selectedStage?: string | null;
+  onStageSelect?: (stage: string | null) => void;
   className?: string;
 }
 
-export default function SalesPipelineSteps({ currentStage, className }: SalesPipelineStepsProps) {
+export default function SalesPipelineSteps({ currentStage, selectedStage, onStageSelect, className }: SalesPipelineStepsProps) {
   const [expandedStage, setExpandedStage] = useState<string | null>(null);
 
   const currentIndex = STAGES_ORDER.indexOf(currentStage || "");
 
   const handleToggle = (stage: string) => {
     setExpandedStage(prev => prev === stage ? null : stage);
+    onStageSelect?.(selectedStage === stage ? null : stage);
   };
 
   return (
@@ -150,9 +153,10 @@ export default function SalesPipelineSteps({ currentStage, className }: SalesPip
           const isCurrent = stage === currentStage;
           const isDone = currentIndex > idx;
           const isExpanded = expandedStage === stage;
+          const isSelected = selectedStage === stage;
 
           let nodeClass = guide.color;
-          if (isCurrent) nodeClass = guide.activeColor;
+          if (isSelected || isCurrent) nodeClass = guide.activeColor;
           else if (isDone) nodeClass = guide.doneColor;
 
           return (
@@ -160,11 +164,13 @@ export default function SalesPipelineSteps({ currentStage, className }: SalesPip
               {/* Node button */}
               <button
                 onClick={() => handleToggle(stage)}
+                aria-pressed={isSelected}
+                title={`筛选“${stage}”阶段客户；再次点击显示全部客户`}
                 className={cn(
                   "flex flex-col items-center gap-1 px-3 py-2 rounded-lg border transition-all duration-200",
                   "hover:scale-105 active:scale-95 min-w-[72px]",
                   nodeClass,
-                  isExpanded && "shadow-lg"
+                  (isExpanded || isSelected) && "shadow-lg"
                 )}
               >
                 <div className="flex items-center gap-1">
