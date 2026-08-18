@@ -36,7 +36,17 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain("数据不足，暂不判断");
   });
 
-  it("不再注册或展示独立行动指令、快速 Review、洞察与预测入口", () => {
+  it("将外部事件信号放入客户作战台，并将 RSS 归入每日简报", () => {
+    const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
+    const signalEntry = projectFile("client/src/components/ExternalSignalWorkbench.tsx");
+    const dailyBriefing = projectFile("client/src/pages/DailyBriefing.tsx");
+    expect(workstation).toContain("<ExternalSignalWorkbench");
+    expect(signalEntry).toContain("trpc.intelligence.analyze.useMutation");
+    expect(signalEntry).toContain("不能由此自动放行开商机");
+    expect(dailyBriefing).toContain("RSS 外部情报摘要");
+  });
+
+  it("不再注册或展示独立行动指令、快速 Review、洞察、预测与情报雷达入口", () => {
     const app = projectFile("client/src/App.tsx");
     const layout = projectFile("client/src/components/CommandLayout.tsx");
     expect(app).not.toContain('path="/action-command"');
@@ -50,5 +60,8 @@ describe("作战工作流入口收敛", () => {
     expect(layout).not.toContain('path: "/ai-insights"');
     expect(app).not.toContain('path="/prediction"');
     expect(app).not.toContain('import OpportunityPrediction');
+    expect(app).not.toContain('path="/intel-radar"');
+    expect(app).not.toContain('import IntelRadar');
+    expect(layout).not.toContain('path: "/intel-radar"');
   });
 });

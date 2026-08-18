@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import AIStormLogo from "@/components/AIStormLogo";
 import { cn } from "@/lib/utils";
 import {
-  Map, Radio, Users, MessageSquare,
+  Map, Users, MessageSquare,
   ChevronRight, Database, Bell, Crosshair, LogOut, LayoutDashboard, Settings, Plus
 } from "lucide-react";
 import { UserCog, KeyRound } from "lucide-react";
@@ -17,7 +17,6 @@ import { toast } from "sonner";
 const navItems = [
   { path: "/dashboard", label: "AD 指挥台", icon: LayoutDashboard, desc: "Portfolio Review 看板" },
   { path: "/battle-map", label: "战场地图", icon: Map, desc: "MEDDPICC看板" },
-  { path: "/intel-radar", label: "客户情报雷达", icon: Radio, desc: "信号监控与解读" },
   { path: "/meeting-minutes", label: "拜访作战日志", icon: MessageSquare, desc: "拜访录入·AI解析·更新战场" },
   { path: "/pod-center", label: "POD协同中枢", icon: Users, desc: "角色任务视图" },
   { path: "/arsenal", label: "武器库 Arsenal", icon: Crosshair, desc: "产品文档·AI方案·竞品阻击包" },
@@ -357,7 +356,6 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
             <span className="text-[9px] font-medium text-[#00A8D6]">{showQuickEntry ? "关闭" : "录入"}</span>
           </div>
         {[
-          { path: "/intel-radar", icon: Radio, label: "情报" },
           { path: "/pod-center", icon: Users, label: "POD" },
         ].map(({ path, icon: Icon, label }) => {
           const isActive = location === path || (location === "/" && path === "/dashboard");

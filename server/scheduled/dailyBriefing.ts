@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { sdk } from "../_core/sdk";
 import { invokeLLM } from "../_core/llm";
 import { notifyOwner } from "../_core/notification";
+import { buildDailyBriefingPrompt, getComplianceRssDigest } from "../dailyBriefingRss";
 import {
   getWeeklyReportData,
   getSystemConfig,
@@ -87,17 +88,8 @@ export async function dailyBriefingHandler(req: Request, res: Response) {
       };
     });
 
-    const prompt = `你是T100专项AI作战指挥系统的每日简报生成器。今天是${today}。
-
-以下是5户重点客户的当前状态数据：
-${JSON.stringify(clientSummaries, null, 2)}
-
-请生成一份简洁的每日战情简报，格式如下：
-1. 今日重点关注（1-2句话，指出最需要关注的客户和事项）
-2. 各客户状态速览（每户1行，包含：客户名 | 阶段 | MEDDPICC均分 | 待办任务数 | 关键提示）
-3. 今日建议行动（3条具体行动建议，指明负责角色AD/SAM/SA）
-
-要求：简洁专业，总字数不超过400字，使用中文。`;
+    const rssDigest = await getComplianceRssDigest(5);
+    const prompt = buildDailyBriefingPrompt({ today, clientSummaries, rssDigest });
 
     const llmResult = await invokeLLM({
       messages: [{ role: "user", content: prompt }],

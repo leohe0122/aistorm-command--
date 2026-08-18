@@ -880,7 +880,7 @@
 - [x] 删除 QuickReview 独立入口，将其 0→1/1→N Review 能力并入客户/商机作战台
 - [x] 将 AIInsights 重定位为客户作战台内的“拜访前洞察”入口并移除主导航
 - [x] 将 OpportunityPrediction 降级为商机作战室内的 AI 预测展开区域
-- [ ] 将 IntelRadar 缩减为客户作战台内的外部事件信号，RSS 整合进 DailyBriefing
+- [x] 将 IntelRadar 缩减为客户作战台内的外部事件信号，RSS 整合进 DailyBriefing
 - [ ] 在商机作战室加入“生成武器”直达 Arsenal 的入口
 - [ ] 将 CRM 集成降级至系统设置，将 POD 中枢降为次级任务汇总入口
 - [ ] 收敛主导航至 AD 指挥台、战场地图、拜访作战日志、POD 协同、武器库和每日情报简报
