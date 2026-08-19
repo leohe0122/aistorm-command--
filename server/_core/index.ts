@@ -12,7 +12,7 @@ import { visitReminderHandler } from "../scheduled/visitReminder";
 import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
 
-const BUILD_MARKER = "20260819-ai-guidance-reasoning-fallback-v1";
+const BUILD_MARKER = "20260819-ai-guidance-builtin-gpt5-v1";
 
 async function startServer() {
   console.log(`[STARTUP] PORT=${process.env.PORT ?? "undefined"} NODE_ENV=${process.env.NODE_ENV ?? "undefined"}`);
@@ -28,7 +28,8 @@ async function startServer() {
     res.status(200).json({
       build: BUILD_MARKER,
       aiReviewRoute: "review-one-to-n-v3-nonempty-guard",
-      serviceWorker: "20260819-ai-guidance-reasoning-v1",
+      aiGuidanceRoute: "builtin-gpt5-no-reasoning-json-guard",
+      serviceWorker: "20260819-ai-guidance-client-v2",
       ts: Date.now(),
     });
   });
