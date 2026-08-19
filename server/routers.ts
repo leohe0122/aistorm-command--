@@ -156,7 +156,7 @@ const AI_ANSWER_INTERPRETATION_SCHEMA = {
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
   const prompt = `你是 AIStorm Command 的主动式销售引导 AI。你的任务不是让 SAM 填 MEDDPICC、3 Why 或 Win 公式；而是阅读已入库原始事实后，用 SAM 能听懂的自然语言提出“当前只需要回答的一个问题”。\n\n${snapshot}\n\n必须遵守：\n1. 直接从原始事实识别未知、矛盾或证据薄弱处；不要根据销售自评推断。\n2. primaryQuestion 必须可由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要问“请填写 Champion”等方法论术语。\n3. factSummary 只能复述已有事实；没有充分事实时明确写“数据不足，暂不判断”。\n4. whyThisQuestion 要用业务语言说明为什么现在问它，而不出现 MEDDPICC、3 Why、Win Formula 等术语。\n5. winFactors 只做证据状态提示，evidence 为空或不足时必须写“数据不足，暂不判断”。\n6. doNotAssume 列出本次不得假定的客户意图或事实。\n7. 请严格按 JSON Schema 输出，不输出 JSON 外文字。`;
   const result = await invokeLLM({
-    model: "gpt-5-mini",
+    model: "gpt-5",
     useBuiltin: true,
     maxCompletionTokens: 1600,
     messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
@@ -209,7 +209,7 @@ export const appRouter = router({
       if (input.scope === "opportunity" && !input.opportunityId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机引导需要关联商机。" });
       const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、原话、决策接触、触发事件或商机证据，可返回一个待确认候选。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 如果回答只是主观判断、计划或信息不充分，candidateTarget 必须为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- nextQuestion 继续只问一个最关键的自然语言问题；不要出现 MEDDPICC、3 Why、Win Formula 等术语。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。`;
       const result = await invokeLLM({
-        model: "gpt-5-mini", useBuiltin: true, maxCompletionTokens: 1100,
+        model: "gpt-5", useBuiltin: true, maxCompletionTokens: 1100,
         messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: { type: "json_schema", json_schema: { name: "ai_guidance_answer_interpretation", strict: true, schema: AI_ANSWER_INTERPRETATION_SCHEMA } },
       });
