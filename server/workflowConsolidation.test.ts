@@ -330,6 +330,8 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("opportunityGuide: protectedProcedure");
     expect(routers).toContain("interpretAnswer: protectedProcedure");
     expect(routers).toContain("buildNoWriteAnswerInterpretation");
+    expect(routers).toContain("buildProvisionalAnswerCandidate");
+    expect(routers).toContain("SAM 待确认原文");
     expect(routers).toContain("result?.choices?.[0]?.message?.content");
     expect(routers).toContain("health: protectedProcedure.query");
     expect(routers).toContain("数据不足，暂不判断");

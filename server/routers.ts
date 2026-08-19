@@ -275,6 +275,25 @@ function buildNoWriteAnswerInterpretation(question: string) {
   };
 }
 
+function buildProvisionalAnswerCandidate(question: string, answer: string) {
+  const mentionedPeople = (question.match(/关于([^：:]+)[：:]/)?.[1] || "")
+    .split(/[、，,]/)
+    .map(name => name.trim())
+    .filter(Boolean);
+  const subjectName = mentionedPeople.find(name => answer.includes(name)) || mentionedPeople[0] || "待确认关键人";
+  return {
+    message: "AI 服务暂未完成结构化解读。已将你的原始描述作为低置信待确认候选；请核对后再决定是否写入。",
+    nextQuestion: question,
+    candidateTarget: "purchase_signal" as const,
+    signalType: "decision_chain" as const,
+    meddpiccDim: "" as const,
+    subjectName,
+    evidence: `SAM 待确认原文：${compactGuidanceText(answer, 800)}`,
+    suggestedScore: 0 as const,
+    confidence: "low" as const,
+  };
+}
+
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string, contacts: any[] = []) {
   const prompt = `你是 AIStorm Command 的主动式销售引导 AI。
 你的唯一任务是：读取 SAM 已知但尚未录入系统的信息，一次问一个问题，帮助 SAM 把脑子里的事实存入系统。
@@ -371,11 +390,11 @@ export const appRouter = router({
           response_format: { type: "json_schema", json_schema: { name: "ai_guidance_answer_interpretation", strict: true, schema: AI_ANSWER_INTERPRETATION_SCHEMA } },
         });
       } catch {
-        return buildNoWriteAnswerInterpretation(input.question);
+        return buildProvisionalAnswerCandidate(input.question, input.answer);
       }
       const raw = getLLMTextContent(result?.choices?.[0]?.message?.content);
-      if (!raw) return buildNoWriteAnswerInterpretation(input.question);
-      try { return JSON.parse(extractJSON(raw)); } catch { return buildNoWriteAnswerInterpretation(input.question); }
+      if (!raw) return buildProvisionalAnswerCandidate(input.question, input.answer);
+      try { return JSON.parse(extractJSON(raw)); } catch { return buildProvisionalAnswerCandidate(input.question, input.answer); }
     }),
   }),
 
