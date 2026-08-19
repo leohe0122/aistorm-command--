@@ -337,7 +337,10 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("让 AI 开始引导");
     expect(guidancePanel).toContain("当前判断");
     expect(guidancePanel).toContain("查看 AI 依据");
-    expect(guidancePanel).toContain("AI 引导在 20 秒内未返回");
+    expect(guidancePanel).toContain("已切换为基础引导");
+    expect(guidancePanel).toContain("buildClientBaselineGuidance");
+    expect(guidancePanel).toContain("}, 12_000)");
+    expect(guidancePanel).toContain("已切换为基础引导");
     expect(guidancePanel).toContain("const working = pendingGuide || interpretMutation.isPending");
     expect(guidancePanel).not.toContain("healthCheck.refetch()");
     expect(guidancePanel).not.toContain("health_timeout");

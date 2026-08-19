@@ -22,6 +22,18 @@ const MEDDPICC_FIELDS: Record<Exclude<Candidate["meddpiccDim"], "">, { score: st
   M: { score: "metricsScore", notes: "metricsNotes" }, E: { score: "economicBuyerScore", notes: "economicBuyerNotes" }, D1: { score: "decisionCriteriaScore", notes: "decisionCriteriaNotes" }, D2: { score: "decisionProcessScore", notes: "decisionProcessNotes" }, P: { score: "paperProcessScore", notes: "paperProcessNotes" }, I: { score: "implicatePainScore", notes: "implicatePainNotes" }, C1: { score: "championScore", notes: "championNotes" }, C2: { score: "competitionScore", notes: "competitionNotes" },
 };
 
+function buildClientBaselineGuidance(scope: "customer" | "opportunity"): Guidance {
+  const target = scope === "customer" ? "客户" : "这笔商机";
+  return {
+    dataSufficiency: "insufficient",
+    factSummary: "数据不足，暂不判断。",
+    primaryQuestion: `请回顾最近一次与${target}的沟通：对方是否明确说过下一步由谁在什么时间推进？请尽量复述客户原话。`,
+    whyThisQuestion: "下一步安排还没有形成可回溯的客户事实；先补齐客户原话，才能确定推进动作。",
+    answerFocus: "purchase_signal",
+    doNotAssume: ["不能假定客户已经承诺推进", "不能假定已有明确负责人或时间"],
+  };
+}
+
 export function AIActiveGuidancePanel({ scope, clientId, opportunityId, className }: { scope: "customer" | "opportunity"; clientId: number; opportunityId?: number; className?: string }) {
   const utils = trpc.useUtils();
   const [guide, setGuide] = useState<Guidance | null>(null);
@@ -37,13 +49,16 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, classNam
   useEffect(() => {
     if (!pendingGuide) return;
     const timeout = window.setTimeout(() => {
-      setRequestTimedOut(true);
+      const baseline = buildClientBaselineGuidance(scope);
+      setGuide(current => current ?? baseline);
+      setMessages(current => current.length ? current : [{ role: "assistant", content: `**当前判断**\n数据不足，暂不判断。\n\n**我现在只想确认一件事：** ${baseline.primaryQuestion}` }]);
+      setRequestTimedOut(false);
       customerGuideMutation.reset();
       opportunityGuideMutation.reset();
-      toast.error("AI 引导在 20 秒内未返回。请重试；若仍失败，请刷新登录会话后再试。");
-    }, 20_000);
+      toast.info("已切换为基础引导：不会写入任何事实，请如实补充客户原话或动作。");
+    }, 12_000);
     return () => window.clearTimeout(timeout);
-  }, [pendingGuide, customerGuideMutation, opportunityGuideMutation]);
+  }, [pendingGuide, customerGuideMutation, opportunityGuideMutation, scope]);
   const startGuide = async () => {
     setCandidate(null);
     setRequestTimedOut(false);
@@ -55,6 +70,13 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, classNam
     };
     const onError = (error: { message: string }) => {
       setRequestTimedOut(false);
+      if (!guide) {
+        const baseline = buildClientBaselineGuidance(scope);
+        setGuide(baseline);
+        setMessages([{ role: "assistant", content: `**当前判断**\n数据不足，暂不判断。\n\n**我现在只想确认一件事：** ${baseline.primaryQuestion}` }]);
+        toast.info("AI 服务暂不可用，已切换为基础引导；不会写入任何事实。");
+        return;
+      }
       toast.error(`AI 引导暂不可用：${error.message}`);
     };
     if (scope === "customer") customerGuideMutation.mutate({ clientId }, { onSuccess, onError });
