@@ -153,12 +153,80 @@ const AI_ANSWER_INTERPRETATION_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const GUIDANCE_MEDDPICC_SCORE_FIELDS = [
+  "metricsScore",
+  "economicBuyerScore",
+  "decisionCriteriaScore",
+  "decisionProcessScore",
+  "paperProcessScore",
+  "implicatePainScore",
+  "championScore",
+  "competitionScore",
+] as const;
+
+/**
+ * 主动引导只需足以选择下一问的事实，而不是整个 CRM 资料包。这个边界避免
+ * 长备注拖慢模型，也避免把未验证的历史描述误当成当前证据。
+ */
+function compactGuidanceText(value: unknown, limit: number): string {
+  const raw = typeof value === "string" ? value : value == null ? "" : JSON.stringify(value);
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  return normalized.length > limit ? `${normalized.slice(0, Math.max(0, limit - 1))}…` : normalized;
+}
+
+function summarizeGuidanceMeddpiccScores(meddpicc: unknown): Record<string, number> {
+  const record = (meddpicc && typeof meddpicc === "object" ? meddpicc : {}) as Record<string, unknown>;
+  return Object.fromEntries(
+    GUIDANCE_MEDDPICC_SCORE_FIELDS
+      .filter(field => typeof record[field] === "number")
+      .map(field => [field, record[field] as number])
+  );
+}
+
+function buildCustomerGuidanceSnapshot({
+  client,
+  contacts,
+  meetings,
+  signals,
+  readiness,
+  meddpicc,
+}: {
+  client: any;
+  contacts: any[];
+  meetings: any[];
+  signals: any[];
+  readiness: any;
+  meddpicc: unknown;
+}) {
+  const stakeholders = contacts.slice(0, 8).map(item => ({
+    name: item.name,
+    title: item.title,
+    buyingRole: item.buyingRole,
+    relationship: item.relationship,
+  }));
+  const recentMeetings = meetings.slice(0, 2).map(item => ({
+    date: item.meetingDate,
+    attendees: compactGuidanceText(item.attendees, 160),
+    keyPoints: compactGuidanceText(item.keyPoints, 360),
+  }));
+  const recentSignals = signals.slice(0, 3).map(item => ({
+    type: item.signalType,
+    subject: item.subjectName,
+    date: item.occurredAt,
+    source: item.sourceType,
+    statement: compactGuidanceText(item.statement ?? item.sourceReference, 200),
+  }));
+  const blockers = (readiness?.blockers || []).slice(0, 4).map((item: unknown) => compactGuidanceText(item, 180));
+
+  return `【客户作战台已入库事实（精炼版）】\n客户：${client.name}\n当前阶段：${client.stage}\n当前缺口：${JSON.stringify(blockers)}\n关键人：${JSON.stringify(stakeholders)}\n最近两次客户对话：${JSON.stringify(recentMeetings)}\n最近三条购买信号：${JSON.stringify(recentSignals)}\n客户级证据评分：${JSON.stringify(summarizeGuidanceMeddpiccScores(meddpicc))}`;
+}
+
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
   const prompt = `你是 AIStorm Command 的主动式销售引导 AI。你的任务不是让 SAM 填 MEDDPICC、3 Why 或 Win 公式；而是阅读已入库原始事实后，用 SAM 能听懂的自然语言提出“当前只需要回答的一个问题”。\n\n${snapshot}\n\n必须遵守：\n1. 直接从原始事实识别未知、矛盾或证据薄弱处；不要根据销售自评推断。\n2. primaryQuestion 必须可由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要问“请填写 Champion”等方法论术语。\n3. factSummary 只能复述支撑本次问题的 1-2 条已入库事实，总计不超过 90 个中文字符；它只会在折叠依据区显示，绝不复述客户全貌。没有充分事实时明确写“数据不足，暂不判断”。\n4. whyThisQuestion 要用业务语言说明为什么现在问它，而不出现 MEDDPICC、3 Why、Win Formula 等术语。\n5. winFactors 只做内部证据状态提示，evidence 为空或不足时必须写“数据不足，暂不判断”；不得在 primaryQuestion 或 whyThisQuestion 中暴露这些内部术语。\n6. doNotAssume 列出本次不得假定的客户意图或事实。\n7. 请严格按 JSON Schema 输出，不输出 JSON 外文字。`;
   const result = await invokeLLM({
     model: "gpt-5",
     useBuiltin: true,
-    maxCompletionTokens: 1600,
+    maxCompletionTokens: 800,
     messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
     response_format: { type: "json_schema", json_schema: { name: `${scope}_active_guidance`, strict: true, schema: AI_GUIDANCE_RESPONSE_SCHEMA } },
   });
@@ -187,7 +255,7 @@ export const appRouter = router({
     customerGuide: protectedProcedure.input(z.object({ clientId: z.number() })).mutation(async ({ input }) => {
       const { client, contacts, meetings, signals, readiness } = await loadCustomerReadiness(input.clientId);
       const meddpicc = await getMeddpiccByClientId(input.clientId);
-      const snapshot = `【客户作战台原始事实】\n客户：${client.name}\n当前阶段：${client.stage}\n购买信号门控：${JSON.stringify(readiness.checks || [])}\n当前缺口：${JSON.stringify(readiness.blockers || [])}\n关键人：${JSON.stringify(contacts.map((item: any) => ({ name: item.name, title: item.title, buyingRole: item.buyingRole, relationship: item.relationship, notes: item.notes })))}\n近三次拜访：${JSON.stringify(meetings.slice(0, 3).map((item: any) => ({ date: item.meetingDate, attendees: item.attendees, keyPoints: item.keyPoints })))}\n已入库外部信号：${JSON.stringify(signals.slice(0, 5))}\n客户级证据：${JSON.stringify(meddpicc || {})}`;
+      const snapshot = buildCustomerGuidanceSnapshot({ client, contacts, meetings, signals, readiness, meddpicc });
       return generateAIGuidance("customer", snapshot);
     }),
     opportunityGuide: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number() })).mutation(async ({ input }) => {

@@ -350,6 +350,17 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("trpc.opportunities.upsertMeddpicc.useMutation");
   });
 
+  it("将客户 AI 引导限制为最小可用事实快照和单一问题的输出预算", () => {
+    const routers = projectFile("server/routers.ts");
+    expect(routers).toContain("function buildCustomerGuidanceSnapshot");
+    expect(routers).toContain("contacts.slice(0, 8)");
+    expect(routers).toContain("meetings.slice(0, 2)");
+    expect(routers).toContain("signals.slice(0, 3)");
+    expect(routers).toContain("summarizeGuidanceMeddpiccScores");
+    expect(routers).toContain("maxCompletionTokens: 800");
+    expect(routers).not.toContain("readiness.checks || []");
+  });
+
   it("在推进商机阶段前由 AI 展示硬性证据缺口，并只允许证据满足后受控推进", () => {
     const routers = projectFile("server/routers.ts");
     const guidance = projectFile("server/aiNativeGuidance.ts");
