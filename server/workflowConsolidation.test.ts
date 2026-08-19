@@ -344,6 +344,8 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("已切换为基础引导");
     expect(guidancePanel).toContain("buildClientBaselineGuidance");
     expect(guidancePanel).toContain("buildClientNoWriteCandidate");
+    expect(guidancePanel).toContain("buildClientProvisionalCandidate");
+    expect(guidancePanel).toContain("SAM 待确认原文");
     expect(guidancePanel).toContain("系统未写入任何内容");
     expect(guidancePanel).toContain("}, 12_000)");
     expect(guidancePanel).toContain("已切换为基础引导");

@@ -51,6 +51,25 @@ function buildClientNoWriteCandidate(question: string): Candidate {
   };
 }
 
+function buildClientProvisionalCandidate(question: string, answer: string): Candidate {
+  const mentionedPeople = (question.match(/关于([^：:]+)[：:]/)?.[1] || "")
+    .split(/[、，,]/)
+    .map(name => name.trim())
+    .filter(Boolean);
+  const subjectName = mentionedPeople.find(name => answer.includes(name)) || mentionedPeople[0] || "待确认关键人";
+  return {
+    message: "AI 服务暂未完成结构化解读。已将你的原始描述保留为低置信待确认候选；请核对后再决定是否写入。",
+    nextQuestion: question,
+    candidateTarget: "purchase_signal",
+    signalType: "decision_chain",
+    meddpiccDim: "",
+    subjectName,
+    evidence: `SAM 待确认原文：${answer.trim().slice(0, 800)}`,
+    suggestedScore: 0,
+    confidence: "low",
+  };
+}
+
 export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerContactNames = [], className }: { scope: "customer" | "opportunity"; clientId: number; opportunityId?: number; powerContactNames?: string[]; className?: string }) {
   const utils = trpc.useUtils();
   const [guide, setGuide] = useState<Guidance | null>(null);
@@ -109,10 +128,10 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
         setMessages(current => current.concat({ role: "assistant", content: `${data.message}\n\n**下一步我想确认：** ${data.nextQuestion}` }));
       },
       onError: () => {
-        const fallback = buildClientNoWriteCandidate(guide.primaryQuestion);
+        const fallback = buildClientProvisionalCandidate(guide.primaryQuestion, answer);
         setCandidate(fallback);
         setMessages(current => current.concat({ role: "assistant", content: `${fallback.message}\n\n**下一步我想确认：** ${fallback.nextQuestion}` }));
-        toast.info("本次回答未形成可确认事实；系统未写入任何内容，请继续补充客户原话或动作。");
+        toast.info("已生成低置信待确认候选；系统未写入任何内容，请核对后再决定。 ");
       },
     });
   };
