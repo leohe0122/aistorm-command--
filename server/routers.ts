@@ -239,6 +239,20 @@ function buildBaselineGuidance(scope: "customer" | "opportunity") {
   };
 }
 
+function buildNoWriteAnswerInterpretation(question: string) {
+  return {
+    message: "数据不足，暂不判断。本次回答未形成可确认、可写入的客户事实。",
+    nextQuestion: question,
+    candidateTarget: "none" as const,
+    signalType: "" as const,
+    meddpiccDim: "" as const,
+    subjectName: "",
+    evidence: "",
+    suggestedScore: 0 as const,
+    confidence: "low" as const,
+  };
+}
+
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
   const prompt = `${snapshot}\n\n请选出唯一最关键的待验证事实。primaryQuestion 必须能由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要出现方法论术语。factSummary 只能复述支撑本题的 1-2 条入库事实、总计不超过 90 个中文字符。whyThisQuestion 用业务语言说明为什么现在问。doNotAssume 最多 2 项，若无则为空数组。先保证问题有价值且可回答，再输出其余字段。`;
   const primaryController = new AbortController();
@@ -314,14 +328,19 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       if (input.scope === "opportunity" && !input.opportunityId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机引导需要关联商机。" });
       const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、原话、决策接触、触发事件或商机证据，可返回一个待确认候选。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 如果回答只是主观判断、计划或信息不充分，candidateTarget 必须为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- nextQuestion 继续只问一个最关键的自然语言问题；不要出现 MEDDPICC、3 Why、Win Formula 等术语。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。`;
-      const result = await invokeLLM({
-        model: "gpt-5", useBuiltin: true, maxCompletionTokens: 1100,
-        messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
-        response_format: { type: "json_schema", json_schema: { name: "ai_guidance_answer_interpretation", strict: true, schema: AI_ANSWER_INTERPRETATION_SCHEMA } },
-      });
-      const raw = getLLMTextContent(result.choices[0]?.message.content);
-      if (!raw) throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回可确认的事实候选，请稍后重试。" });
-      try { return JSON.parse(extractJSON(raw)); } catch { throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 事实候选格式无效，请稍后重试。" }); }
+      let result: Awaited<ReturnType<typeof invokeLLM>> | undefined;
+      try {
+        result = await invokeLLM({
+          model: "gpt-5", useBuiltin: true, maxCompletionTokens: 1100, maxRetries: 0,
+          messages: [{ role: "system", content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT }, { role: "user", content: prompt }],
+          response_format: { type: "json_schema", json_schema: { name: "ai_guidance_answer_interpretation", strict: true, schema: AI_ANSWER_INTERPRETATION_SCHEMA } },
+        });
+      } catch {
+        return buildNoWriteAnswerInterpretation(input.question);
+      }
+      const raw = getLLMTextContent(result?.choices?.[0]?.message?.content);
+      if (!raw) return buildNoWriteAnswerInterpretation(input.question);
+      try { return JSON.parse(extractJSON(raw)); } catch { return buildNoWriteAnswerInterpretation(input.question); }
     }),
   }),
 
