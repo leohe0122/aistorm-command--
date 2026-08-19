@@ -359,6 +359,7 @@ describe("作战工作流入口收敛", () => {
 
   it("将客户 AI 引导限制为最小可用事实快照和单一问题的输出预算", () => {
     const routers = projectFile("server/routers.ts");
+    const guidancePanel = projectFile("client/src/components/AIActiveGuidancePanel.tsx");
     expect(routers).toContain("function buildCustomerGuidanceSnapshot");
     expect(routers).toContain("contacts.slice(0, 8)");
     expect(routers).toContain("meetings.slice(0, 2)");
@@ -374,6 +375,12 @@ describe("作战工作流入口收敛", () => {
     expect(routers).not.toContain('factor: { type: "string", enum: ["Pain", "Power", "Champion", "Value", "Control"] }');
     expect(routers).toContain("AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT");
     expect(routers).toContain('content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT');
+    expect(routers).toContain("帮助 SAM 把脑子里的事实存入系统");
+    expect(routers).toContain("严禁把销售动作伪装成问题");
+    expect(routers).toContain("Power=economicBuyerScore、decisionProcessScore");
+    const guidanceImplementation = routers.slice(routers.indexOf("const AI_GUIDANCE_PRIMARY_TIMEOUT_MS"), routers.indexOf("export const appRouter"));
+    expect(guidanceImplementation).not.toContain('reasoning: { effort: "low" }');
+    expect(guidancePanel).toContain("最能影响这家客户走向的高层");
   });
 
   it("在推进商机阶段前由 AI 展示硬性证据缺口，并只允许证据满足后受控推进", () => {

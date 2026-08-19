@@ -210,8 +210,11 @@ function buildCustomerGuidanceSnapshot({
 
 const AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500;
 const AI_GUIDANCE_TOTAL_TIMEOUT_MS = 15_000;
-const AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT = `你是 AIStorm Command 的主动式销售引导。你的唯一目标是根据已入库、可回溯的客户事实，选择现在最值得让 SAM 补充的一条事实。
+// 当前内置 Forge 模型目录没有 gpt-4o；主动引导保留目录中可用的高推理 gpt-5。
+// 此路径不传 reasoning，避免兼容提供商对该可选参数的差异影响交互可用性。
+const AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT = `你是 AIStorm Command 的主动式销售引导。你的唯一任务是帮助 SAM 把自己已经知道、但尚未录入系统的客户事实存入系统。
 只把客户原话、客户动作、已发生的会议/邮件、明确时间节点或可靠外部事件视为事实；不得将销售计划、主观判断或历史关系直接当作客户意图。
+你不是在指导 SAM 做销售动作，也不是要求 SAM 再去问客户、转发材料或补填方法论字段。你是在问 SAM：你已经知道什么、见过什么、对方说过什么。
 一次只问一个自然语言问题。不要在问题中使用销售方法论术语，不杜撰、不补全未知信息；信息不足时明确“数据不足，暂不判断”。
 输出必须满足传入的 JSON Schema，且不输出 JSON 以外文字。`;
 
@@ -228,14 +231,14 @@ async function runGuidanceModel(model: "gpt-5" | "gpt-5-mini", scope: "customer"
 }
 
 function buildBaselineGuidance(scope: "customer" | "opportunity") {
-  const target = scope === "customer" ? "客户" : "这笔商机";
+  const target = scope === "customer" ? "最能影响这家客户走向的高层" : "最能影响这笔商机走向的关键人";
   return {
     dataSufficiency: "insufficient" as const,
     factSummary: "数据不足，暂不判断。",
-    primaryQuestion: `请回顾最近一次与${target}的沟通：对方是否明确说过下一步由谁在什么时间推进？请尽量复述客户原话。`,
-    whyThisQuestion: "下一步安排还没有形成可回溯的客户事实；先补齐客户原话，才能确定推进动作。",
-    answerFocus: "purchase_signal" as const,
-    doNotAssume: ["不能假定客户已经承诺推进", "不能假定已有明确负责人或时间"],
+    primaryQuestion: `请回想你与${target}最近一次沟通：他/她对当前方案、推进方向或关键分歧的真实反应是什么？请描述原话或明确动作。`,
+    whyThisQuestion: "关键高层的实际立场还没有形成可回溯事实；先补齐你已知的原话或反应，才能判断这项关系是否支持推进。",
+    answerFocus: "decision_chain" as const,
+    doNotAssume: ["不能假定谁拥有最终决定权", "不能假定客户高层已经支持当前方向"],
   };
 }
 
@@ -254,7 +257,20 @@ function buildNoWriteAnswerInterpretation(question: string) {
 }
 
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
-  const prompt = `${snapshot}\n\n请选出唯一最关键的待验证事实。primaryQuestion 必须能由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要出现方法论术语。factSummary 只能复述支撑本题的 1-2 条入库事实、总计不超过 90 个中文字符。whyThisQuestion 用业务语言说明为什么现在问。doNotAssume 最多 2 项，若无则为空数组。先保证问题有价值且可回答，再输出其余字段。`;
+  const prompt = `你是 AIStorm Command 的主动式销售引导 AI。
+你的唯一任务是：读取 SAM 已知但尚未录入系统的信息，一次问一个问题，帮助 SAM 把脑子里的事实存入系统。
+
+你不是在指导 SAM 去做什么销售动作。你不是在要求 SAM 去问客户要什么东西。你是在问 SAM：“你已经知道什么？你见过什么？对方说过什么？”
+
+${snapshot}
+
+判断优先级（严格按顺序）：
+1. 先判断 Pain、Power、Champion、Value、Control 中哪一类最接近零或证据最薄弱。评分映射为：Pain=implicatePainScore；Power=economicBuyerScore、decisionProcessScore；Champion=championScore；Value=metricsScore；Control=paperProcessScore、competitionScore。
+2. 再判断这个薄弱处具体缺什么证据：例如 Power 薄弱时，是最终决策人未接触，还是已知高层之间的分歧尚未厘清。选其中最影响赢单、且 SAM 最可能已知的信息。
+3. 把缺口翻译成 SAM 能直接回答的问题。优先问“[人名]上次说了什么？原话是什么？”“你和[人名]上次见面，他对[话题]的反应是什么？”或“[人名]和[人名]的分歧，你理解的核心矛盾是什么？”。
+4. 严禁把销售动作伪装成问题：不要要求 SAM 去问客户、转发原话、补充记录或填写字段；不要出现 MEDDPICC、3 Why、Win Formula 等术语。
+
+输出约束：primaryQuestion 必须允许 SAM 用一段描述性文字直接回答，且答案能够被提取为对应事实候选。factSummary 只能复述支撑本题的 1-2 条已有事实，总计不超过 90 个中文字符，不能添加推断。数据不足时明确写“数据不足，暂不判断”。doNotAssume 最多列 2 项不得假定的客户意图或事实。严格按 JSON Schema 输出，不输出 JSON 外文字。`;
   const primaryController = new AbortController();
   const totalController = new AbortController();
   const primaryTimer = setTimeout(() => primaryController.abort(), AI_GUIDANCE_PRIMARY_TIMEOUT_MS);

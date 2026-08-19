@@ -23,14 +23,14 @@ const MEDDPICC_FIELDS: Record<Exclude<Candidate["meddpiccDim"], "">, { score: st
 };
 
 function buildClientBaselineGuidance(scope: "customer" | "opportunity"): Guidance {
-  const target = scope === "customer" ? "客户" : "这笔商机";
+  const target = scope === "customer" ? "最能影响这家客户走向的高层" : "最能影响这笔商机走向的关键人";
   return {
     dataSufficiency: "insufficient",
     factSummary: "数据不足，暂不判断。",
-    primaryQuestion: `请回顾最近一次与${target}的沟通：对方是否明确说过下一步由谁在什么时间推进？请尽量复述客户原话。`,
-    whyThisQuestion: "下一步安排还没有形成可回溯的客户事实；先补齐客户原话，才能确定推进动作。",
-    answerFocus: "purchase_signal",
-    doNotAssume: ["不能假定客户已经承诺推进", "不能假定已有明确负责人或时间"],
+    primaryQuestion: `请回想你与${target}最近一次沟通：他/她对当前方案、推进方向或关键分歧的真实反应是什么？请描述原话或明确动作。`,
+    whyThisQuestion: "关键高层的实际立场还没有形成可回溯事实；先补齐你已知的原话或反应，才能判断这项关系是否支持推进。",
+    answerFocus: "decision_chain",
+    doNotAssume: ["不能假定谁拥有最终决定权", "不能假定客户高层已经支持当前方向"],
   };
 }
 
