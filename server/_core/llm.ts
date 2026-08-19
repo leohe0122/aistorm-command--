@@ -232,6 +232,15 @@ const resolveApiUrl = () =>
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
     : "https://forge.manus.im/v1/chat/completions";
 
+// `ENV.forgeApiUrl` intentionally prefers a user-configured OpenAI key for
+// ordinary traffic. The `useBuiltin` escape hatch must not inherit that
+// preference: it is specifically for health-critical flows that need the
+// Manus Forge proxy even when an external Provider is configured or degraded.
+const resolveBuiltinForgeApiUrl = () => {
+  const baseUrl = process.env.BUILT_IN_FORGE_API_URL?.trim() || "https://forge.manus.im";
+  return `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
+};
+
 const assertApiKey = () => {
   if (!ENV.forgeApiKey) {
     throw new Error("OPENAI_API_KEY is not configured");
@@ -241,7 +250,10 @@ const assertApiKey = () => {
 // Resolve API URL and key dynamically from DB config, fallback to ENV
 async function resolveProviderConfig(model?: string, useBuiltin = false): Promise<{ apiUrl: string; apiKey: string }> {
   if (useBuiltin) {
-    return { apiUrl: resolveApiUrl(), apiKey: ENV.forgeApiKey };
+    return {
+      apiUrl: resolveBuiltinForgeApiUrl(),
+      apiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+    };
   }
   try {
     const { getLLMProviderConfig } = await import('../db.js');

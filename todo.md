@@ -1030,6 +1030,7 @@
 > reasoning 移除验收：版本 77c94171 已加载并触发 AI 主动引导。初次等待后仍显示“正在分析中…”，尚未出现下一问或错误；继续核验上游响应是否超时或被网关阻断。
 > 内置 Forge 验收：版本 24871b1a 已触发 AI 主动引导，界面进入“正在分析中…”。等待模型返回单一下一问或明确的内置通道错误，验证外部 Provider 已被绕过。
 > gpt-5 验收：版本 bd1f0faa 已载入并触发 AI 主动引导，当前进入“正在分析中…”。等待模型返回下一问，以核验高推理模型路径。
+> 后端切换后验收：生产探针现确认 `builtin-gpt5-no-reasoning-json-guard` 已实际运行；HKT 客户作战台已在该后端重新触发 AI 主动引导，等待单一下一问结果。
 
 ## AI 主动引导模型参数兼容性
 - [ ] 修复当前模型不支持 reasoning 参数导致 AI 主动引导返回 400 的问题
@@ -1048,6 +1049,7 @@
 - [ ] 仅在探针确认切换后执行 HKT 的真实 AI 下一问与回答映射验收
 
 > 验证结论：版本 77c94171 已直接移除 reasoning 参数，但 HKT 真实调用仍收到 502 HTML。根因是当前数据库配置的外部 OpenAI Provider 不可用；AI 主动引导将改走项目内置 Forge 通道。
+> 根因确认：`useBuiltin` 过去仍调用由 `ENV.forgeApiUrl` 解析的地址；该字段在存在 `OPENAI_API_KEY` 时优先指向 OpenAI，导致“内置”调用实际仍走外部 Provider。需直接使用 `BUILT_IN_FORGE_API_URL` 与 `BUILT_IN_FORGE_API_KEY`。
 
 ## AI 引导响应类型与生产路由
 - [ ] 修复 AI 引导 tRPC 请求返回 HTML 登录页或前端回退页而非 JSON 的问题
