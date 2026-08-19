@@ -69,6 +69,8 @@ export type InvokeParams = {
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
   model?: string;
+  /** 跳过数据库中的外部 Provider，直接使用项目内置 Forge 通道。 */
+  useBuiltin?: boolean;
   thinking?: Record<string, unknown>;
   reasoning?: Record<string, unknown>;
 };
@@ -237,7 +239,10 @@ const assertApiKey = () => {
 };
 
 // Resolve API URL and key dynamically from DB config, fallback to ENV
-async function resolveProviderConfig(model?: string): Promise<{ apiUrl: string; apiKey: string }> {
+async function resolveProviderConfig(model?: string, useBuiltin = false): Promise<{ apiUrl: string; apiKey: string }> {
+  if (useBuiltin) {
+    return { apiUrl: resolveApiUrl(), apiKey: ENV.forgeApiKey };
+  }
   try {
     const { getLLMProviderConfig } = await import('../db.js');
     // Determine tier based on model name hint
@@ -387,6 +392,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     responseFormat,
     response_format,
     model,
+    useBuiltin,
     thinking,
     reasoning,
     maxTokens,
@@ -443,7 +449,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const { apiUrl, apiKey } = await resolveProviderConfig(model);
+  const { apiUrl, apiKey } = await resolveProviderConfig(model, useBuiltin);
   if (!apiKey) throw new Error("LLM API Key not configured. Please set up a provider in System Settings → AI 模型配置.");
 
   const send = (requestPayload: Record<string, unknown>) => fetchWithBackoff(apiUrl, {
