@@ -66,6 +66,14 @@ const trpcClient = trpc.createClient({
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
+        }).then(async response => {
+          const contentType = response.headers.get("content-type") || "";
+          if (!contentType.includes("application/json")) {
+            const responseUrl = typeof input === "string" ? input : input.toString();
+            const preview = (await response.clone().text()).slice(0, 48).replace(/\s+/g, " ");
+            throw new Error(`服务响应异常：${response.status} ${response.statusText || ""}。AI 服务未返回 JSON（${contentType || "未知类型"}；${preview || responseUrl}）。请刷新登录会话后重试。`);
+          }
+          return response;
         });
       },
     }),

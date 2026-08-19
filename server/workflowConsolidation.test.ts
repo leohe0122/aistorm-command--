@@ -366,4 +366,13 @@ describe("作战工作流入口收敛", () => {
     expect(llmCore).toContain("delete payload.reasoning");
     expect(llmCore).toContain("不牺牲 JSON Schema 约束");
   });
+
+  it("在 API 被登录页或静态回退页替代时明确提示服务响应异常，而不是暴露 JSON 解析异常", () => {
+    const clientEntry = projectFile("client/src/main.tsx");
+    expect(clientEntry).toContain("content-type");
+    expect(clientEntry).toContain("application/json");
+    expect(clientEntry).toContain("服务响应异常");
+    expect(clientEntry).toContain("AI 服务未返回 JSON");
+    expect(clientEntry).toContain("刷新登录会话后重试");
+  });
 });
