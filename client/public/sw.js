@@ -1,5 +1,5 @@
 // AIStorm Command Service Worker
-const CACHE_NAME = 'aistorm-command-v20260819-ai-guidance-client-v2';
+const CACHE_NAME = 'aistorm-command-v20260819-fact-capture-power-names-v3';
 
 // Install: skip waiting so new SW activates immediately
 self.addEventListener('install', (event) => {
