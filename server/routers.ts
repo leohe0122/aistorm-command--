@@ -179,6 +179,11 @@ export const appRouter = router({
   }),
 
   aiGuidance: router({
+    health: protectedProcedure.query(({ ctx }) => ({
+      status: "ok" as const,
+      authenticated: Boolean(ctx.user?.id),
+      route: "ai-guidance-v1" as const,
+    })),
     customerGuide: protectedProcedure.input(z.object({ clientId: z.number() })).mutation(async ({ input }) => {
       const { client, contacts, meetings, signals, readiness } = await loadCustomerReadiness(input.clientId);
       const meddpicc = await getMeddpiccByClientId(input.clientId);

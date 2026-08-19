@@ -329,6 +329,7 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("customerGuide: protectedProcedure");
     expect(routers).toContain("opportunityGuide: protectedProcedure");
     expect(routers).toContain("interpretAnswer: protectedProcedure");
+    expect(routers).toContain("health: protectedProcedure.query");
     expect(routers).toContain("数据不足，暂不判断");
     expect(routers).toContain('candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] }');
     expect(workstation).toContain('<AIActiveGuidancePanel scope="customer" clientId={clientId} />');
@@ -336,6 +337,8 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("让 AI 开始引导");
     expect(guidancePanel).toContain("当前判断");
     expect(guidancePanel).toContain("查看 AI 依据");
+    expect(guidancePanel).toContain("AI 引导在 20 秒内未返回");
+    expect(guidancePanel).toContain("healthCheck.refetch()");
     expect(guidancePanel).not.toContain("**AI 当前判断**\\n${data.factSummary}");
     expect(guidancePanel).toContain("确认写入事实");
     expect(guidancePanel).toContain("暂不写入");
