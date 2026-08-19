@@ -1070,7 +1070,7 @@
 
 - [x] 复核 AI 主动引导的模型目录与推理参数，移除不兼容 reasoning 配置。
 - [x] 重写 AI 主动引导为“录入 SAM 已知事实”优先：首问聚焦最薄弱 Win 因子的人员、原话与已知分歧，而非要求执行销售动作。
-- [ ] 用 HKT 验证首问围绕 Felix、Marcos 或 Susanna 的 Power 事实，并验证回答只产生待确认候选。
+- [x] 用 HKT 验证首问围绕 Felix、Marcos 或 Susanna 的 Power 事实，并验证回答只产生待确认候选：生产首问点名 Susanna、Marcos Chow、Felix；Marcos/Felix 原话仅以低置信候选呈现，未点击确认前零写入。
 > 事实录入优先版本已在 HKT 生产页加载；当前客户关系背景含 Felix 新变量、Marcos 咖啡会面与 Susanna 未接触等 Power 线索，待触发首问。
 > 本次触发后仍出现旧版“下一步由谁在什么时间推进”基础问题，尚不能通过 Power 首问验收；需先核对生产实例是否已切换到 fact-capture-priority-v1。
 > 路由诊断完成：开发预览 `/__version` 已返回 `fact-capture-priority-v1`，但 `command.aistorm.com` 与项目默认托管域名仍返回旧的 `forge-isolated-gpt5-v2`；生产域名尚未切换，需在托管域名绑定/发布层处理。
@@ -1086,6 +1086,9 @@
 > 待确认候选版本 `cc8c033c` 已在 HKT 生产页面加载；待重新触发 Power 首问并提交包含 Marcos、Felix 关系原话的自然语言回答。
 > 已提交自然语言回答：Marcos 不反对年底签单，但要求先厘清 Felix 的安全架构与审批边界异议；未执行任何确认写入操作，待检查候选卡。
 > HKT 回答后仍触发客户端 `candidateTarget=none` 兜底，未展示服务端原文候选；需让客户端错误兜底也保留 SAM 原文为低置信待确认候选，验收暂不通过。
+> 客户端原文候选版本 `f092426f` 已在 HKT 生产页面加载；待重测自然语言回答并检查“确认写入事实”仅作为人工可选动作出现。
+> 最新 HKT Power 首问已点名 Susanna、Marcos Chow、Felix；下一步提交同一关系事实以验证客户端候选卡。
+> 最终验收通过：HKT 已显示“SAM 待确认原文”及“暂不写入 / 确认写入事实”两项人工操作。未点击确认按钮，事实层未发生写入。
 
 - [x] 将客户端回答解释错误兜底升级为低置信待确认关系候选，保留 SAM 原文但不自动写入。
 > Service Worker v3 已在 HKT 页面重新加载生效；当前页面可重新触发 AI 引导以验证动态关键人名称。
