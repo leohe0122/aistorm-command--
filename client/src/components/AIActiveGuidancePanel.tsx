@@ -34,6 +34,20 @@ function buildClientBaselineGuidance(scope: "customer" | "opportunity"): Guidanc
   };
 }
 
+function buildClientNoWriteCandidate(question: string): Candidate {
+  return {
+    message: "数据不足，暂不判断。本次回答未形成可确认、可写入的客户事实。",
+    nextQuestion: question,
+    candidateTarget: "none",
+    signalType: "",
+    meddpiccDim: "",
+    subjectName: "",
+    evidence: "",
+    suggestedScore: 0,
+    confidence: "low",
+  };
+}
+
 export function AIActiveGuidancePanel({ scope, clientId, opportunityId, className }: { scope: "customer" | "opportunity"; clientId: number; opportunityId?: number; className?: string }) {
   const utils = trpc.useUtils();
   const [guide, setGuide] = useState<Guidance | null>(null);
@@ -91,7 +105,12 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, classNam
         setGuide(current => current ? { ...current, primaryQuestion: data.nextQuestion } : current);
         setMessages(current => current.concat({ role: "assistant", content: `${data.message}\n\n**下一步我想确认：** ${data.nextQuestion}` }));
       },
-      onError: error => toast.error(`AI 未能解释这条回答：${error.message}`),
+      onError: () => {
+        const fallback = buildClientNoWriteCandidate(guide.primaryQuestion);
+        setCandidate(fallback);
+        setMessages(current => current.concat({ role: "assistant", content: `${fallback.message}\n\n**下一步我想确认：** ${fallback.nextQuestion}` }));
+        toast.info("本次回答未形成可确认事实；系统未写入任何内容，请继续补充客户原话或动作。");
+      },
     });
   };
   const confirmCandidate = () => {
