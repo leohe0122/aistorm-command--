@@ -209,6 +209,10 @@ function buildCustomerGuidanceSnapshot({
 }
 
 const AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500;
+const AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT = `你是 AIStorm Command 的主动式销售引导。你的唯一目标是根据已入库、可回溯的客户事实，选择现在最值得让 SAM 补充的一条事实。
+只把客户原话、客户动作、已发生的会议/邮件、明确时间节点或可靠外部事件视为事实；不得将销售计划、主观判断或历史关系直接当作客户意图。
+一次只问一个自然语言问题。不要在问题中使用销售方法论术语，不杜撰、不补全未知信息；信息不足时明确“数据不足，暂不判断”。
+输出必须满足传入的 JSON Schema，且不输出 JSON 以外文字。`;
 
 async function runGuidanceModel(model: "gpt-5" | "gpt-5-mini", scope: "customer" | "opportunity", prompt: string, signal?: AbortSignal) {
   return invokeLLM({
@@ -216,13 +220,13 @@ async function runGuidanceModel(model: "gpt-5" | "gpt-5-mini", scope: "customer"
     useBuiltin: true,
     maxCompletionTokens: model === "gpt-5" ? 800 : 600,
     signal,
-    messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
+    messages: [{ role: "system", content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT }, { role: "user", content: prompt }],
     response_format: { type: "json_schema", json_schema: { name: `${scope}_active_guidance`, strict: true, schema: AI_GUIDANCE_RESPONSE_SCHEMA } },
   });
 }
 
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
-  const prompt = `你是 AIStorm Command 的主动式销售引导 AI。你的任务不是让 SAM 填 MEDDPICC、3 Why 或 Win 公式；而是阅读已入库原始事实后，用 SAM 能听懂的自然语言提出“当前只需要回答的一个问题”。\n\n${snapshot}\n\n必须遵守：\n1. 直接从原始事实识别未知、矛盾或证据薄弱处；不要根据销售自评推断。\n2. primaryQuestion 必须可由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要问“请填写 Champion”等方法论术语。\n3. factSummary 只能复述支撑本次问题的 1-2 条已入库事实，总计不超过 90 个中文字符；它只会在折叠依据区显示，绝不复述客户全貌。没有充分事实时明确写“数据不足，暂不判断”。\n4. whyThisQuestion 要用业务语言说明为什么现在问它，而不出现 MEDDPICC、3 Why、Win Formula 等术语。\n5. doNotAssume 最多列 2 项本次不得假定的客户意图或事实；没有时返回空数组。\n6. 先保证 primaryQuestion 有价值且可回答，再输出极简的其余字段；请严格按 JSON Schema 输出，不输出 JSON 外文字。`;
+  const prompt = `${snapshot}\n\n请选出唯一最关键的待验证事实。primaryQuestion 必须能由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要出现方法论术语。factSummary 只能复述支撑本题的 1-2 条入库事实、总计不超过 90 个中文字符。whyThisQuestion 用业务语言说明为什么现在问。doNotAssume 最多 2 项，若无则为空数组。先保证问题有价值且可回答，再输出其余字段。`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_GUIDANCE_PRIMARY_TIMEOUT_MS);
   let result;

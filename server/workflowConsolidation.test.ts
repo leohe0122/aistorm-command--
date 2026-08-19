@@ -362,6 +362,8 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500");
     expect(routers).toContain('runGuidanceModel("gpt-5-mini", scope, prompt)');
     expect(routers).not.toContain('factor: { type: "string", enum: ["Pain", "Power", "Champion", "Value", "Control"] }');
+    expect(routers).toContain("AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT");
+    expect(routers).toContain('content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT');
   });
 
   it("在推进商机阶段前由 AI 展示硬性证据缺口，并只允许证据满足后受控推进", () => {
