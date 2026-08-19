@@ -124,8 +124,8 @@ describe("作战工作流入口收敛", () => {
     const indexHtml = projectFile("client/index.html");
     const serviceWorker = projectFile("client/public/sw.js");
     const app = projectFile("client/src/App.tsx");
-    expect(indexHtml).toContain("/sw.js?v=20260819-ai-review-v1");
-    expect(serviceWorker).toContain("aistorm-command-v20260819-ai-review-v1");
+    expect(indexHtml).toContain("/sw.js?v=20260819-ai-guidance-client-v2");
+    expect(serviceWorker).toContain("aistorm-command-v20260819-ai-guidance-client-v2");
     expect(serviceWorker).toContain("event.request.mode === 'navigate'");
     expect(app).toContain("controllerchange");
   });
