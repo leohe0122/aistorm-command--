@@ -71,6 +71,8 @@ export type InvokeParams = {
   model?: string;
   /** 跳过数据库中的外部 Provider，直接使用项目内置 Forge 通道。 */
   useBuiltin?: boolean;
+  /** 允许上层为有用户等待窗口的交互请求主动中止网络调用。 */
+  signal?: AbortSignal;
   thinking?: Record<string, unknown>;
   reasoning?: Record<string, unknown>;
 };
@@ -380,6 +382,7 @@ const fetchWithBackoff = async (
       await sleep(computeBackoffDelay(attempt, retryAfterMs));
     } catch (error) {
       lastError = error;
+      if (init.signal?.aborted) throw error;
       if (attempt === RETRY_MAX_RETRIES) throw error;
       console.warn(
         `LLM request retry ${attempt + 1}/${RETRY_MAX_RETRIES} after network error`
@@ -405,6 +408,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
     model,
     useBuiltin,
+    signal,
     thinking,
     reasoning,
     maxTokens,
@@ -471,6 +475,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(requestPayload),
+    signal,
   });
 
   let response = await send(payload);

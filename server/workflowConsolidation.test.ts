@@ -357,8 +357,11 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("meetings.slice(0, 2)");
     expect(routers).toContain("signals.slice(0, 3)");
     expect(routers).toContain("summarizeGuidanceMeddpiccScores");
-    expect(routers).toContain("maxCompletionTokens: 800");
+    expect(routers).toContain('maxCompletionTokens: model === "gpt-5" ? 800 : 600');
     expect(routers).not.toContain("readiness.checks || []");
+    expect(routers).toContain("AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500");
+    expect(routers).toContain('runGuidanceModel("gpt-5-mini", scope, prompt)');
+    expect(routers).not.toContain('factor: { type: "string", enum: ["Pain", "Power", "Champion", "Value", "Control"] }');
   });
 
   it("在推进商机阶段前由 AI 展示硬性证据缺口，并只允许证据满足后受控推进", () => {

@@ -117,22 +117,9 @@ const AI_GUIDANCE_RESPONSE_SCHEMA = {
     primaryQuestion: { type: "string" },
     whyThisQuestion: { type: "string" },
     answerFocus: { type: "string", enum: ["purchase_signal", "decision_chain", "trigger_event", "meddpicc", "three_why", "competition"] },
-    winFactors: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          factor: { type: "string", enum: ["Pain", "Power", "Champion", "Value", "Control"] },
-          status: { type: "string", enum: ["supported", "needs_evidence", "unknown"] },
-          evidence: { type: "string" },
-        },
-        required: ["factor", "status", "evidence"],
-        additionalProperties: false,
-      },
-    },
-    doNotAssume: { type: "array", items: { type: "string" } },
+    doNotAssume: { type: "array", items: { type: "string" }, maxItems: 2 },
   },
-  required: ["dataSufficiency", "factSummary", "primaryQuestion", "whyThisQuestion", "answerFocus", "winFactors", "doNotAssume"],
+  required: ["dataSufficiency", "factSummary", "primaryQuestion", "whyThisQuestion", "answerFocus", "doNotAssume"],
   additionalProperties: false,
 } as const;
 
@@ -221,15 +208,34 @@ function buildCustomerGuidanceSnapshot({
   return `【客户作战台已入库事实（精炼版）】\n客户：${client.name}\n当前阶段：${client.stage}\n当前缺口：${JSON.stringify(blockers)}\n关键人：${JSON.stringify(stakeholders)}\n最近两次客户对话：${JSON.stringify(recentMeetings)}\n最近三条购买信号：${JSON.stringify(recentSignals)}\n客户级证据评分：${JSON.stringify(summarizeGuidanceMeddpiccScores(meddpicc))}`;
 }
 
-async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
-  const prompt = `你是 AIStorm Command 的主动式销售引导 AI。你的任务不是让 SAM 填 MEDDPICC、3 Why 或 Win 公式；而是阅读已入库原始事实后，用 SAM 能听懂的自然语言提出“当前只需要回答的一个问题”。\n\n${snapshot}\n\n必须遵守：\n1. 直接从原始事实识别未知、矛盾或证据薄弱处；不要根据销售自评推断。\n2. primaryQuestion 必须可由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要问“请填写 Champion”等方法论术语。\n3. factSummary 只能复述支撑本次问题的 1-2 条已入库事实，总计不超过 90 个中文字符；它只会在折叠依据区显示，绝不复述客户全貌。没有充分事实时明确写“数据不足，暂不判断”。\n4. whyThisQuestion 要用业务语言说明为什么现在问它，而不出现 MEDDPICC、3 Why、Win Formula 等术语。\n5. winFactors 只做内部证据状态提示，evidence 为空或不足时必须写“数据不足，暂不判断”；不得在 primaryQuestion 或 whyThisQuestion 中暴露这些内部术语。\n6. doNotAssume 列出本次不得假定的客户意图或事实。\n7. 请严格按 JSON Schema 输出，不输出 JSON 外文字。`;
-  const result = await invokeLLM({
-    model: "gpt-5",
+const AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500;
+
+async function runGuidanceModel(model: "gpt-5" | "gpt-5-mini", scope: "customer" | "opportunity", prompt: string, signal?: AbortSignal) {
+  return invokeLLM({
+    model,
     useBuiltin: true,
-    maxCompletionTokens: 800,
+    maxCompletionTokens: model === "gpt-5" ? 800 : 600,
+    signal,
     messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
     response_format: { type: "json_schema", json_schema: { name: `${scope}_active_guidance`, strict: true, schema: AI_GUIDANCE_RESPONSE_SCHEMA } },
   });
+}
+
+async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
+  const prompt = `你是 AIStorm Command 的主动式销售引导 AI。你的任务不是让 SAM 填 MEDDPICC、3 Why 或 Win 公式；而是阅读已入库原始事实后，用 SAM 能听懂的自然语言提出“当前只需要回答的一个问题”。\n\n${snapshot}\n\n必须遵守：\n1. 直接从原始事实识别未知、矛盾或证据薄弱处；不要根据销售自评推断。\n2. primaryQuestion 必须可由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要问“请填写 Champion”等方法论术语。\n3. factSummary 只能复述支撑本次问题的 1-2 条已入库事实，总计不超过 90 个中文字符；它只会在折叠依据区显示，绝不复述客户全貌。没有充分事实时明确写“数据不足，暂不判断”。\n4. whyThisQuestion 要用业务语言说明为什么现在问它，而不出现 MEDDPICC、3 Why、Win Formula 等术语。\n5. doNotAssume 最多列 2 项本次不得假定的客户意图或事实；没有时返回空数组。\n6. 先保证 primaryQuestion 有价值且可回答，再输出极简的其余字段；请严格按 JSON Schema 输出，不输出 JSON 外文字。`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_GUIDANCE_PRIMARY_TIMEOUT_MS);
+  let result;
+  try {
+    result = await runGuidanceModel("gpt-5", scope, prompt, controller.signal);
+  } catch (error) {
+    if (!controller.signal.aborted) throw error;
+    // 交互层必须在有限窗口内给 SAM 下一问。仅在主模型超时后使用同一事实
+    // 契约与 Schema 的快速模型，不改变事实约束或确认写入边界。
+    result = await runGuidanceModel("gpt-5-mini", scope, prompt);
+  } finally {
+    clearTimeout(timer);
+  }
   const raw = getLLMTextContent(result.choices[0]?.message.content);
   if (!raw) throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回下一步引导问题，请稍后重试。" });
   try { return JSON.parse(extractJSON(raw)); } catch { throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 引导格式无效，请稍后重试。" }); }
