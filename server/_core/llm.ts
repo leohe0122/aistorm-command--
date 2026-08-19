@@ -343,7 +343,9 @@ const fetchWithBackoff = async (
   for (let attempt = 0; attempt <= RETRY_MAX_RETRIES; attempt++) {
     try {
       const response = await fetch(url, init);
-      if (response.ok || attempt === RETRY_MAX_RETRIES) {
+      // 仅对限流与服务端异常退避重试。4xx 通常代表请求参数无效，重试只会放大等待时间。
+      const retryable = response.status === 429 || response.status >= 500;
+      if (response.ok || !retryable || attempt === RETRY_MAX_RETRIES) {
         return response;
       }
 
@@ -444,14 +446,29 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const { apiUrl, apiKey } = await resolveProviderConfig(model);
   if (!apiKey) throw new Error("LLM API Key not configured. Please set up a provider in System Settings → AI 模型配置.");
 
-  const response = await fetchWithBackoff(apiUrl, {
+  const send = (requestPayload: Record<string, unknown>) => fetchWithBackoff(apiUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(requestPayload),
   });
+
+  let response = await send(payload);
+
+  // 部分 OpenAI 兼容提供商不接受 reasoning 参数。保留调用方的意图，
+  // 但在收到明确的参数不兼容错误时仅降级一次，不牺牲 JSON Schema 约束。
+  if (!response.ok && "reasoning" in payload) {
+    const firstError = await response.text();
+    if (/unknown parameter[^\n]*reasoning|reasoning[^\n]*unknown parameter/i.test(firstError)) {
+      console.warn("[LLM] Provider rejected reasoning; retrying once without the optional parameter.");
+      delete payload.reasoning;
+      response = await send(payload);
+    } else {
+      throw new Error(`LLM invoke failed: ${response.status} ${response.statusText} – ${firstError}`);
+    }
+  }
 
   if (!response.ok) {
     const errorText = await response.text();

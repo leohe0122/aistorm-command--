@@ -358,4 +358,12 @@ describe("作战工作流入口收敛", () => {
     expect(stagePanel).toContain("确认推进至");
     expect(stagePanel).toContain("data-ai-active-guidance");
   });
+
+  it("为不支持 reasoning 的兼容模型自动降级一次，且不对参数错误进行无效退避重试", () => {
+    const llmCore = projectFile("server/_core/llm.ts");
+    expect(llmCore).toContain("response.status === 429 || response.status >= 500");
+    expect(llmCore).toContain("Provider rejected reasoning; retrying once without the optional parameter.");
+    expect(llmCore).toContain("delete payload.reasoning");
+    expect(llmCore).toContain("不牺牲 JSON Schema 约束");
+  });
 });
