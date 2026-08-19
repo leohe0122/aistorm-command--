@@ -158,7 +158,6 @@ async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: s
   const result = await invokeLLM({
     model: "gpt-5-mini",
     maxCompletionTokens: 1600,
-    reasoning: { effort: "low" },
     messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
     response_format: { type: "json_schema", json_schema: { name: `${scope}_active_guidance`, strict: true, schema: AI_GUIDANCE_RESPONSE_SCHEMA } },
   });
@@ -209,7 +208,7 @@ export const appRouter = router({
       if (input.scope === "opportunity" && !input.opportunityId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机引导需要关联商机。" });
       const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、原话、决策接触、触发事件或商机证据，可返回一个待确认候选。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 如果回答只是主观判断、计划或信息不充分，candidateTarget 必须为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- nextQuestion 继续只问一个最关键的自然语言问题；不要出现 MEDDPICC、3 Why、Win Formula 等术语。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。`;
       const result = await invokeLLM({
-        model: "gpt-5-mini", maxCompletionTokens: 1100, reasoning: { effort: "low" },
+        model: "gpt-5-mini", maxCompletionTokens: 1100,
         messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
         response_format: { type: "json_schema", json_schema: { name: "ai_guidance_answer_interpretation", strict: true, schema: AI_ANSWER_INTERPRETATION_SCHEMA } },
       });
