@@ -154,7 +154,7 @@ const AI_ANSWER_INTERPRETATION_SCHEMA = {
 } as const;
 
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
-  const prompt = `你是 AIStorm Command 的主动式销售引导 AI。你的任务不是让 SAM 填 MEDDPICC、3 Why 或 Win 公式；而是阅读已入库原始事实后，用 SAM 能听懂的自然语言提出“当前只需要回答的一个问题”。\n\n${snapshot}\n\n必须遵守：\n1. 直接从原始事实识别未知、矛盾或证据薄弱处；不要根据销售自评推断。\n2. primaryQuestion 必须可由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要问“请填写 Champion”等方法论术语。\n3. factSummary 只能复述已有事实；没有充分事实时明确写“数据不足，暂不判断”。\n4. whyThisQuestion 要用业务语言说明为什么现在问它，而不出现 MEDDPICC、3 Why、Win Formula 等术语。\n5. winFactors 只做证据状态提示，evidence 为空或不足时必须写“数据不足，暂不判断”。\n6. doNotAssume 列出本次不得假定的客户意图或事实。\n7. 请严格按 JSON Schema 输出，不输出 JSON 外文字。`;
+  const prompt = `你是 AIStorm Command 的主动式销售引导 AI。你的任务不是让 SAM 填 MEDDPICC、3 Why 或 Win 公式；而是阅读已入库原始事实后，用 SAM 能听懂的自然语言提出“当前只需要回答的一个问题”。\n\n${snapshot}\n\n必须遵守：\n1. 直接从原始事实识别未知、矛盾或证据薄弱处；不要根据销售自评推断。\n2. primaryQuestion 必须可由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要问“请填写 Champion”等方法论术语。\n3. factSummary 只能复述支撑本次问题的 1-2 条已入库事实，总计不超过 90 个中文字符；它只会在折叠依据区显示，绝不复述客户全貌。没有充分事实时明确写“数据不足，暂不判断”。\n4. whyThisQuestion 要用业务语言说明为什么现在问它，而不出现 MEDDPICC、3 Why、Win Formula 等术语。\n5. winFactors 只做内部证据状态提示，evidence 为空或不足时必须写“数据不足，暂不判断”；不得在 primaryQuestion 或 whyThisQuestion 中暴露这些内部术语。\n6. doNotAssume 列出本次不得假定的客户意图或事实。\n7. 请严格按 JSON Schema 输出，不输出 JSON 外文字。`;
   const result = await invokeLLM({
     model: "gpt-5",
     useBuiltin: true,

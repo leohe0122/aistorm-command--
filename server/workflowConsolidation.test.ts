@@ -334,7 +334,9 @@ describe("作战工作流入口收敛", () => {
     expect(workstation).toContain('<AIActiveGuidancePanel scope="customer" clientId={clientId} />');
     expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} />');
     expect(guidancePanel).toContain("让 AI 开始引导");
-    expect(guidancePanel).toContain("AI 当前判断");
+    expect(guidancePanel).toContain("当前判断");
+    expect(guidancePanel).toContain("查看 AI 依据");
+    expect(guidancePanel).not.toContain("**AI 当前判断**\\n${data.factSummary}");
     expect(guidancePanel).toContain("确认写入事实");
     expect(guidancePanel).toContain("暂不写入");
     expect(guidancePanel).toContain("trpc.purchaseSignals.create.useMutation");
