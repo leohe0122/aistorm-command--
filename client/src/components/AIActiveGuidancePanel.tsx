@@ -22,12 +22,15 @@ const MEDDPICC_FIELDS: Record<Exclude<Candidate["meddpiccDim"], "">, { score: st
   M: { score: "metricsScore", notes: "metricsNotes" }, E: { score: "economicBuyerScore", notes: "economicBuyerNotes" }, D1: { score: "decisionCriteriaScore", notes: "decisionCriteriaNotes" }, D2: { score: "decisionProcessScore", notes: "decisionProcessNotes" }, P: { score: "paperProcessScore", notes: "paperProcessNotes" }, I: { score: "implicatePainScore", notes: "implicatePainNotes" }, C1: { score: "championScore", notes: "championNotes" }, C2: { score: "competitionScore", notes: "competitionNotes" },
 };
 
-function buildClientBaselineGuidance(scope: "customer" | "opportunity"): Guidance {
-  const target = scope === "customer" ? "最能影响这家客户走向的高层" : "最能影响这笔商机走向的关键人";
+function buildClientBaselineGuidance(scope: "customer" | "opportunity", powerContactNames: string[] = []): Guidance {
+  const target = powerContactNames.length ? powerContactNames.join("、") : scope === "customer" ? "最能影响这家客户走向的高层" : "最能影响这笔商机走向的关键人";
+  const namedTarget = powerContactNames.length > 0;
   return {
     dataSufficiency: "insufficient",
     factSummary: "数据不足，暂不判断。",
-    primaryQuestion: `请回想你与${target}最近一次沟通：他/她对当前方案、推进方向或关键分歧的真实反应是什么？请描述原话或明确动作。`,
+    primaryQuestion: namedTarget
+      ? `关于${target}：你最近一次接触、转述或会议里，谁对当前方案、推进方向或关键分歧表达过最明确的态度？请复述该人的原话或明确动作。`
+      : `请回想你与${target}最近一次沟通：他/她对当前方案、推进方向或关键分歧的真实反应是什么？请描述原话或明确动作。`,
     whyThisQuestion: "关键高层的实际立场还没有形成可回溯事实；先补齐你已知的原话或反应，才能判断这项关系是否支持推进。",
     answerFocus: "decision_chain",
     doNotAssume: ["不能假定谁拥有最终决定权", "不能假定客户高层已经支持当前方向"],
@@ -48,7 +51,7 @@ function buildClientNoWriteCandidate(question: string): Candidate {
   };
 }
 
-export function AIActiveGuidancePanel({ scope, clientId, opportunityId, className }: { scope: "customer" | "opportunity"; clientId: number; opportunityId?: number; className?: string }) {
+export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerContactNames = [], className }: { scope: "customer" | "opportunity"; clientId: number; opportunityId?: number; powerContactNames?: string[]; className?: string }) {
   const utils = trpc.useUtils();
   const [guide, setGuide] = useState<Guidance | null>(null);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
@@ -63,7 +66,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, classNam
   useEffect(() => {
     if (!pendingGuide) return;
     const timeout = window.setTimeout(() => {
-      const baseline = buildClientBaselineGuidance(scope);
+      const baseline = buildClientBaselineGuidance(scope, powerContactNames);
       setGuide(current => current ?? baseline);
       setMessages(current => current.length ? current : [{ role: "assistant", content: `**当前判断**\n数据不足，暂不判断。\n\n**我现在只想确认一件事：** ${baseline.primaryQuestion}` }]);
       setRequestTimedOut(false);
@@ -72,7 +75,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, classNam
       toast.info("已切换为基础引导：不会写入任何事实，请如实补充客户原话或动作。");
     }, 12_000);
     return () => window.clearTimeout(timeout);
-  }, [pendingGuide, customerGuideMutation, opportunityGuideMutation, scope]);
+  }, [pendingGuide, customerGuideMutation, opportunityGuideMutation, powerContactNames, scope]);
   const startGuide = async () => {
     setCandidate(null);
     setRequestTimedOut(false);
@@ -85,7 +88,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, classNam
     const onError = (error: { message: string }) => {
       setRequestTimedOut(false);
       if (!guide) {
-        const baseline = buildClientBaselineGuidance(scope);
+        const baseline = buildClientBaselineGuidance(scope, powerContactNames);
         setGuide(baseline);
         setMessages([{ role: "assistant", content: `**当前判断**\n数据不足，暂不判断。\n\n**我现在只想确认一件事：** ${baseline.primaryQuestion}` }]);
         toast.info("AI 服务暂不可用，已切换为基础引导；不会写入任何事实。");

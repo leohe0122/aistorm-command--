@@ -230,12 +230,31 @@ async function runGuidanceModel(model: "gpt-5" | "gpt-5-mini", scope: "customer"
   });
 }
 
-function buildBaselineGuidance(scope: "customer" | "opportunity") {
-  const target = scope === "customer" ? "最能影响这家客户走向的高层" : "最能影响这笔商机走向的关键人";
+function selectGuidancePowerContacts(contacts: any[]): string[] {
+  const rank = (contact: any) => {
+    const title = String(contact.title || "").toLowerCase();
+    const role = String(contact.buyingRole || "");
+    const cLevel = /(chief|ceo|cio|ciso|cto|cfo|总裁|首席)/.test(title) ? 100 : /(vp|vice president|副总裁|总经理|director|总监)/.test(title) ? 60 : 20;
+    const buyingPower = role === "经济决策人" ? 20 : role === "技术决策人" ? 15 : 0;
+    return cLevel + buyingPower;
+  };
+  return contacts
+    .filter(contact => String(contact?.name || "").trim())
+    .sort((left, right) => rank(right) - rank(left))
+    .slice(0, 3)
+    .map(contact => String(contact.name).trim());
+}
+
+function buildBaselineGuidance(scope: "customer" | "opportunity", contacts: any[] = []) {
+  const powerContacts = selectGuidancePowerContacts(contacts);
+  const target = powerContacts.length ? powerContacts.join("、") : scope === "customer" ? "最能影响这家客户走向的高层" : "最能影响这笔商机走向的关键人";
+  const namedTarget = powerContacts.length > 0;
   return {
     dataSufficiency: "insufficient" as const,
     factSummary: "数据不足，暂不判断。",
-    primaryQuestion: `请回想你与${target}最近一次沟通：他/她对当前方案、推进方向或关键分歧的真实反应是什么？请描述原话或明确动作。`,
+    primaryQuestion: namedTarget
+      ? `关于${target}：你最近一次接触、转述或会议里，谁对当前方案、推进方向或关键分歧表达过最明确的态度？请复述该人的原话或明确动作。`
+      : `请回想你与${target}最近一次沟通：他/她对当前方案、推进方向或关键分歧的真实反应是什么？请描述原话或明确动作。`,
     whyThisQuestion: "关键高层的实际立场还没有形成可回溯事实；先补齐你已知的原话或反应，才能判断这项关系是否支持推进。",
     answerFocus: "decision_chain" as const,
     doNotAssume: ["不能假定谁拥有最终决定权", "不能假定客户高层已经支持当前方向"],
@@ -256,7 +275,7 @@ function buildNoWriteAnswerInterpretation(question: string) {
   };
 }
 
-async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
+async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string, contacts: any[] = []) {
   const prompt = `你是 AIStorm Command 的主动式销售引导 AI。
 你的唯一任务是：读取 SAM 已知但尚未录入系统的信息，一次问一个问题，帮助 SAM 把脑子里的事实存入系统。
 
@@ -287,15 +306,15 @@ ${snapshot}
       // 使用同一事实契约与 Schema 的快速模型，不改变事实约束或确认写入边界。
       result = await runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal);
     } catch {
-      return buildBaselineGuidance(scope);
+      return buildBaselineGuidance(scope, contacts);
     }
   } finally {
     clearTimeout(primaryTimer);
     clearTimeout(totalTimer);
   }
   const raw = getLLMTextContent(result.choices[0]?.message.content);
-  if (!raw) return buildBaselineGuidance(scope);
-  try { return JSON.parse(extractJSON(raw)); } catch { return buildBaselineGuidance(scope); }
+  if (!raw) return buildBaselineGuidance(scope, contacts);
+  try { return JSON.parse(extractJSON(raw)); } catch { return buildBaselineGuidance(scope, contacts); }
 }
 
 export const appRouter = router({
@@ -319,7 +338,7 @@ export const appRouter = router({
       const { client, contacts, meetings, signals, readiness } = await loadCustomerReadiness(input.clientId);
       const meddpicc = await getMeddpiccByClientId(input.clientId);
       const snapshot = buildCustomerGuidanceSnapshot({ client, contacts, meetings, signals, readiness, meddpicc });
-      return generateAIGuidance("customer", snapshot);
+      return generateAIGuidance("customer", snapshot, contacts);
     }),
     opportunityGuide: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number() })).mutation(async ({ input }) => {
       const db = await getDb();

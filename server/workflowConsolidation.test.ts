@@ -334,8 +334,8 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("health: protectedProcedure.query");
     expect(routers).toContain("数据不足，暂不判断");
     expect(routers).toContain('candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] }');
-    expect(workstation).toContain('<AIActiveGuidancePanel scope="customer" clientId={clientId} />');
-    expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} />');
+    expect(workstation).toContain('<AIActiveGuidancePanel scope="customer" clientId={clientId} powerContactNames={guidancePowerContactNames} />');
+    expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} />');
     expect(guidancePanel).toContain("让 AI 开始引导");
     expect(guidancePanel).toContain("当前判断");
     expect(guidancePanel).toContain("查看 AI 依据");
@@ -371,7 +371,7 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("AI_GUIDANCE_TOTAL_TIMEOUT_MS = 15_000");
     expect(routers).toContain('runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal)');
     expect(routers).toContain("maxRetries: 0");
-    expect(routers).toContain("buildBaselineGuidance(scope)");
+    expect(routers).toContain("buildBaselineGuidance(scope, contacts)");
     expect(routers).not.toContain('factor: { type: "string", enum: ["Pain", "Power", "Champion", "Value", "Control"] }');
     expect(routers).toContain("AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT");
     expect(routers).toContain('content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT');
@@ -381,6 +381,8 @@ describe("作战工作流入口收敛", () => {
     const guidanceImplementation = routers.slice(routers.indexOf("const AI_GUIDANCE_PRIMARY_TIMEOUT_MS"), routers.indexOf("export const appRouter"));
     expect(guidanceImplementation).not.toContain('reasoning: { effort: "low" }');
     expect(guidancePanel).toContain("最能影响这家客户走向的高层");
+    expect(routers).toContain("selectGuidancePowerContacts");
+    expect(guidancePanel).toContain("powerContactNames");
   });
 
   it("在推进商机阶段前由 AI 展示硬性证据缺口，并只允许证据满足后受控推进", () => {

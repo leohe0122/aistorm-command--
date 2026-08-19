@@ -491,6 +491,12 @@ export default function ClientWorkstation() {
   const { data: customTasks = [] } = trpc.pod.listByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: products = [] } = trpc.products.listActive.useQuery();
   const { data: emailUser } = trpc.emailAuth.me.useQuery();
+  const guidancePowerContactNames = useMemo(() => contacts
+    .filter((contact: any) => /chief|ceo|cio|ciso|cto|cfo|总裁|首席/i.test(String(contact.title || "")))
+    .sort((left: any, right: any) => Number(right.influence || 0) - Number(left.influence || 0))
+    .slice(0, 3)
+    .map((contact: any) => String(contact.name || "").trim())
+    .filter(Boolean), [contacts]);
 
   // Command 3.0: AI Coach self-check
   const [showCoachSelfCheck, setShowCoachSelfCheck] = useState(false);
@@ -564,7 +570,7 @@ export default function ClientWorkstation() {
 
         {client.stage !== "进入商机" && <AccountMapPanel clientId={clientId} />}
         <StageTaskCenter readiness={readiness} customTasks={customClientTasks} taskSubmitting={addTask.isPending} onAddTask={(title, description) => addTask.mutate({ clientId, assignedRole: "SAM", title, description: description || undefined })} onToggleTask={(task) => updateTask.mutate({ id: task.id, taskStatus: task.isCompleted || task.taskStatus === "done" ? "pending" : "done" })} />
-        <AIActiveGuidancePanel scope="customer" clientId={clientId} />
+        <AIActiveGuidancePanel scope="customer" clientId={clientId} powerContactNames={guidancePowerContactNames} />
         {client.stage === "进入商机" && <ClientActionDesk client={client} clientId={clientId} meddpicc={meddpicc} signals={signals as any[]} />}
 
         <OpportunityApplicationPanel readiness={readiness} client={client} products={products as any[]} submitting={applyForOpportunity.isPending} onSubmit={(payload) => applyForOpportunity.mutate({ clientId, ...payload })} />

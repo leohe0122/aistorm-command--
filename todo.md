@@ -1073,6 +1073,11 @@
 - [ ] 用 HKT 验证首问围绕 Felix、Marcos 或 Susanna 的 Power 事实，并验证回答只产生待确认候选。
 > 事实录入优先版本已在 HKT 生产页加载；当前客户关系背景含 Felix 新变量、Marcos 咖啡会面与 Susanna 未接触等 Power 线索，待触发首问。
 > 本次触发后仍出现旧版“下一步由谁在什么时间推进”基础问题，尚不能通过 Power 首问验收；需先核对生产实例是否已切换到 fact-capture-priority-v1。
+> 路由诊断完成：开发预览 `/__version` 已返回 `fact-capture-priority-v1`，但 `command.aistorm.com` 与项目默认托管域名仍返回旧的 `forge-isolated-gpt5-v2`；生产域名尚未切换，需在托管域名绑定/发布层处理。
+> 生产部署成功后复核：`command.aistorm.com/__version` 已返回 `fact-capture-priority-v1` 与 `builtin-gpt5-no-reasoning-fact-capture-priority-v1`；可继续 HKT Power 首问验收。
+> HKT 生产首问已不再要求执行销售动作，改为询问最能影响走向的高层之真实反应；但模型延迟后进入的基础引导尚未点名 Felix、Marcos 或 Susanna，尚不能完整通过验收。
+
+- [x] 让基础引导从客户快照动态选取已入库的 Power 关键人，HKT 应优先点名 Felix、Marcos 或 Susanna，而不使用泛化的“高层”。
 - [x] 在客户端回答解释报错时生成 candidateTarget=none 的待确认卡，保证不自动写入且不中断 SAM 的下一步引导。
 - [x] 修复回答解释对空或非标准 LLM 响应访问 choices[0] 的异常，并降级为不写入的待确认结果。
 - [x] 将首轮 AI 引导响应精简为当前判断、唯一问题与可追溯依据，并在 gpt-5 未及时返回时走保留事实约束的快速模型降级。

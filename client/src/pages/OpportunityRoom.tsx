@@ -88,6 +88,12 @@ function AIWarJudgement({
   clientId, clientName, opportunityId, opportunity, productName, contacts, meetings, signals, meddpicc
 }: { clientId: number; clientName: string; opportunityId: number; opportunity: any; productName?: string; contacts: any[]; meetings: any[]; signals: any[]; meddpicc: any }) {
   const utils = trpc.useUtils();
+  const powerContactNames = useMemo(() => contacts
+    .filter((contact: any) => /chief|ceo|cio|ciso|cto|cfo|总裁|首席/i.test(String(contact.title || "")))
+    .sort((left: any, right: any) => Number(right.influence || 0) - Number(left.influence || 0))
+    .slice(0, 3)
+    .map((contact: any) => String(contact.name || "").trim())
+    .filter(Boolean), [contacts]);
   const { data: reviews = [] } = trpc.insights.getLatestReviews.useQuery({ clientId });
   const latestReview = reviews.find((review: any) => review.opportunityId === opportunityId && review.reviewType === "1toN") as any;
   const [generatedReview, setGeneratedReview] = useState("");
@@ -154,7 +160,7 @@ function AIWarJudgement({
         </Button></div>
       </div>
       <div className="px-4 pt-4"><EntryPurchaseSignals snapshot={opportunity.entryEvidenceSnapshot} /></div>
-      <div className="px-4 pt-4"><AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} /></div>
+      <div className="px-4 pt-4"><AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} /></div>
       <div className="px-4 pt-4"><StageAdvanceGuidance clientId={clientId} opportunityId={opportunityId} currentStage={opportunity.stage} /></div>
       <div className="grid gap-px bg-cyan-300/10 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="bg-slate-950/60 p-4">
@@ -365,7 +371,7 @@ function OpportunityMaterialGenerator({ client, opportunity }: { client: any; op
   </section>;
 }
 
-function ActionWorkspace({ clientId, opportunityId, initialReviewId }: { clientId: number; opportunityId: number; initialReviewId?: number | null }) {
+function ActionWorkspace({ clientId, opportunityId, initialReviewId, powerContactNames = [] }: { clientId: number; opportunityId: number; initialReviewId?: number | null; powerContactNames?: string[] }) {
   const utils = trpc.useUtils();
   const { data: podTasks = [], isLoading } = trpc.pod.listByOpportunity.useQuery({ opportunityId });
   const { data: actionItems = [] } = trpc.actions.listByClient.useQuery({ clientId });
@@ -470,6 +476,12 @@ export default function OpportunityRoom() {
   const opportunity = opportunities.find((item: any) => item.id === opportunityId) as any;
   const { data: meddpicc } = trpc.opportunities.getMeddpicc.useQuery({ opportunityId }, { enabled: Number.isFinite(opportunityId) });
   const { data: contacts = [] } = trpc.contacts.listByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
+  const guidancePowerContactNames = useMemo(() => contacts
+    .filter((contact: any) => /chief|ceo|cio|ciso|cto|cfo|总裁|首席/i.test(String(contact.title || "")))
+    .sort((left: any, right: any) => Number(right.influence || 0) - Number(left.influence || 0))
+    .slice(0, 3)
+    .map((contact: any) => String(contact.name || "").trim())
+    .filter(Boolean), [contacts]);
   const { data: meetings = [] } = trpc.meetings.listByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: signals = [] } = trpc.intelligence.listByClient.useQuery({ clientId }, { enabled: Number.isFinite(clientId) });
   const { data: products = [] } = trpc.products.listActive.useQuery();
