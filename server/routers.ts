@@ -209,6 +209,7 @@ function buildCustomerGuidanceSnapshot({
 }
 
 const AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500;
+const AI_GUIDANCE_TOTAL_TIMEOUT_MS = 15_000;
 const AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT = `你是 AIStorm Command 的主动式销售引导。你的唯一目标是根据已入库、可回溯的客户事实，选择现在最值得让 SAM 补充的一条事实。
 只把客户原话、客户动作、已发生的会议/邮件、明确时间节点或可靠外部事件视为事实；不得将销售计划、主观判断或历史关系直接当作客户意图。
 一次只问一个自然语言问题。不要在问题中使用销售方法论术语，不杜撰、不补全未知信息；信息不足时明确“数据不足，暂不判断”。
@@ -220,29 +221,51 @@ async function runGuidanceModel(model: "gpt-5" | "gpt-5-mini", scope: "customer"
     useBuiltin: true,
     maxCompletionTokens: model === "gpt-5" ? 800 : 600,
     signal,
+    maxRetries: 0,
     messages: [{ role: "system", content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT }, { role: "user", content: prompt }],
     response_format: { type: "json_schema", json_schema: { name: `${scope}_active_guidance`, strict: true, schema: AI_GUIDANCE_RESPONSE_SCHEMA } },
   });
 }
 
+function buildBaselineGuidance(scope: "customer" | "opportunity") {
+  const target = scope === "customer" ? "客户" : "这笔商机";
+  return {
+    dataSufficiency: "insufficient" as const,
+    factSummary: "数据不足，暂不判断。",
+    primaryQuestion: `请回顾最近一次与${target}的沟通：对方是否明确说过下一步由谁在什么时间推进？请尽量复述客户原话。`,
+    whyThisQuestion: "下一步安排还没有形成可回溯的客户事实；先补齐客户原话，才能确定推进动作。",
+    answerFocus: "purchase_signal" as const,
+    doNotAssume: ["不能假定客户已经承诺推进", "不能假定已有明确负责人或时间"],
+  };
+}
+
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string) {
   const prompt = `${snapshot}\n\n请选出唯一最关键的待验证事实。primaryQuestion 必须能由 SAM 描述一次客户对话、邮件、客户动作或外部事件来回答；不要出现方法论术语。factSummary 只能复述支撑本题的 1-2 条入库事实、总计不超过 90 个中文字符。whyThisQuestion 用业务语言说明为什么现在问。doNotAssume 最多 2 项，若无则为空数组。先保证问题有价值且可回答，再输出其余字段。`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), AI_GUIDANCE_PRIMARY_TIMEOUT_MS);
+  const primaryController = new AbortController();
+  const totalController = new AbortController();
+  const primaryTimer = setTimeout(() => primaryController.abort(), AI_GUIDANCE_PRIMARY_TIMEOUT_MS);
+  const totalTimer = setTimeout(() => {
+    primaryController.abort();
+    totalController.abort();
+  }, AI_GUIDANCE_TOTAL_TIMEOUT_MS);
   let result;
   try {
-    result = await runGuidanceModel("gpt-5", scope, prompt, controller.signal);
-  } catch (error) {
-    if (!controller.signal.aborted) throw error;
-    // 交互层必须在有限窗口内给 SAM 下一问。仅在主模型超时后使用同一事实
-    // 契约与 Schema 的快速模型，不改变事实约束或确认写入边界。
-    result = await runGuidanceModel("gpt-5-mini", scope, prompt);
+    result = await runGuidanceModel("gpt-5", scope, prompt, primaryController.signal);
+  } catch {
+    try {
+      // 交互层必须在有限窗口内给 SAM 下一问。仅在主模型未及时返回或不可用时
+      // 使用同一事实契约与 Schema 的快速模型，不改变事实约束或确认写入边界。
+      result = await runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal);
+    } catch {
+      return buildBaselineGuidance(scope);
+    }
   } finally {
-    clearTimeout(timer);
+    clearTimeout(primaryTimer);
+    clearTimeout(totalTimer);
   }
   const raw = getLLMTextContent(result.choices[0]?.message.content);
-  if (!raw) throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回下一步引导问题，请稍后重试。" });
-  try { return JSON.parse(extractJSON(raw)); } catch { throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 引导格式无效，请稍后重试。" }); }
+  if (!raw) return buildBaselineGuidance(scope);
+  try { return JSON.parse(extractJSON(raw)); } catch { return buildBaselineGuidance(scope); }
 }
 
 export const appRouter = router({

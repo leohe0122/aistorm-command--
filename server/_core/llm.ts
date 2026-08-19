@@ -73,6 +73,8 @@ export type InvokeParams = {
   useBuiltin?: boolean;
   /** 允许上层为有用户等待窗口的交互请求主动中止网络调用。 */
   signal?: AbortSignal;
+  /** 覆盖默认退避重试次数；实时交互可设为 0，避免占满用户等待窗口。 */
+  maxRetries?: number;
   thinking?: Record<string, unknown>;
   reasoning?: Record<string, unknown>;
 };
@@ -355,16 +357,17 @@ const computeBackoffDelay = (
 // returns the final Response so callers keep their existing error handling.
 const fetchWithBackoff = async (
   url: string,
-  init: FetchInit
+  init: FetchInit,
+  maxRetries = RETRY_MAX_RETRIES
 ): Promise<Response> => {
   let lastError: unknown;
 
-  for (let attempt = 0; attempt <= RETRY_MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetch(url, init);
       // 仅对限流与服务端异常退避重试。4xx 通常代表请求参数无效，重试只会放大等待时间。
       const retryable = response.status === 429 || response.status >= 500;
-      if (response.ok || !retryable || attempt === RETRY_MAX_RETRIES) {
+      if (response.ok || !retryable || attempt === maxRetries) {
         return response;
       }
 
@@ -377,15 +380,15 @@ const fetchWithBackoff = async (
         // Body already settled; nothing to clean up.
       }
       console.warn(
-        `LLM request retry ${attempt + 1}/${RETRY_MAX_RETRIES} after status ${response.status}`
+        `LLM request retry ${attempt + 1}/${maxRetries} after status ${response.status}`
       );
       await sleep(computeBackoffDelay(attempt, retryAfterMs));
     } catch (error) {
       lastError = error;
       if (init.signal?.aborted) throw error;
-      if (attempt === RETRY_MAX_RETRIES) throw error;
+      if (attempt === maxRetries) throw error;
       console.warn(
-        `LLM request retry ${attempt + 1}/${RETRY_MAX_RETRIES} after network error`
+        `LLM request retry ${attempt + 1}/${maxRetries} after network error`
       );
       await sleep(computeBackoffDelay(attempt));
     }
@@ -409,6 +412,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     model,
     useBuiltin,
     signal,
+    maxRetries,
     thinking,
     reasoning,
     maxTokens,
@@ -476,7 +480,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     },
     body: JSON.stringify(requestPayload),
     signal,
-  });
+  }, maxRetries);
 
   let response = await send(payload);
 
