@@ -3246,7 +3246,10 @@ ${knowledgeNote}`;
       } finally {
         clearTimeout(extractionTimeout);
       }
-      const raw = getLLMTextContent(result.choices[0]?.message.content);
+      if (!result?.choices?.length || !result.choices[0]?.message) {
+        throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回有效响应。本次拜访未保存，请稍后重试。" });
+      }
+      const raw = getLLMTextContent(result.choices[0].message.content);
       if (!raw) throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回可确认的拜访信号。本次未保存，请稍后重试。" });
       let parsed: unknown;
       try { parsed = JSON.parse(extractJSON(raw)); } catch { throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 返回格式无效。本次未保存，请稍后重试。" }); }
