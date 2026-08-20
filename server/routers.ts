@@ -3242,7 +3242,7 @@ ${knowledgeNote}`;
       } catch (err: any) {
         clearTimeout(extractionTimeout);
         const isTimeout = err?.name === "AbortError" || err?.message?.includes("aborted");
-        throw new TRPCError({ code: "BAD_GATEWAY", message: isTimeout ? "AI 信号提取超时（15 秒），请稍后重试。本次拜访未保存。" : `AI 信号提取失败：${err?.message || "未知错误"}。本次拜访未保存。` });
+        throw new TRPCError({ code: "BAD_GATEWAY", message: isTimeout ? "AI 信号提取超时（15 秒），请稍后重试。本次拜访未保存。" : `AI 信号提取失败：${JSON.stringify({ message: err?.message, name: err?.name, apiUrl: process.env.BUILT_IN_FORGE_API_URL, hasKey: Boolean(process.env.BUILT_IN_FORGE_API_KEY) })}。本次拜访未保存。` });
       } finally {
         clearTimeout(extractionTimeout);
       }
