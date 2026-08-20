@@ -3231,7 +3231,7 @@ ${knowledgeNote}`;
       let result: Awaited<ReturnType<typeof invokeLLM>>;
       try {
         result = await invokeLLM({
-          model: "gpt-5-mini",
+          model: "gpt-5",
           maxCompletionTokens: 2200,
           useBuiltin: true,
           maxRetries: 0,
