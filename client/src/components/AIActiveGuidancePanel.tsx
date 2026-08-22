@@ -72,6 +72,7 @@ function buildClientProvisionalCandidate(question: string, answer: string): Cand
 
 export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerContactNames = [], className }: { scope: "customer" | "opportunity"; clientId: number; opportunityId?: number; powerContactNames?: string[]; className?: string }) {
   const utils = trpc.useUtils();
+  const contactsQuery = trpc.contacts.listByClient.useQuery({ clientId });
   const [guide, setGuide] = useState<Guidance | null>(null);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -139,7 +140,17 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
     if (!candidate || candidate.candidateTarget === "none") return;
     if (candidate.candidateTarget === "purchase_signal") {
       if (!candidate.signalType || !candidate.subjectName || !candidate.evidence) return toast.error("AI 未识别到可确认的客户事实，请继续补充。" );
-      createSignal.mutate({ clientId, signalType: candidate.signalType, subjectName: candidate.subjectName, occurredAt: new Date().toISOString(), statement: candidate.evidence, sourceType: "other_evidence", sourceReference: "AI 主动引导问答，经 SAM 确认" }, {
+      let effectiveSignalType = candidate.signalType;
+      let subjectContactId: number | null = null;
+      if (effectiveSignalType === "decision_chain") {
+        const matchedContact = (contactsQuery.data || []).find((c: any) => candidate.subjectName && c.name?.includes(candidate.subjectName.split(/[·\s]/)[0]));
+        if (matchedContact) {
+          subjectContactId = matchedContact.id;
+        } else {
+          effectiveSignalType = "intent_subject";
+        }
+      }
+      createSignal.mutate({ clientId, signalType: effectiveSignalType, subjectName: candidate.subjectName, subjectContactId, occurredAt: new Date().toISOString(), statement: candidate.evidence, sourceType: "other_evidence", sourceReference: "AI 主动引导问答，经 SAM 确认" }, {
         onSuccess: () => { toast.success("已确认并写入客户购买事实"); setCandidate(null); utils.purchaseSignals.listByClient.invalidate({ clientId }); utils.opportunities.customerReadiness.invalidate({ clientId }); },
         onError: error => toast.error(`写入事实失败：${error.message}`),
       });
