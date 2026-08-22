@@ -161,15 +161,4 @@ export function calculateClientDataSufficiency(input: { meetings: number; contac
   return Math.min(100, points);
 }
 
-export function calculateWinFactors(input: { meddpicc: any; threeWhy: any; annualValue: number; contactCount: number }) {
-  const score = (value: unknown) => Math.max(0, Math.min(100, Number(value || 0) * 25));
-  const whyScores = [input.threeWhy?.whyChangeScore, input.threeWhy?.whyNowScore, input.threeWhy?.whyUsScore].filter((value) => value != null).map((value) => Number(value) * 20);
-  const pain = whyScores.length ? Math.round((score(input.meddpicc?.implicatePainScore) + Math.min(...whyScores)) / 2) : score(input.meddpicc?.implicatePainScore);
-  const power = score(input.meddpicc?.economicBuyerScore);
-  const champion = score(input.meddpicc?.championScore);
-  const value = input.annualValue > 0 ? Math.max(25, score(input.meddpicc?.metricsScore)) : score(input.meddpicc?.metricsScore);
-  const control = Math.round((score(input.meddpicc?.decisionCriteriaScore) + score(input.meddpicc?.decisionProcessScore) + score(input.meddpicc?.paperProcessScore)) / 3);
-  const factors = { Pain: pain, Power: power, Champion: champion, Value: value, Control: control };
-  const weakest = (Object.entries(factors).sort((a, b) => a[1] - b[1])[0] || ["Pain", 0]) as [keyof typeof factors, number];
-  return { factors, weakest: { factor: weakest[0], score: weakest[1] }, evidence: { annualValue: input.annualValue, contactCount: input.contactCount } };
-}
+export { calculateWinFactors } from "@shared/winFactors";

@@ -1146,3 +1146,10 @@
 - [ ] 基于该最小改动创建新的生产 checkpoint，并复测 HKT AI 信号提取接口。
 - [x] 可视化编辑未落盘，已为客户关系背景说明添加非视觉辅助标签以触发新的前端构建。
 > 已进入 Manus 项目列表；正在切换到固定的 AIStorm Command 项目以查找编辑模式入口。
+
+## P1 Win 公式仪表盘
+- [x] 核对 `calculateWinFactors` 的输入契约、Deal Map 数据结构与商机 Overview 现有布局。
+- [x] 在商机作战室 Overview 顶部显示 Pain / Power / Champion / Value / Control 五因子实时分数。
+- [x] 高亮最弱因子；低于 50 分时提供事实补录方向，数据不足时明确显示“数据不足，暂无法计算”。
+- [ ] 已补充 Win 因子与工作流回归测试；待发布后完成桌面、窄屏生产布局验证。
+- [ ] 发布最新版本并同步 GitHub 供外部代码审核。

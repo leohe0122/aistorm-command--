@@ -90,6 +90,9 @@ describe("作战工作流入口收敛", () => {
     expect(opportunityRoom).toContain('label: "Go / No-Go"');
     expect(opportunityRoom).toContain("trpc.command2.getDealMap.useQuery");
     expect(opportunityRoom).toContain("数据不足");
+    expect(opportunityRoom).toContain("Win = Pain × Power × Champion × Value × Control");
+    expect(opportunityRoom).toContain("<WinFormulaDashboard result={winFactors}");
+    expect(opportunityRoom).toContain("最弱因子");
   });
 
   it("以严格 JSON Schema 输出 1→N Review 的角色行动，并向商机作战室返回可靠创建回执", () => {
