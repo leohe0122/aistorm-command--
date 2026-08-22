@@ -51,21 +51,25 @@ function buildClientNoWriteCandidate(question: string): Candidate {
   };
 }
 
-function buildClientProvisionalCandidate(question: string, answer: string): Candidate {
+function buildClientProvisionalCandidate(scope: "customer" | "opportunity", question: string, answer: string): Candidate {
   const mentionedPeople = (question.match(/关于([^：:]+)[：:]/)?.[1] || "")
     .split(/[、，,]/)
     .map(name => name.trim())
     .filter(Boolean);
   const subjectName = mentionedPeople.find(name => answer.includes(name)) || mentionedPeople[0] || "待确认关键人";
+  const decisionEvidence = /(最终签字|最终审批|最终决定|决策人|签字审批|决定权|支持|反对|认同|不同意|不重要|答应)/i.test(answer);
+  const processEvidence = /(采购阶段|采购流程|审批流程|poc|测试结束|技术验证|合同流程|时间节点)/i.test(answer);
   return {
-    message: "AI 服务暂未完成结构化解读。已将你的原始描述保留为低置信待确认候选；请核对后再决定是否写入。",
-    nextQuestion: "你刚才描述的情况里，客户有没有提到具体的人名、时间节点或明确的决定？",
-    candidateTarget: "purchase_signal",
-    signalType: "decision_chain",
-    meddpiccDim: "",
+    message: "已从你的回答中保留一条低置信待确认事实；请核对后再决定是否写入。",
+    nextQuestion: decisionEvidence
+      ? "这笔商机从当前共识走到正式采购，还需要经过哪些审批、合同或时间节点？"
+      : "你刚才描述的情况里，客户有没有说过具体的原话、提到时间节点、或做出明确的动作？请复述。",
+    candidateTarget: scope === "opportunity" ? "meddpicc" : "purchase_signal",
+    signalType: scope === "customer" ? "decision_chain" : "",
+    meddpiccDim: scope === "opportunity" ? (decisionEvidence ? "E" : processEvidence ? "D2" : "E") : "",
     subjectName,
     evidence: `SAM 待确认原文：${answer.trim().slice(0, 800)}`,
-    suggestedScore: 0,
+    suggestedScore: scope === "opportunity" ? 50 : 0,
     confidence: "low",
   };
 }
@@ -129,7 +133,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
         setMessages(current => current.concat({ role: "assistant", content: `${data.message}\n\n**下一步我想确认：** ${data.nextQuestion}` }));
       },
       onError: () => {
-        const fallback = buildClientProvisionalCandidate(guide.primaryQuestion, answer);
+        const fallback = buildClientProvisionalCandidate(scope, guide.primaryQuestion, answer);
         setCandidate(fallback);
         setMessages(current => current.concat({ role: "assistant", content: `${fallback.message}\n\n**下一步我想确认：** ${fallback.nextQuestion}` }));
         toast.info("已生成低置信待确认候选；系统未写入任何内容，请核对后再决定。 ");

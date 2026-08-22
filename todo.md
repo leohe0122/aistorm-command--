@@ -1163,3 +1163,9 @@
 - [x] 将 interpretAnswer 改用 gpt-4o-mini 并移除 useBuiltin，避免 strict schema 结构化解读失败。
 - [x] fallback 生成新的事实追问，不再把原问题原样作为 nextQuestion。
 - [x] interpretAnswer 注入当前商机已有 MEDDPICC 证据维度，要求下一问优先覆盖尚未覆盖的事实。
+- [x] 对照用户精确任务，将 fallback 追问统一为“客户原话、时间节点或明确动作”的自然语言问题。
+- [x] 将已有证据上下文明确约束为“nextQuestion 必须针对评分为 0 的维度”，并保留不重复原问题保护。
+- [x] 重新运行类型检查、完整回归测试与生产构建（19 个测试文件、85 项测试通过）。
+- [ ] 核对生产实例是否已加载 `438bf844` 的 gpt-4o-mini interpretAnswer 实现。
+- [x] 使用 Pentest 的 Susanna/Marcos/Felix 真实回答补齐 fallback：明确人物、签字权、支持/反对与权力关系会生成低置信待确认商机候选。
+- [x] 确保明确的人名、最终签字人、立场与权力关系即使在模型异常时也生成低置信待确认商机候选，而非“数据不足”。

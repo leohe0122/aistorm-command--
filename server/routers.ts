@@ -275,21 +275,27 @@ function buildNoWriteAnswerInterpretation(question: string) {
   };
 }
 
-function buildProvisionalAnswerCandidate(question: string, answer: string) {
+function buildProvisionalAnswerCandidate(scope: "customer" | "opportunity", question: string, answer: string) {
   const mentionedPeople = (question.match(/关于([^：:]+)[：:]/)?.[1] || "")
     .split(/[、，,]/)
     .map(name => name.trim())
     .filter(Boolean);
-  const subjectName = mentionedPeople.find(name => answer.includes(name)) || mentionedPeople[0] || "待确认关键人";
+  const answerPeople = answer.match(/[A-Za-z][A-Za-z .'-]{1,40}|[\u4e00-\u9fff]{2,4}/g) || [];
+  const subjectName = mentionedPeople.find(name => answer.includes(name)) || answerPeople[0] || mentionedPeople[0] || "待确认关键人";
+  const decisionEvidence = /(最终签字|最终审批|最终决定|决策人|签字审批|决定权|支持|反对|认同|不同意|不重要|答应)/i.test(answer);
+  const processEvidence = /(采购阶段|采购流程|审批流程|poc|测试结束|技术验证|合同流程|时间节点)/i.test(answer);
+  const meddpiccDim = decisionEvidence ? "E" : processEvidence ? "D2" : "E";
   return {
-    message: "AI 服务暂未完成结构化解读。已将你的原始描述作为低置信待确认候选；请核对后再决定是否写入。",
-    nextQuestion: "你刚才描述的情况里，客户有没有提到具体的人名、时间节点或明确的决定？",
-    candidateTarget: "purchase_signal" as const,
-    signalType: "decision_chain" as const,
-    meddpiccDim: "" as const,
+    message: "已从你的回答中保留一条低置信待确认事实；请核对后再决定是否写入。",
+    nextQuestion: decisionEvidence
+      ? "这笔商机从当前共识走到正式采购，还需要经过哪些审批、合同或时间节点？"
+      : "你刚才描述的情况里，客户有没有说过具体的原话、提到时间节点、或做出明确的动作？请复述。",
+    candidateTarget: scope === "opportunity" ? "meddpicc" as const : "purchase_signal" as const,
+    signalType: scope === "customer" ? "decision_chain" as const : "" as const,
+    meddpiccDim: scope === "opportunity" ? meddpiccDim as "E" | "D2" : "" as const,
     subjectName,
     evidence: `SAM 待确认原文：${compactGuidanceText(answer, 800)}`,
-    suggestedScore: 0 as const,
+    suggestedScore: scope === "opportunity" ? 50 as const : 0 as const,
     confidence: "low" as const,
   };
 }
@@ -410,7 +416,7 @@ export const appRouter = router({
           // 商机上下文缺失不应阻断回答解释。
         }
       }
-      const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、原话、决策接触、触发事件或商机证据，可返回一个待确认候选。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 如果回答只是主观判断、计划或信息不充分，candidateTarget 必须为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- nextQuestion 继续只问一个最关键的自然语言问题，必须与 AI 问题不同；不要出现 MEDDPICC、3 Why、Win Formula 等术语。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。${existingContext}`;
+      const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、客户原话、SAM 对已发生客户表态的转述、决策接触、触发事件或商机证据，必须返回一个待确认候选；不能仅因不是逐字原话而判定为 none。\n- 商机场景若明确指出最终签字人、审批人、关键人物的支持/反对或权力关系，candidateTarget=meddpicc，meddpiccDim=E。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 只有回答纯属计划、愿望、推测且没有任何已发生人物/表态/动作时，candidateTarget 才能为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- nextQuestion 继续只问一个最关键的自然语言问题，必须与 AI 问题不同；不要出现 MEDDPICC、3 Why、Win Formula 等术语。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。${existingContext}`;
       let result: Awaited<ReturnType<typeof invokeLLM>> | undefined;
       try {
         result = await invokeLLM({
@@ -418,11 +424,12 @@ export const appRouter = router({
           messages: [{ role: "system", content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT }, { role: "user", content: prompt }],
           response_format: { type: "json_schema", json_schema: { name: "ai_guidance_answer_interpretation", strict: true, schema: AI_ANSWER_INTERPRETATION_SCHEMA } },
         });
-      } catch {
-        return buildProvisionalAnswerCandidate(input.question, input.answer);
+      } catch (error) {
+        console.warn("[AI Guidance] interpretAnswer model fallback", error instanceof Error ? error.message : String(error));
+        return buildProvisionalAnswerCandidate(input.scope, input.question, input.answer);
       }
       const raw = getLLMTextContent(result?.choices?.[0]?.message?.content);
-      if (!raw) return buildProvisionalAnswerCandidate(input.question, input.answer);
+      if (!raw) return buildProvisionalAnswerCandidate(input.scope, input.question, input.answer);
       try {
         const parsed = JSON.parse(extractJSON(raw));
         const normalizeQuestion = (value: unknown) => String(value || "").replace(/[\s，。？！：；,.?!:;]/g, "").toLowerCase();
@@ -431,7 +438,7 @@ export const appRouter = router({
         }
         return parsed;
       } catch {
-        return buildProvisionalAnswerCandidate(input.question, input.answer);
+        return buildProvisionalAnswerCandidate(input.scope, input.question, input.answer);
       }
     }),
   }),
