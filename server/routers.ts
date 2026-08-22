@@ -2160,7 +2160,6 @@ AI质疑层规则（内嵌在以上各节中执行）：
         model: "gpt-5-mini",
         // 1→N Review 需要完整诊断和角色行动；较低 token 上限会导致无正文可回写。
         maxCompletionTokens: 5200,
-        reasoning: { effort: "low" },
         messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: enrichedDealPrompt }],
         response_format: {
           type: "json_schema",
@@ -3232,7 +3231,7 @@ ${knowledgeNote}`;
       try {
         result = await invokeLLM({
           model: "gpt-5",
-          maxCompletionTokens: 8000,
+          maxCompletionTokens: 3000,
           useBuiltin: true,
           maxRetries: 0,
           signal: extractionController.signal,

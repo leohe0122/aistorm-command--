@@ -109,7 +109,7 @@ describe("作战工作流入口收敛", () => {
     const routers = projectFile("server/routers.ts");
     const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
     expect(routers).toContain("maxCompletionTokens: 5200");
-    expect(routers).toContain('reasoning: { effort: "low" }');
+    // reasoning: { effort: "low" } 已从 1→N Review 移除（gpt-5-mini 不支持该参数）
     expect(routers).toContain("AI Review 未返回可保存内容");
     expect(routers).toContain("本次未写入 Review");
     expect(routers).toContain("extractJSON(rawReview)");
