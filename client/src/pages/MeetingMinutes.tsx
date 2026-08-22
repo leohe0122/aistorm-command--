@@ -445,8 +445,9 @@ export default function MeetingMinutes() {
         const pollInterval = setInterval(async () => {
           elapsed += 3000;
           try {
-            const res = await (window as any).__trpcClient?.meetings.getExtractionStatus.query({ meetingId }) ??
-              fetch(`/api/trpc/meetings.getExtractionStatus?input=${encodeURIComponent(JSON.stringify({ meetingId }))}`).then(r => r.json()).then(r => r?.result?.data);
+            const pollRes = await fetch(`/api/trpc/meetings.getExtractionStatus?input=${encodeURIComponent(JSON.stringify({ json: { meetingId } }))}`, { credentials: "include" });
+            const pollJson = await pollRes.json();
+            const res = pollJson?.result?.data?.json ?? pollJson?.result?.data;
             if (res?.status === "done") {
               clearInterval(pollInterval);
               refetch();
