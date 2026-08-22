@@ -3385,10 +3385,9 @@ ${knowledgeNote}`;
           const prompt = `你现在是 SAM 的拜访后作战引导助手。SAM 只负责如实记录发生了什么；你必须从以下记录中一次性提取可验证事实，供 SAM 确认。\n\n客户：${input.clientName}\n日期：${input.meetingDate}\n拜访类型：${input.visitType || "拜访"}\n参会人：${input.attendees || "数据不足"}\n接触方式：${input.contactType || "数据不足"}\n发起方：${input.initiatedBy || "数据不足"}\n\n${sourceText}\n\n${accountContext}\n\n【严格规则】\n1. 只提取记录中明确出现或可逐字定位的客户事实；禁止猜测客户意图、预算、人物立场或竞争态势。\n2. 没有明确证据的数组返回空数组，字段无法确认则返回 null；不要为了填满字段而创作。\n3. suggestedScore 只能是 0/25/50/75/100，且 evidence 必须包含原话或可回溯表述。\n4. 关键人角色只在记录明确说明其决策职责或行为时填写；否则为"未知"。\n5. nextBestAction 必须是 SAM 下一次要验证的一件事，不能是产品推销动作。\n6. meetingSummary 用不超过120字概括本次已确认事实与未确认边界。\n7. 按给定 JSON Schema 返回，JSON 外不得输出任何文字。`;
           const extractionController = new AbortController();
           const extractionTimeout = setTimeout(() => extractionController.abort(), 90_000);
-          const result = await invokeLLM({
-            model: "gpt-5",
+         const result = await invokeLLM({
+            model: "gpt-4o-mini",
             maxCompletionTokens: 4096,
-            useBuiltin: true,
             maxRetries: 0,
             signal: extractionController.signal,
             messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
