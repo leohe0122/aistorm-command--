@@ -1151,5 +1151,6 @@
 - [x] 核对 `calculateWinFactors` 的输入契约、Deal Map 数据结构与商机 Overview 现有布局。
 - [x] 在商机作战室 Overview 顶部显示 Pain / Power / Champion / Value / Control 五因子实时分数。
 - [x] 高亮最弱因子；低于 50 分时提供事实补录方向，数据不足时明确显示“数据不足，暂无法计算”。
-- [ ] 已补充 Win 因子与工作流回归测试；待发布后完成桌面、窄屏生产布局验证。
-- [ ] 发布最新版本并同步 GitHub 供外部代码审核。
+- [x] 已补充 Win 因子与工作流回归测试；生产桌面布局显示 5 张同排卡片，窄屏使用 2→3→5 列响应式网格且无固定宽度溢出。
+- [x] 发布最新版本并同步 GitHub 供外部代码审核。
+> HKT Virtual Patch 生产验收：Pain 75、Power 75、Champion 75、Value 75、Control 67；Control 以最低分高亮，页面显示 14 项事实依据且未输出低于 50 分的补录动作。
