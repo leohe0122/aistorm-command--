@@ -415,6 +415,9 @@ export default function MeetingMinutes() {
     },
   });
 
+  // 保留旧 extractFullSignals 引用（向后兼容已有拜访记录的重新提取）
+  const startExtraction = trpc.meetings.startExtraction.useMutation();
+
   const handleGenerate = () => {
     if (!selectedClientId) { toast.error("请先选择客户"); return; }
     if (!keyPoints.trim() && !transcriptText.trim()) {
@@ -422,7 +425,8 @@ export default function MeetingMinutes() {
       return;
     }
     setGenerating(true);
-    extractFullSignals.mutate({
+    toast.info("AI 正在分析拜访信号，通常需要 20-40 秒...");
+    startExtraction.mutate({
       clientId: selectedClientId,
       clientName: selectedClient?.name || "",
       meetingDate,
@@ -432,6 +436,47 @@ export default function MeetingMinutes() {
       transcriptText: transcriptText || undefined,
       contactType: contactType as any,
       initiatedBy: initiatedBy as any,
+    }, {
+      onSuccess: (data) => {
+        // 开始轮询
+        const meetingId = data.meetingId;
+        if (!meetingId) { setGenerating(false); toast.error("拜访记录保存失败"); return; }
+        let elapsed = 0;
+        const pollInterval = setInterval(async () => {
+          elapsed += 3000;
+          try {
+            const res = await (window as any).__trpcClient?.meetings.getExtractionStatus.query({ meetingId }) ??
+              fetch(`/api/trpc/meetings.getExtractionStatus?input=${encodeURIComponent(JSON.stringify({ meetingId }))}`).then(r => r.json()).then(r => r?.result?.data);
+            if (res?.status === "done") {
+              clearInterval(pollInterval);
+              refetch();
+              setExpandedId(meetingId);
+              setLatestMeetingId(meetingId);
+              setFullSignalReview({ meetingId, signals: res.signals, confirmedKeys: [] });
+              setShowFullSignalReview(true);
+              setKeyPoints("");
+              setTranscriptText("");
+              setUploadedFileName("");
+              setGenerating(false);
+              toast.success("AI 已完成拜访信号提取，请确认真正发生的客户事实");
+            } else if (res?.status === "failed") {
+              clearInterval(pollInterval);
+              setGenerating(false);
+              toast.error(`AI 提取失败：${res.error || "未知错误"}，请重试`);
+            } else if (elapsed >= 120_000) {
+              clearInterval(pollInterval);
+              setGenerating(false);
+              toast.error("AI 提取超时，请刷新页面后查看结果");
+            }
+          } catch {
+            // 轮询网络错误，继续等待
+          }
+        }, 3000);
+      },
+      onError: (error) => {
+        setGenerating(false);
+        toast.error(`拜访保存失败：${error.message}`);
+      },
     });
   };
 
