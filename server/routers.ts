@@ -3231,7 +3231,7 @@ ${knowledgeNote}`;
       try {
         result = await invokeLLM({
           model: "gpt-5",
-          maxCompletionTokens: 3000,
+          maxCompletionTokens: 4096,
           useBuiltin: true,
           maxRetries: 0,
           signal: extractionController.signal,
@@ -3386,7 +3386,7 @@ ${knowledgeNote}`;
           const extractionTimeout = setTimeout(() => extractionController.abort(), 90_000);
           const result = await invokeLLM({
             model: "gpt-5",
-            maxCompletionTokens: 3000,
+            maxCompletionTokens: 4096,
             useBuiltin: true,
             maxRetries: 0,
             signal: extractionController.signal,
