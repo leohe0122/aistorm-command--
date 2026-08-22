@@ -422,23 +422,23 @@ export const appRouter = router({
             const [meddpicc] = await db.select().from(opportunityMeddpicc)
               .where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1);
             if (meddpicc) {
-              const scoreLabels: Array<[keyof typeof meddpicc, MeddpiccDimCode, string]> = [
-                ["metricsScore", "M", "量化价值"],
-                ["economicBuyerScore", "E", "最终决策人"],
-                ["decisionCriteriaScore", "D1", "决策标准"],
-                ["decisionProcessScore", "D2", "决策流程"],
-                ["paperProcessScore", "P", "采购与审批流程"],
-                ["implicatePainScore", "I", "业务痛点"],
-                ["championScore", "C1", "内部支持者"],
-                ["competitionScore", "C2", "竞争态势"],
+              const scoreLabels: Array<[keyof typeof meddpicc, keyof typeof meddpicc, MeddpiccDimCode, string]> = [
+                ["metricsScore", "metricsNotes", "M", "量化价值"],
+                ["economicBuyerScore", "economicBuyerNotes", "E", "最终决策人"],
+                ["decisionCriteriaScore", "decisionCriteriaNotes", "D1", "决策标准"],
+                ["decisionProcessScore", "decisionProcessNotes", "D2", "决策流程"],
+                ["paperProcessScore", "paperProcessNotes", "P", "采购与审批流程"],
+                ["implicatePainScore", "implicatePainNotes", "I", "业务痛点"],
+                ["championScore", "championNotes", "C1", "内部支持者"],
+                ["competitionScore", "competitionNotes", "C2", "竞争态势"],
               ];
               const scored = scoreLabels
-                .filter(([key]) => Number(meddpicc[key]) > 0)
-                .map(([, , label]) => label);
+                .filter(([scoreKey, notesKey]) => Number(meddpicc[scoreKey]) > 0 && String(meddpicc[notesKey] || "").trim().length > 0)
+                .map(([, , , label]) => label);
               uncoveredMeddpiccDims = scoreLabels
-                .filter(([key]) => Number(meddpicc[key]) <= 0)
-                .map(([, dim]) => dim);
-              existingContext = `\n\n已有证据方向：${scored.length ? scored.join("、") : "暂无"}。尚未覆盖的维度：${uncoveredMeddpiccDims.length ? uncoveredMeddpiccDims.join("、") : "暂无"}。nextQuestion 必须针对评分为 0 的维度，且不得重复 AI 问题原文。`;
+                .filter(([scoreKey, notesKey]) => Number(meddpicc[scoreKey]) <= 0 || String(meddpicc[notesKey] || "").trim().length === 0)
+                .map(([, , dim]) => dim);
+              existingContext = `\n\n已有证据方向：${scored.length ? scored.join("、") : "暂无"}。尚未覆盖的维度：${uncoveredMeddpiccDims.length ? uncoveredMeddpiccDims.join("、") : "暂无"}。nextQuestion 必须针对评分为 0 或证据备注为空的维度，且不得重复 AI 问题原文。`;
             }
           }
         } catch {
