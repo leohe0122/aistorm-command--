@@ -283,7 +283,7 @@ function buildProvisionalAnswerCandidate(question: string, answer: string) {
   const subjectName = mentionedPeople.find(name => answer.includes(name)) || mentionedPeople[0] || "待确认关键人";
   return {
     message: "AI 服务暂未完成结构化解读。已将你的原始描述作为低置信待确认候选；请核对后再决定是否写入。",
-    nextQuestion: question,
+    nextQuestion: "你刚才描述的情况里，客户有没有提到具体的人名、时间节点或明确的决定？",
     candidateTarget: "purchase_signal" as const,
     signalType: "decision_chain" as const,
     meddpiccDim: "" as const,
@@ -381,11 +381,40 @@ export const appRouter = router({
       scope: z.enum(["customer", "opportunity"]), clientId: z.number(), opportunityId: z.number().optional(), question: z.string().min(3), answer: z.string().min(3).max(6000),
     })).mutation(async ({ input }) => {
       if (input.scope === "opportunity" && !input.opportunityId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机引导需要关联商机。" });
-      const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、原话、决策接触、触发事件或商机证据，可返回一个待确认候选。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 如果回答只是主观判断、计划或信息不充分，candidateTarget 必须为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- nextQuestion 继续只问一个最关键的自然语言问题；不要出现 MEDDPICC、3 Why、Win Formula 等术语。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。`;
+      let existingContext = "";
+      if (input.opportunityId) {
+        try {
+          const db = await getDb();
+          if (db) {
+            const { opportunityMeddpicc } = await import("../drizzle/schema");
+            const [meddpicc] = await db.select().from(opportunityMeddpicc)
+              .where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1);
+            if (meddpicc) {
+              const scoreLabels: Array<[keyof typeof meddpicc, string]> = [
+                ["metricsScore", "量化价值"],
+                ["economicBuyerScore", "最终决策人"],
+                ["decisionCriteriaScore", "决策标准"],
+                ["decisionProcessScore", "决策流程"],
+                ["paperProcessScore", "采购与审批流程"],
+                ["implicatePainScore", "业务痛点"],
+                ["championScore", "内部支持者"],
+                ["competitionScore", "竞争态势"],
+              ];
+              const scored = scoreLabels
+                .filter(([key]) => Number(meddpicc[key]) > 0)
+                .map(([, label]) => label);
+              if (scored.length) existingContext = `\n\n已有证据方向：${scored.join("、")}。nextQuestion 必须优先针对尚未覆盖的方向，且不得重复 AI 问题原文。`;
+            }
+          }
+        } catch {
+          // 商机上下文缺失不应阻断回答解释。
+        }
+      }
+      const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、原话、决策接触、触发事件或商机证据，可返回一个待确认候选。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 如果回答只是主观判断、计划或信息不充分，candidateTarget 必须为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- nextQuestion 继续只问一个最关键的自然语言问题，必须与 AI 问题不同；不要出现 MEDDPICC、3 Why、Win Formula 等术语。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。${existingContext}`;
       let result: Awaited<ReturnType<typeof invokeLLM>> | undefined;
       try {
         result = await invokeLLM({
-          model: "gpt-5", useBuiltin: true, maxCompletionTokens: 1100, maxRetries: 0,
+          model: "gpt-4o-mini", maxCompletionTokens: 1100, maxRetries: 0,
           messages: [{ role: "system", content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT }, { role: "user", content: prompt }],
           response_format: { type: "json_schema", json_schema: { name: "ai_guidance_answer_interpretation", strict: true, schema: AI_ANSWER_INTERPRETATION_SCHEMA } },
         });
@@ -394,7 +423,16 @@ export const appRouter = router({
       }
       const raw = getLLMTextContent(result?.choices?.[0]?.message?.content);
       if (!raw) return buildProvisionalAnswerCandidate(input.question, input.answer);
-      try { return JSON.parse(extractJSON(raw)); } catch { return buildProvisionalAnswerCandidate(input.question, input.answer); }
+      try {
+        const parsed = JSON.parse(extractJSON(raw));
+        const normalizeQuestion = (value: unknown) => String(value || "").replace(/[\s，。？！：；,.?!:;]/g, "").toLowerCase();
+        if (normalizeQuestion(parsed.nextQuestion) === normalizeQuestion(input.question)) {
+          parsed.nextQuestion = "你刚才描述的情况里，客户有没有提到具体的人名、时间节点或明确的决定？";
+        }
+        return parsed;
+      } catch {
+        return buildProvisionalAnswerCandidate(input.question, input.answer);
+      }
     }),
   }),
 

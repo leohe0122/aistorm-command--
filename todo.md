@@ -1154,3 +1154,12 @@
 - [x] 已补充 Win 因子与工作流回归测试；生产桌面布局显示 5 张同排卡片，窄屏使用 2→3→5 列响应式网格且无固定宽度溢出。
 - [x] 发布最新版本并同步 GitHub 供外部代码审核。
 > HKT Virtual Patch 生产验收：Pain 75、Power 75、Champion 75、Value 75、Control 67；Control 以最低分高亮，页面显示 14 项事实依据且未输出低于 50 分的补录动作。
+
+## AI 主动引导连续问答修复（2026-08-22）
+- [x] 审计候选确认写入后的状态清理、事实刷新与重新提问链路，确认循环来自 interpretAnswer 与 fallback 的 nextQuestion 复读。
+- [x] 回答解释成功后立即切换为不同的新问题；确认写入成功后清除旧候选并保留该新问题继续问答。
+- [x] 增加重复问题防护，禁止模型结果与客户端 fallback 将新问题设置为刚确认的问题。
+- [ ] 已补充回归测试（85 项通过）；待发布后在 Pentest 商机验证连续问答流程。
+- [x] 将 interpretAnswer 改用 gpt-4o-mini 并移除 useBuiltin，避免 strict schema 结构化解读失败。
+- [x] fallback 生成新的事实追问，不再把原问题原样作为 nextQuestion。
+- [x] interpretAnswer 注入当前商机已有 MEDDPICC 证据维度，要求下一问优先覆盖尚未覆盖的事实。

@@ -335,6 +335,11 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("buildNoWriteAnswerInterpretation");
     expect(routers).toContain("buildProvisionalAnswerCandidate");
     expect(routers).toContain("SAM 待确认原文");
+    expect(routers).toContain('model: "gpt-4o-mini", maxCompletionTokens: 1100, maxRetries: 0');
+    expect(routers).toContain('已有证据方向：${scored.join("、")}');
+    expect(routers).toContain("不得重复 AI 问题原文");
+    expect(routers).toContain("normalizeQuestion(parsed.nextQuestion) === normalizeQuestion(input.question)");
+    expect(routers).toContain("客户有没有提到具体的人名、时间节点或明确的决定");
     expect(routers).toContain("result?.choices?.[0]?.message?.content");
     expect(routers).toContain("health: protectedProcedure.query");
     expect(routers).toContain("数据不足，暂不判断");
@@ -349,6 +354,7 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("buildClientNoWriteCandidate");
     expect(guidancePanel).toContain("buildClientProvisionalCandidate");
     expect(guidancePanel).toContain("SAM 待确认原文");
+    expect(guidancePanel).toContain("客户有没有提到具体的人名、时间节点或明确的决定");
     expect(guidancePanel).toContain("系统未写入任何内容");
     expect(guidancePanel).toContain("}, 12_000)");
     expect(guidancePanel).toContain("已切换为基础引导");

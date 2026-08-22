@@ -59,7 +59,7 @@ function buildClientProvisionalCandidate(question: string, answer: string): Cand
   const subjectName = mentionedPeople.find(name => answer.includes(name)) || mentionedPeople[0] || "待确认关键人";
   return {
     message: "AI 服务暂未完成结构化解读。已将你的原始描述保留为低置信待确认候选；请核对后再决定是否写入。",
-    nextQuestion: question,
+    nextQuestion: "你刚才描述的情况里，客户有没有提到具体的人名、时间节点或明确的决定？",
     candidateTarget: "purchase_signal",
     signalType: "decision_chain",
     meddpiccDim: "",
