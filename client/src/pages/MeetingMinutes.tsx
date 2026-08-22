@@ -185,6 +185,7 @@ export default function MeetingMinutes() {
   const [showPostMeetingCard, setShowPostMeetingCard] = useState(false);
   const [fullSignalReview, setFullSignalReview] = useState<{ meetingId: number; signals: FullSignals; confirmedKeys: string[] } | null>(null);
   const [showFullSignalReview, setShowFullSignalReview] = useState(false);
+  const [pollingMeetingId, setPollingMeetingId] = useState<number | null>(null);
 
   const { data: clients = [] } = trpc.clients.list.useQuery();
   const { data: meetings = [], refetch } = trpc.meetings.listByClient.useQuery(
@@ -417,6 +418,34 @@ export default function MeetingMinutes() {
 
   // 保留旧 extractFullSignals 引用（向后兼容已有拜访记录的重新提取）
   const startExtraction = trpc.meetings.startExtraction.useMutation();
+  const extractionStatusQuery = trpc.meetings.getExtractionStatus.useQuery(
+    { meetingId: pollingMeetingId! },
+    { enabled: pollingMeetingId !== null, refetchInterval: 3000, refetchIntervalInBackground: true }
+  );
+  useEffect(() => {
+    if (!extractionStatusQuery.data || !pollingMeetingId) return;
+    const { status } = extractionStatusQuery.data;
+    const signals = (extractionStatusQuery.data as any).signals;
+    const error = (extractionStatusQuery.data as any).error;
+    if (status === "done" && signals) {
+      const mid = pollingMeetingId;
+      setPollingMeetingId(null);
+      refetch();
+      setExpandedId(mid);
+      setLatestMeetingId(mid);
+      setFullSignalReview({ meetingId: mid, signals, confirmedKeys: [] });
+      setShowFullSignalReview(true);
+      setKeyPoints("");
+      setTranscriptText("");
+      setUploadedFileName("");
+      setGenerating(false);
+      toast.success("AI 已完成拜访信号提取，请确认真正发生的客户事实");
+    } else if (status === "failed") {
+      setPollingMeetingId(null);
+      setGenerating(false);
+      toast.error(`AI 提取失败：${error || "未知错误"}，请重试`);
+    }
+  }, [extractionStatusQuery.data, pollingMeetingId]);
 
   const handleGenerate = () => {
     if (!selectedClientId) { toast.error("请先选择客户"); return; }
@@ -438,41 +467,18 @@ export default function MeetingMinutes() {
       initiatedBy: initiatedBy as any,
     }, {
       onSuccess: (data) => {
-        // 开始轮询
-        const meetingId = data.meetingId;
-        if (!meetingId) { setGenerating(false); toast.error("拜访记录保存失败"); return; }
-        let elapsed = 0;
-        const pollInterval = setInterval(async () => {
-          elapsed += 3000;
-          try {
-            const pollRes = await fetch(`/api/trpc/meetings.getExtractionStatus?input=${encodeURIComponent(JSON.stringify({ json: { meetingId } }))}`, { credentials: "include" });
-            const pollJson = await pollRes.json();
-            const res = pollJson?.result?.data?.json ?? pollJson?.result?.data;
-            if (res?.status === "done") {
-              clearInterval(pollInterval);
-              refetch();
-              setExpandedId(meetingId);
-              setLatestMeetingId(meetingId);
-              setFullSignalReview({ meetingId, signals: res.signals, confirmedKeys: [] });
-              setShowFullSignalReview(true);
-              setKeyPoints("");
-              setTranscriptText("");
-              setUploadedFileName("");
+        if (!data.meetingId) { setGenerating(false); toast.error("拜访记录保存失败"); return; }
+        setPollingMeetingId(data.meetingId);
+        setTimeout(() => {
+          setPollingMeetingId(prev => {
+            if (prev === data.meetingId) {
               setGenerating(false);
-              toast.success("AI 已完成拜访信号提取，请确认真正发生的客户事实");
-            } else if (res?.status === "failed") {
-              clearInterval(pollInterval);
-              setGenerating(false);
-              toast.error(`AI 提取失败：${res.error || "未知错误"}，请重试`);
-            } else if (elapsed >= 120_000) {
-              clearInterval(pollInterval);
-              setGenerating(false);
-              toast.error("AI 提取超时，请刷新页面后查看结果");
+              toast.error("AI 提取超时，请刷新页面后在拜访记录中查看结果");
+              return null;
             }
-          } catch {
-            // 轮询网络错误，继续等待
-          }
-        }, 3000);
+            return prev;
+          });
+        }, 120_000);
       },
       onError: (error) => {
         setGenerating(false);

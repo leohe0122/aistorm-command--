@@ -3368,14 +3368,14 @@ ${knowledgeNote}`;
         attendees: input.attendees, keyPoints: input.keyPoints, transcriptText: input.transcriptText,
         aiMinutes: null, contactType: input.contactType, initiatedBy: input.initiatedBy, entrySource: "manual",
       });
-      // 2. 标记为 pending
-      const db = await getDb();
-      if (db && id) {
-        const { meetingMinutes } = await import("../drizzle/schema");
-        await db.update(meetingMinutes).set({ aiFullSignals: { status: "pending", startedAt: new Date().toISOString() } as any }).where(eq(meetingMinutes.id, id));
-      }
-      // 3. 后台异步提取（不 await）
+      // 2. 后台异步提取（不 await，包含 pending 标记和 LLM 调用）
       Promise.resolve().then(async () => {
+        const db = await getDb();
+        // 标记为 pending
+        if (db && id) {
+          const { meetingMinutes } = await import("../drizzle/schema");
+          await db.update(meetingMinutes).set({ aiFullSignals: { status: "pending", startedAt: new Date().toISOString() } as any }).where(eq(meetingMinutes.id, id));
+        }
         try {
           const sourceText = input.transcriptText
             ? `【会议原文】\n${input.transcriptText}\n\n【SAM 补充】\n${input.keyPoints}`
