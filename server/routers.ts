@@ -13,6 +13,7 @@ import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildD
 import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
+import { classifyExplicitOpportunityFact, nextUncoveredMeddpiccQuestion, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
 import { AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 // Admin-only procedure: requires login + admin role
@@ -275,7 +276,29 @@ function buildNoWriteAnswerInterpretation(question: string) {
   };
 }
 
-function buildProvisionalAnswerCandidate(scope: "customer" | "opportunity", question: string, answer: string) {
+function buildExplicitOpportunityCandidate(answer: string, uncovered: MeddpiccDimCode[] = []) {
+  const classification = classifyExplicitOpportunityFact(answer, uncovered);
+  if (!classification) return null;
+  const text = answer.trim();
+  const answerPeople = text.match(/[A-Za-z][A-Za-z .'-]{1,40}|[\u4e00-\u9fff]{2,4}/g) || [];
+  return {
+    message: "已识别到一条明确的商机事实，请核对后决定是否写入。",
+    nextQuestion: classification.nextQuestion,
+    candidateTarget: "meddpicc" as const,
+    signalType: "" as const,
+    meddpiccDim: classification.dim,
+    subjectName: classification.dim === "M" ? "当前商机" : answerPeople[0] || "客户相关方",
+    evidence: `SAM 待确认原文：${compactGuidanceText(text, 800)}`,
+    suggestedScore: 50 as const,
+    confidence: "medium" as const,
+  };
+}
+
+function buildProvisionalAnswerCandidate(scope: "customer" | "opportunity", question: string, answer: string, uncovered: MeddpiccDimCode[] = []) {
+  if (scope === "opportunity") {
+    const explicitCandidate = buildExplicitOpportunityCandidate(answer, uncovered);
+    if (explicitCandidate) return explicitCandidate;
+  }
   const mentionedPeople = (question.match(/关于([^：:]+)[：:]/)?.[1] || "")
     .split(/[、，,]/)
     .map(name => name.trim())
@@ -287,9 +310,11 @@ function buildProvisionalAnswerCandidate(scope: "customer" | "opportunity", ques
   const meddpiccDim = decisionEvidence ? "E" : processEvidence ? "D2" : "E";
   return {
     message: "已从你的回答中保留一条低置信待确认事实；请核对后再决定是否写入。",
-    nextQuestion: decisionEvidence
-      ? "这笔商机从当前共识走到正式采购，还需要经过哪些审批、合同或时间节点？"
-      : "你刚才描述的情况里，客户有没有说过具体的原话、提到时间节点、或做出明确的动作？请复述。",
+    nextQuestion: scope === "opportunity"
+      ? nextUncoveredMeddpiccQuestion(uncovered, meddpiccDim)
+      : decisionEvidence
+        ? "客户还提到过哪些具体的时间节点或明确动作？"
+        : "你刚才描述的情况里，客户有没有说过具体的原话、提到时间节点、或做出明确的动作？请复述。",
     candidateTarget: scope === "opportunity" ? "meddpicc" as const : "purchase_signal" as const,
     signalType: scope === "customer" ? "decision_chain" as const : "" as const,
     meddpiccDim: scope === "opportunity" ? meddpiccDim as "E" | "D2" : "" as const,
@@ -388,6 +413,7 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       if (input.scope === "opportunity" && !input.opportunityId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机引导需要关联商机。" });
       let existingContext = "";
+      let uncoveredMeddpiccDims: MeddpiccDimCode[] = [];
       if (input.opportunityId) {
         try {
           const db = await getDb();
@@ -396,20 +422,23 @@ export const appRouter = router({
             const [meddpicc] = await db.select().from(opportunityMeddpicc)
               .where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1);
             if (meddpicc) {
-              const scoreLabels: Array<[keyof typeof meddpicc, string]> = [
-                ["metricsScore", "量化价值"],
-                ["economicBuyerScore", "最终决策人"],
-                ["decisionCriteriaScore", "决策标准"],
-                ["decisionProcessScore", "决策流程"],
-                ["paperProcessScore", "采购与审批流程"],
-                ["implicatePainScore", "业务痛点"],
-                ["championScore", "内部支持者"],
-                ["competitionScore", "竞争态势"],
+              const scoreLabels: Array<[keyof typeof meddpicc, MeddpiccDimCode, string]> = [
+                ["metricsScore", "M", "量化价值"],
+                ["economicBuyerScore", "E", "最终决策人"],
+                ["decisionCriteriaScore", "D1", "决策标准"],
+                ["decisionProcessScore", "D2", "决策流程"],
+                ["paperProcessScore", "P", "采购与审批流程"],
+                ["implicatePainScore", "I", "业务痛点"],
+                ["championScore", "C1", "内部支持者"],
+                ["competitionScore", "C2", "竞争态势"],
               ];
               const scored = scoreLabels
                 .filter(([key]) => Number(meddpicc[key]) > 0)
-                .map(([, label]) => label);
-              if (scored.length) existingContext = `\n\n已有证据方向：${scored.join("、")}。nextQuestion 必须优先针对尚未覆盖的方向，且不得重复 AI 问题原文。`;
+                .map(([, , label]) => label);
+              uncoveredMeddpiccDims = scoreLabels
+                .filter(([key]) => Number(meddpicc[key]) <= 0)
+                .map(([, dim]) => dim);
+              existingContext = `\n\n已有证据方向：${scored.length ? scored.join("、") : "暂无"}。尚未覆盖的维度：${uncoveredMeddpiccDims.length ? uncoveredMeddpiccDims.join("、") : "暂无"}。nextQuestion 必须针对评分为 0 的维度，且不得重复 AI 问题原文。`;
             }
           }
         } catch {
@@ -426,19 +455,25 @@ export const appRouter = router({
         });
       } catch (error) {
         console.warn("[AI Guidance] interpretAnswer model fallback", error instanceof Error ? error.message : String(error));
-        return buildProvisionalAnswerCandidate(input.scope, input.question, input.answer);
+        return buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims);
       }
       const raw = getLLMTextContent(result?.choices?.[0]?.message?.content);
-      if (!raw) return buildProvisionalAnswerCandidate(input.scope, input.question, input.answer);
+      if (!raw) return buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims);
       try {
         const parsed = JSON.parse(extractJSON(raw));
+        const explicitCandidate = input.scope === "opportunity" ? buildExplicitOpportunityCandidate(input.answer, uncoveredMeddpiccDims) : null;
+        if (explicitCandidate && (parsed.candidateTarget === "none" || parsed.meddpiccDim !== explicitCandidate.meddpiccDim)) {
+          return explicitCandidate;
+        }
         const normalizeQuestion = (value: unknown) => String(value || "").replace(/[\s，。？！：；,.?!:;]/g, "").toLowerCase();
         if (normalizeQuestion(parsed.nextQuestion) === normalizeQuestion(input.question)) {
-          parsed.nextQuestion = "你刚才描述的情况里，客户有没有提到具体的人名、时间节点或明确的决定？";
+          parsed.nextQuestion = parsed.candidateTarget === "meddpicc" && parsed.meddpiccDim
+            ? nextUncoveredMeddpiccQuestion(uncoveredMeddpiccDims, parsed.meddpiccDim)
+            : "你刚才描述的情况里，客户有没有说过具体的原话、提到时间节点、或做出明确的动作？请复述。";
         }
         return parsed;
       } catch {
-        return buildProvisionalAnswerCandidate(input.scope, input.question, input.answer);
+        return buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims);
       }
     }),
   }),

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
+import { classifyExplicitOpportunityFact, type MeddpiccDimCode } from "@shared/aiAnswerFacts";
 
 type Guidance = {
   dataSufficiency: "sufficient" | "partial" | "insufficient";
@@ -21,6 +22,9 @@ type Candidate = {
 const MEDDPICC_FIELDS: Record<Exclude<Candidate["meddpiccDim"], "">, { score: string; notes: string }> = {
   M: { score: "metricsScore", notes: "metricsNotes" }, E: { score: "economicBuyerScore", notes: "economicBuyerNotes" }, D1: { score: "decisionCriteriaScore", notes: "decisionCriteriaNotes" }, D2: { score: "decisionProcessScore", notes: "decisionProcessNotes" }, P: { score: "paperProcessScore", notes: "paperProcessNotes" }, I: { score: "implicatePainScore", notes: "implicatePainNotes" }, C1: { score: "championScore", notes: "championNotes" }, C2: { score: "competitionScore", notes: "competitionNotes" },
 };
+function classifyClientOpportunityAnswer(answer: string): { dim: MeddpiccDimCode; nextQuestion: string } | null {
+  return classifyExplicitOpportunityFact(answer, ["M", "E", "D1", "D2", "P", "I", "C1", "C2"]);
+}
 
 function buildClientBaselineGuidance(scope: "customer" | "opportunity", powerContactNames: string[] = []): Guidance {
   const target = powerContactNames.length ? powerContactNames.join("、") : scope === "customer" ? "最能影响这家客户走向的高层" : "最能影响这笔商机走向的关键人";
@@ -59,18 +63,19 @@ function buildClientProvisionalCandidate(scope: "customer" | "opportunity", ques
   const subjectName = mentionedPeople.find(name => answer.includes(name)) || mentionedPeople[0] || "待确认关键人";
   const decisionEvidence = /(最终签字|最终审批|最终决定|决策人|签字审批|决定权|支持|反对|认同|不同意|不重要|答应)/i.test(answer);
   const processEvidence = /(采购阶段|采购流程|审批流程|poc|测试结束|技术验证|合同流程|时间节点)/i.test(answer);
+  const explicitOpportunityFact = scope === "opportunity" ? classifyClientOpportunityAnswer(answer) : null;
   return {
-    message: "已从你的回答中保留一条低置信待确认事实；请核对后再决定是否写入。",
-    nextQuestion: decisionEvidence
+    message: explicitOpportunityFact ? "已识别到一条明确的商机事实，请核对后决定是否写入。" : "已从你的回答中保留一条低置信待确认事实；请核对后再决定是否写入。",
+    nextQuestion: explicitOpportunityFact?.nextQuestion || (decisionEvidence
       ? "这笔商机从当前共识走到正式采购，还需要经过哪些审批、合同或时间节点？"
-      : "你刚才描述的情况里，客户有没有说过具体的原话、提到时间节点、或做出明确的动作？请复述。",
+      : "你刚才描述的情况里，客户有没有说过具体的原话、提到时间节点、或做出明确的动作？请复述。"),
     candidateTarget: scope === "opportunity" ? "meddpicc" : "purchase_signal",
     signalType: scope === "customer" ? "decision_chain" : "",
-    meddpiccDim: scope === "opportunity" ? (decisionEvidence ? "E" : processEvidence ? "D2" : "E") : "",
+    meddpiccDim: scope === "opportunity" ? (explicitOpportunityFact?.dim || (decisionEvidence ? "E" : processEvidence ? "D2" : "E")) : "",
     subjectName,
     evidence: `SAM 待确认原文：${answer.trim().slice(0, 800)}`,
     suggestedScore: scope === "opportunity" ? 50 : 0,
-    confidence: "low",
+    confidence: explicitOpportunityFact ? "medium" : "low",
   };
 }
 
@@ -163,7 +168,13 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
     if (!opportunityId || !candidate.meddpiccDim || !candidate.evidence) return toast.error("当前回答不足以写入商机事实，请继续补充。" );
     const field = MEDDPICC_FIELDS[candidate.meddpiccDim];
     updateMeddpicc.mutate({ opportunityId, clientId, [field.score]: candidate.suggestedScore / 25, [field.notes]: `[AI 主动引导问答 · 经 SAM 确认] ${candidate.evidence}` } as any, {
-      onSuccess: () => { toast.success("已确认并写入商机证据"); setCandidate(null); utils.opportunities.getMeddpicc.invalidate({ opportunityId }); },
+      onSuccess: () => {
+        toast.success("已确认并写入商机证据");
+        setCandidate(null);
+        utils.opportunities.getMeddpicc.invalidate({ opportunityId });
+        utils.command2.getDealMap.invalidate({ clientId, opportunityId });
+        utils.opportunities.getStageGuidance.invalidate({ clientId, opportunityId });
+      },
       onError: error => toast.error(`写入商机证据失败：${error.message}`),
     });
   };

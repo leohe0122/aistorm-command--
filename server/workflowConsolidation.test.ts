@@ -336,7 +336,9 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("buildProvisionalAnswerCandidate");
     expect(routers).toContain("SAM 待确认原文");
     expect(routers).toContain('model: "gpt-4o-mini", maxCompletionTokens: 1100, maxRetries: 0');
-    expect(routers).toContain('已有证据方向：${scored.join("、")}');
+    expect(routers).toContain('已有证据方向：${scored.length ? scored.join("、") : "暂无"}');
+    expect(routers).toContain('尚未覆盖的维度：${uncoveredMeddpiccDims.length ? uncoveredMeddpiccDims.join("、") : "暂无"}');
+    expect(routers).toContain("buildExplicitOpportunityCandidate");
     expect(routers).toContain("不得重复 AI 问题原文");
     expect(routers).toContain("normalizeQuestion(parsed.nextQuestion) === normalizeQuestion(input.question)");
     expect(routers).toContain("客户有没有说过具体的原话、提到时间节点、或做出明确的动作");
