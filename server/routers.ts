@@ -488,9 +488,17 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
   const transientCoveredGates = getTransientStageGateCoverage(history);
   const missingStageRequirements = stageRequirements.map(requirement => {
     const isCompetition = requirement.key === "gate8CompDefensible";
+    const isTrigger = requirement.key === "gate_trigger";
     const mapping = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
     const evidence = isCompetition
       ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || stageMeddpicc?.competitionNotes || "").trim()
+      : isTrigger
+        ? [
+            stageMeddpicc?.decisionProcessNotes,
+            why[0]?.whyNowClaim,
+            why[0]?.whyNowTrigger,
+            why[0]?.whyNowEvidence,
+          ].filter(Boolean).join("\n").trim()
       : String(stageMeddpicc?.[mapping?.notes || ""] || "").trim();
     const metByStoredFact = evidence.length >= 5;
     const metByTransientAnswer = transientCoveredGates.has(requirement.key);
@@ -4509,19 +4517,22 @@ ${contactList}
     })).query(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
-      const { opportunities, opportunityMeddpicc, competitionMap } = await import("../drizzle/schema.js");
+      const { opportunities, opportunityMeddpicc, competitionMap, threeWhy } = await import("../drizzle/schema.js");
       const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1);
       if (!opportunity || opportunity.clientId !== input.clientId) throw new TRPCError({ code: "NOT_FOUND", message: "未找到商机" });
-      const [meddpicc, competitions] = await Promise.all([
+      const [meddpicc, competitions, why] = await Promise.all([
         db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1),
         db.select().from(competitionMap).where(eq(competitionMap.opportunityId, input.opportunityId)),
+        db.select().from(threeWhy).where(eq(threeWhy.opportunityId, input.opportunityId)).limit(1),
       ]);
       const requirements = (STAGE_REQUIREMENTS[input.targetStage as keyof typeof STAGE_REQUIREMENTS] || []).map(requirement => {
         const isCompetition = requirement.key === "gate8CompDefensible";
+        const isTrigger = requirement.key === "gate_trigger";
         const notesField = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP]?.notes;
-        const scoreField = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP]?.score;
         const evidence = isCompetition
           ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || (meddpicc[0] as any)?.competitionNotes || "").trim()
+          : isTrigger
+            ? [why[0]?.whyNowClaim, why[0]?.whyNowTrigger, why[0]?.whyNowEvidence, (meddpicc[0] as any)?.decisionProcessNotes].filter(Boolean).join("\n").trim()
           : String((meddpicc[0] as any)?.[notesField || ""] || "").trim();
         const met = evidence.length >= 5;
         return { ...requirement, met, evidence: met ? evidence : "数据不足，暂不判断" };
@@ -4533,17 +4544,24 @@ ${contactList}
     })).mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
-      const { opportunities, opportunityMeddpicc, competitionMap } = await import("../drizzle/schema.js");
+      const { opportunities, opportunityMeddpicc, competitionMap, threeWhy } = await import("../drizzle/schema.js");
       const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1);
       if (!opportunity || opportunity.clientId !== input.clientId) throw new TRPCError({ code: "NOT_FOUND", message: "未找到商机" });
-      const [meddpicc, competitions] = await Promise.all([
+      const [meddpicc, competitions, why] = await Promise.all([
         db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, input.opportunityId)).limit(1),
         db.select().from(competitionMap).where(eq(competitionMap.opportunityId, input.opportunityId)),
+        db.select().from(threeWhy).where(eq(threeWhy.opportunityId, input.opportunityId)).limit(1),
       ]);
       const missing = (STAGE_REQUIREMENTS[input.targetStage as keyof typeof STAGE_REQUIREMENTS] || []).filter(requirement => {
-        if (requirement.key === "gate8CompDefensible") return Number((meddpicc[0] as any)?.competitionScore || 0) < 2 || String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || (meddpicc[0] as any)?.competitionNotes || "").trim().length < 10;
-        const mapping = MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
-        return Number((meddpicc[0] as any)?.[mapping.score] || 0) < 2 || String((meddpicc[0] as any)?.[mapping.notes] || "").trim().length < 10;
+        const isCompetition = requirement.key === "gate8CompDefensible";
+        const isTrigger = requirement.key === "gate_trigger";
+        const mapping = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
+        const evidence = isCompetition
+          ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || (meddpicc[0] as any)?.competitionNotes || "").trim()
+          : isTrigger
+            ? [why[0]?.whyNowClaim, why[0]?.whyNowTrigger, why[0]?.whyNowEvidence, (meddpicc[0] as any)?.decisionProcessNotes].filter(Boolean).join("\n").trim()
+            : String((meddpicc[0] as any)?.[mapping?.notes || ""] || "").trim();
+        return evidence.length < 5;
       });
       if (missing.length > 0) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `尚不能推进至${input.targetStage}；请先补充：${missing.map(item => item.label).join("、")}。` });
       await db.update(opportunities).set({ stage: input.targetStage, stageChangedAt: new Date() }).where(eq(opportunities.id, input.opportunityId));
