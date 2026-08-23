@@ -134,8 +134,8 @@ describe("作战工作流入口收敛", () => {
     const indexHtml = projectFile("client/index.html");
     const serviceWorker = projectFile("client/public/sw.js");
     const app = projectFile("client/src/App.tsx");
-    expect(indexHtml).toContain("/sw.js?v=20260823-opportunity-room-system-refactor-v4");
-    expect(serviceWorker).toContain("aistorm-command-v20260823-opportunity-room-system-refactor-v4");
+    expect(indexHtml).toContain("/sw.js?v=20260823-opportunity-room-system-refactor-v5");
+    expect(serviceWorker).toContain("aistorm-command-v20260823-opportunity-room-system-refactor-v5");
     expect(serviceWorker).toContain("event.request.mode === 'navigate'");
     expect(app).toContain("controllerchange");
   });
@@ -344,6 +344,8 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("SAM 待确认原文");
     expect(routers).toContain('model: "gpt-4o-mini", maxCompletionTokens: 1100, maxRetries: 0');
     expect(routers).toContain("buildExplicitOpportunityCandidate");
+    expect(routers).toContain("hasValidExtractedFactCandidate(parsed)");
+    expect(routers).toContain('if (hasValidExtractedFactCandidate(parsed))');
     expect(routers).toContain("buildOpportunityGuidanceSnapshot");
     expect(routers).toContain("buildTransientGuidanceContext");
     expect(routers).toContain("toAnswerExtractionResult");
@@ -363,6 +365,9 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain('candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] }');
     expect(workstation).toContain('<AIActiveGuidancePanel scope="customer" clientId={clientId} powerContactNames={guidancePowerContactNames} />');
     expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} stageTarget={guidanceStageTarget} />');
+    expect(opportunityRoom).toContain("useState<string>(() => opportunity.stage)");
+    expect(opportunityRoom).toContain("setGuidanceStageTarget(opportunity.stage)");
+    expect(opportunityRoom).not.toContain("currentStageIndex + 1");
     expect(guidancePanel).toContain("让 AI 开始引导");
     expect(guidancePanel).toContain("当前判断");
     expect(guidancePanel).toContain("查看 AI 依据");
@@ -378,7 +383,7 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("系统未写入任何事实");
     expect(guidancePanel).toContain("}, 12_000)");
     expect(guidancePanel).toContain("已切换为基础引导");
-    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260823-opportunity-room-system-refactor-v4");
+    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260823-opportunity-room-system-refactor-v5");
     expect(guidancePanel).toContain("const working = pendingGuide || interpretMutation.isPending");
     expect(guidancePanel).not.toContain("healthCheck.refetch()");
     expect(guidancePanel).not.toContain("health_timeout");

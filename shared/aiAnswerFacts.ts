@@ -132,3 +132,15 @@ export function classifyExplicitOpportunityFact(answer: string, uncovered: Meddp
   if (!dim) return null;
   return { dim, nextQuestion: nextUncoveredMeddpiccQuestion(uncovered, dim) };
 }
+
+export function hasValidExtractedFactCandidate(value: any) {
+  const evidence = String(value?.evidence || "").trim();
+  if (!evidence) return false;
+  if (value?.candidateTarget === "purchase_signal") {
+    return ["intent_subject", "decision_chain", "executive_validation", "high_level_trigger"].includes(value?.signalType);
+  }
+  if (value?.candidateTarget === "meddpicc") {
+    return ["M", "E", "D1", "D2", "P", "I", "C1", "C2"].includes(value?.meddpiccDim);
+  }
+  return false;
+}

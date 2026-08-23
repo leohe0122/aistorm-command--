@@ -12,7 +12,7 @@ import { visitReminderHandler } from "../scheduled/visitReminder";
 import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
 
-const BUILD_MARKER = "20260823-opportunity-room-system-refactor-v4";
+const BUILD_MARKER = "20260823-opportunity-room-system-refactor-v5";
 
 async function startServer() {
   console.log(`[STARTUP] PORT=${process.env.PORT ?? "undefined"} NODE_ENV=${process.env.NODE_ENV ?? "undefined"}`);
@@ -28,8 +28,8 @@ async function startServer() {
     res.status(200).json({
       build: BUILD_MARKER,
       aiReviewRoute: "review-one-to-n-v3-nonempty-guard",
-      aiGuidanceRoute: "contextual-guidance-pure-extraction-v4",
-      serviceWorker: "20260823-opportunity-room-system-refactor-v4",
+      aiGuidanceRoute: "contextual-guidance-model-candidate-first-v5",
+      serviceWorker: "20260823-opportunity-room-system-refactor-v5",
       ts: Date.now(),
     });
   });

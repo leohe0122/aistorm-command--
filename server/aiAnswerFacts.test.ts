@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyExplicitOpportunityFact, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion } from "../shared/aiAnswerFacts";
+import { classifyExplicitOpportunityFact, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion } from "../shared/aiAnswerFacts";
 
 describe("AI 主动引导明确商机事实分类", () => {
   const uncovered = ["M", "E", "D1", "D2", "P", "I", "C1", "C2"] as const;
@@ -60,5 +60,23 @@ describe("AI 主动引导明确商机事实分类", () => {
   it("将商务谈判中的合同审批事实映射为采购流程 P", () => {
     const result = classifyExplicitOpportunityFact("合同需要采购部、法务和财务三方审批，采购尤其关注服务响应条款。", [...uncovered]);
     expect(result?.dim).toBe("P");
+  });
+
+  it("保留模型已经产出的完整高置信候选，不再被确定性规则降级覆盖", () => {
+    expect(hasValidExtractedFactCandidate({
+      candidateTarget: "meddpicc",
+      meddpiccDim: "E",
+      evidence: "Susanna 是最终签字人。",
+      confidence: "high",
+    })).toBe(true);
+    expect(hasValidExtractedFactCandidate({
+      candidateTarget: "meddpicc",
+      meddpiccDim: "",
+      evidence: "仅有事实文本但没有维度。",
+    })).toBe(false);
+    expect(hasValidExtractedFactCandidate({
+      candidateTarget: "none",
+      evidence: "",
+    })).toBe(false);
   });
 });
