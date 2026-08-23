@@ -15,7 +15,7 @@ type Guidance = {
   doNotAssume: string[];
 };
 type Candidate = {
-  message: string; nextQuestion: string; candidateTarget: "purchase_signal" | "meddpicc" | "none";
+  message: string; candidateTarget: "purchase_signal" | "meddpicc" | "none";
   signalType: "intent_subject" | "decision_chain" | "trigger_event" | ""; meddpiccDim: "M" | "E" | "D1" | "D2" | "P" | "I" | "C1" | "C2" | "";
   subjectName: string; evidence: string; suggestedScore: 0 | 25 | 50 | 75 | 100; confidence: "high" | "medium" | "low"; topicStatus: "continue" | "exhausted";
 };
@@ -46,7 +46,6 @@ function buildClientBaselineGuidance(scope: "customer" | "opportunity", powerCon
 function buildClientNoWriteCandidate(question: string): Candidate {
   return {
     message: "数据不足，暂不判断。本次回答未形成可确认、可写入的客户事实。",
-    nextQuestion: question,
     candidateTarget: "none",
     signalType: "",
     meddpiccDim: "",
@@ -69,9 +68,6 @@ function buildClientProvisionalCandidate(scope: "customer" | "opportunity", ques
   const explicitOpportunityFact = scope === "opportunity" ? classifyClientOpportunityAnswer(answer) : null;
   return {
     message: explicitOpportunityFact ? "已识别到一条明确的商机事实，请核对后决定是否写入。" : "已从你的回答中保留一条低置信待确认事实；请核对后再决定是否写入。",
-    nextQuestion: explicitOpportunityFact?.nextQuestion || (decisionEvidence
-      ? "这笔商机从当前共识走到正式采购，还需要经过哪些审批、合同或时间节点？"
-      : "你刚才描述的情况里，客户有没有说过具体的原话、提到时间节点、或做出明确的动作？请复述。"),
     candidateTarget: scope === "opportunity" ? "meddpicc" : "purchase_signal",
     signalType: scope === "customer" ? "decision_chain" : "",
     meddpiccDim: scope === "opportunity" ? (explicitOpportunityFact?.dim || (decisionEvidence ? "E" : processEvidence ? "D2" : "E")) : "",
@@ -101,6 +97,13 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
   useEffect(() => {
     if (!pendingGuide) return;
     const timeout = window.setTimeout(() => {
+      if (scope === "opportunity") {
+        setRequestTimedOut(true);
+        customerGuideMutation.reset();
+        opportunityGuideMutation.reset();
+        toast.error("完整商机诊断未在预期时间内返回；本次未生成替代问题，也未写入任何事实。");
+        return;
+      }
       const baseline = buildClientBaselineGuidance(scope, powerContactNames);
       setGuide(current => current ?? baseline);
       setMessages(current => current.length ? current : [{ role: "assistant", content: `**当前判断**\n数据不足，暂不判断。\n\n**我现在只想确认一件事：** ${baseline.primaryQuestion}` }]);
@@ -111,54 +114,66 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
     }, 12_000);
     return () => window.clearTimeout(timeout);
   }, [pendingGuide, customerGuideMutation, opportunityGuideMutation, powerContactNames, scope]);
-  const startGuide = async () => {
-    setCandidate(null);
-    setPendingCandidates([]);
-    setGuidanceHistory([]);
+
+  const requestGuidance = (history: GuidanceTurn[], leadMessage = "", resetConversation = false) => {
     setRequestTimedOut(false);
     const onSuccess = (data: Guidance) => {
       setRequestTimedOut(false);
       setGuide(data);
       const currentJudgement = data.dataSufficiency === "sufficient" ? "已有事实足以明确当前最该补证的方向。" : data.dataSufficiency === "partial" ? "已有部分事实，但关键处仍需用客户事实核实。" : "数据不足，暂不判断。";
-      setMessages([{ role: "assistant", content: `**当前判断**\n${currentJudgement}\n\n**我现在只想确认一件事：** ${data.primaryQuestion}` }]);
+      const content = `${leadMessage ? `${leadMessage}\n\n` : ""}**当前判断**\n${currentJudgement}\n\n**${resetConversation ? "我现在只想确认一件事" : "下一步我想确认"}：** ${data.primaryQuestion}`;
+      setMessages(current => resetConversation ? [{ role: "assistant", content }] : current.concat({ role: "assistant", content }));
     };
     const onError = (error: { message: string }) => {
       setRequestTimedOut(false);
-      if (!guide) {
+      if (scope === "customer" && !guide) {
         const baseline = buildClientBaselineGuidance(scope, powerContactNames);
         setGuide(baseline);
         setMessages([{ role: "assistant", content: `**当前判断**\n数据不足，暂不判断。\n\n**我现在只想确认一件事：** ${baseline.primaryQuestion}` }]);
         toast.info("AI 服务暂不可用，已切换为基础引导；不会写入任何事实。");
         return;
       }
-      toast.error(`AI 引导暂不可用：${error.message}`);
+      if (leadMessage) setMessages(current => current.concat({ role: "assistant", content: `${leadMessage}\n\n下一问生成失败，本次未写入任何事实。请点击“更新 AI 问题”重试。` }));
+      toast.error(`完整诊断暂不可用：${error.message}`);
     };
     if (scope === "customer") customerGuideMutation.mutate({ clientId }, { onSuccess, onError });
-    else if (opportunityId) opportunityGuideMutation.mutate({ clientId, opportunityId, stageTarget: stageTarget as any }, { onSuccess, onError });
+    else if (opportunityId) opportunityGuideMutation.mutate({ clientId, opportunityId, stageTarget: stageTarget as any, history }, { onSuccess, onError });
   };
+
+  const startGuide = () => {
+    const initial = !guide;
+    setCandidate(null);
+    if (initial) {
+      setPendingCandidates([]);
+      setGuidanceHistory([]);
+      setMessages([]);
+    }
+    requestGuidance(initial ? [] : guidanceHistory, "", initial);
+  };
+
   const sendAnswer = (answer: string) => {
     if (!guide) return;
     const currentQuestion = guide.primaryQuestion;
+    const nextHistory = guidanceHistory.concat({ question: currentQuestion, answer }).slice(-10);
     setMessages(current => current.concat({ role: "user", content: answer }));
     interpretMutation.mutate({ scope, clientId, opportunityId, question: currentQuestion, answer, history: guidanceHistory, stageTarget: stageTarget as any }, {
       onSuccess: (data: Candidate) => {
         setCandidate(data);
-        setGuidanceHistory(current => current.concat({ question: currentQuestion, answer }).slice(-12));
+        setGuidanceHistory(nextHistory);
         if (data.candidateTarget !== "none") {
           setPendingCandidates(current => current.concat({ ...data, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }));
         }
-        setGuide(current => current ? { ...current, primaryQuestion: data.nextQuestion } : current);
-        setMessages(current => current.concat({ role: "assistant", content: `${data.message}\n\n**下一步我想确认：** ${data.nextQuestion}` }));
+        requestGuidance(nextHistory, data.message);
       },
       onError: () => {
-        const fallback = buildClientProvisionalCandidate(scope, currentQuestion, answer);
+        const fallback = scope === "opportunity" ? buildClientProvisionalCandidate(scope, currentQuestion, answer) : buildClientNoWriteCandidate(currentQuestion);
         setCandidate(fallback);
-        setGuidanceHistory(current => current.concat({ question: currentQuestion, answer }).slice(-12));
+        setGuidanceHistory(nextHistory);
         if (fallback.candidateTarget !== "none") {
           setPendingCandidates(current => current.concat({ ...fallback, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }));
         }
-        setMessages(current => current.concat({ role: "assistant", content: `${fallback.message}\n\n**下一步我想确认：** ${fallback.nextQuestion}` }));
-        toast.info("已生成低置信待确认候选；系统未写入任何内容，请核对后再决定。 ");
+        requestGuidance(nextHistory, fallback.message);
+        toast.info("回答已作为未确认临时上下文保留；系统未写入任何事实。 ");
       },
     });
   };

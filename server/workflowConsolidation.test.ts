@@ -79,15 +79,22 @@ describe("作战工作流入口收敛", () => {
     expect(layout).toContain('label: "每日情报简报"');
   });
 
-  it("将 Account Map 限定在客户 0→1 作战台，并在商机作战室提供三类 Deal Map 工作区", () => {
+  it("将 Account Map 限定在客户 0→1 作战台，并把商机作战室收敛为五个统一事实工作区", () => {
     const workstation = projectFile("client/src/pages/ClientWorkstation.tsx");
     const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
     expect(workstation).toContain("function AccountMapPanel");
     expect(workstation).toContain('client.stage !== "进入商机" && <AccountMapPanel');
     expect(workstation).toContain("多层覆盖矩阵");
+    expect(opportunityRoom).toContain('label: "战情总览"');
+    expect(opportunityRoom).toContain('label: "作战证据"');
     expect(opportunityRoom).toContain('label: "3 Why"');
-    expect(opportunityRoom).toContain('label: "Pain & Metrics"');
-    expect(opportunityRoom).toContain('label: "Go / No-Go"');
+    expect(opportunityRoom).toContain('label: "决策门控"');
+    expect(opportunityRoom).toContain('label: "行动任务"');
+    expect(opportunityRoom).not.toContain('label: "Blue Sheet"');
+    expect(opportunityRoom).not.toContain('label: "Win Strategy"');
+    expect(opportunityRoom).not.toContain('label: "SPIN"');
+    expect(opportunityRoom).toContain("DecisionBlueprintWorkspace");
+    expect(opportunityRoom).toContain('<DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="value" />');
     expect(opportunityRoom).toContain("trpc.command2.getDealMap.useQuery");
     expect(opportunityRoom).toContain("数据不足");
     expect(opportunityRoom).toContain("Win = Pain × Power × Champion × Value × Control");
@@ -127,8 +134,8 @@ describe("作战工作流入口收敛", () => {
     const indexHtml = projectFile("client/index.html");
     const serviceWorker = projectFile("client/public/sw.js");
     const app = projectFile("client/src/App.tsx");
-    expect(indexHtml).toContain("/sw.js?v=20260823-ai-guidance-stage-gates-complete-v3");
-    expect(serviceWorker).toContain("aistorm-command-v20260823-ai-guidance-stage-gates-complete-v3");
+    expect(indexHtml).toContain("/sw.js?v=20260823-opportunity-room-system-refactor-v4");
+    expect(serviceWorker).toContain("aistorm-command-v20260823-opportunity-room-system-refactor-v4");
     expect(serviceWorker).toContain("event.request.mode === 'navigate'");
     expect(app).toContain("controllerchange");
   });
@@ -336,19 +343,17 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("buildProvisionalAnswerCandidate");
     expect(routers).toContain("SAM 待确认原文");
     expect(routers).toContain('model: "gpt-4o-mini", maxCompletionTokens: 1100, maxRetries: 0');
-    expect(routers).toContain('已有证据方向：${scored.length ? scored.join("、") : "暂无"}');
-    expect(routers).toContain('尚未覆盖的维度：${uncoveredMeddpiccDims.length ? uncoveredMeddpiccDims.join("、") : "暂无"}');
-    expect(routers).toContain("评分为 0 或证据备注为空的维度");
     expect(routers).toContain("buildExplicitOpportunityCandidate");
     expect(routers).toContain("buildOpportunityGuidanceSnapshot");
-    expect(routers).toContain("resolveOpportunityFollowUpQuestion");
+    expect(routers).toContain("buildTransientGuidanceContext");
+    expect(routers).toContain("toAnswerExtractionResult");
+    expect(routers).not.toContain("resolveOpportunityFollowUpQuestion");
     expect(routers).toContain("【本轮临时问答：尚未确认、尚未写入数据库】");
     expect(routers).toContain("不得将其当作已入库事实");
     expect(routers).toContain("isGuidanceTopicExhaustionAnswer(input.answer)");
     expect(routers).toContain("buildTopicExhaustedAnswerInterpretation");
-    expect(routers).toContain("不得重复 AI 问题原文");
-    expect(routers).toContain("normalizeQuestion(parsed.nextQuestion) === normalizeQuestion(input.question)");
-    expect(routers).toContain("客户有没有说过具体的原话、提到时间节点、或做出明确的动作");
+    expect(routers).toContain("你只负责事实提取，不负责生成、建议或决定下一问");
+    expect(routers).not.toContain('nextQuestion: { type: "string" }');
     expect(routers).toContain('candidateTarget: scope === "opportunity" ? "meddpicc"');
     expect(routers).toContain('decisionEvidence ? "E" : processEvidence ? "D2" : "E"');
     expect(routers).toContain("商机场景若明确指出最终签字人、审批人、关键人物的支持/反对或权力关系");
@@ -366,12 +371,14 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("buildClientNoWriteCandidate");
     expect(guidancePanel).toContain("buildClientProvisionalCandidate");
     expect(guidancePanel).toContain("SAM 待确认原文");
-    expect(guidancePanel).toContain("客户有没有说过具体的原话、提到时间节点、或做出明确的动作");
     expect(guidancePanel).toContain('candidateTarget: scope === "opportunity" ? "meddpicc" : "purchase_signal"');
-    expect(guidancePanel).toContain("系统未写入任何内容");
+    expect(guidancePanel).toContain("requestGuidance(nextHistory, data.message)");
+    expect(guidancePanel).toContain("history }, { onSuccess, onError }");
+    expect(guidancePanel).not.toContain("data.nextQuestion");
+    expect(guidancePanel).toContain("系统未写入任何事实");
     expect(guidancePanel).toContain("}, 12_000)");
     expect(guidancePanel).toContain("已切换为基础引导");
-    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260823-ai-guidance-stage-gates-complete-v3");
+    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260823-opportunity-room-system-refactor-v4");
     expect(guidancePanel).toContain("const working = pendingGuide || interpretMutation.isPending");
     expect(guidancePanel).not.toContain("healthCheck.refetch()");
     expect(guidancePanel).not.toContain("health_timeout");
@@ -408,7 +415,9 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain('content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT');
     expect(routers).toContain("帮助 SAM 把脑子里的事实存入系统");
     expect(routers).toContain("严禁把销售动作伪装成问题");
-    expect(routers).toContain("Power=economicBuyerScore、decisionProcessScore");
+    expect(routers).toContain("buildStageAwareGuidancePromptSuffix");
+    expect(routers).toContain("calculateWinFactors");
+    expect(routers).toContain("Win 因子：");
     const guidanceImplementation = routers.slice(routers.indexOf("const AI_GUIDANCE_PRIMARY_TIMEOUT_MS"), routers.indexOf("export const appRouter"));
     expect(guidanceImplementation).not.toContain('reasoning: { effort: "low" }');
     expect(guidancePanel).toContain("最能影响这家客户走向的高层");
@@ -436,13 +445,15 @@ describe("作战工作流入口收敛", () => {
 
   it("让商务谈判阶段的 AI 主动引导优先补采购与竞争门控，而非退回泛化 Win 因子问题", () => {
     const routers = projectFile("server/routers.ts");
+    const guidance = projectFile("server/aiNativeGuidance.ts");
     const guidancePanel = projectFile("client/src/components/AIActiveGuidancePanel.tsx");
     expect(routers).toContain("【阶段优先门控】");
     expect(routers).toContain("优先级高于 Win 因子");
-    expect(routers).toContain("商务谈判的采购流程");
     expect(routers).toContain("gate8CompDefensible");
     expect(routers).toContain("competitionNotes");
-    expect(routers).toContain("stageTarget: input.stageTarget");
+    expect(routers).toContain("buildStageAwareGuidancePromptSuffix(stageTarget || opportunity.stage");
+    expect(guidance).toContain("必须围绕第一项未满足门控提问");
+    expect(guidance).toContain("提问时必须点名其中最相关的人");
     expect(guidancePanel).toContain("补齐进入「{stageTarget}」所需的阶段证据");
   });
 

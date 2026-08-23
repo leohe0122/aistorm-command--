@@ -44,6 +44,20 @@ export const STAGE_REQUIREMENTS = {
   ],
 } as const;
 
+export function buildStageAwareGuidancePromptSuffix(
+  stage: string,
+  missingGates: Array<{ label: string; question: string }>,
+  contactNames: string[],
+): string {
+  const gateSection = missingGates.length
+    ? `当前阶段“${stage}”尚未满足的门控（按顺序处理第一项）：\n${missingGates.map((gate, index) => `${index + 1}. ${gate.label}：${gate.question}`).join("\n")}\n\n规则：必须围绕第一项未满足门控提问；全部满足后才可按 Win 因子排序。`
+    : `当前阶段“${stage}”的门控已全部满足，按 Win 因子最弱维度排序提问。`;
+  const contactSection = contactNames.length
+    ? `已知客户关键人：${contactNames.join("、")}。提问时必须点名其中最相关的人，禁止泛化问“谁”。`
+    : "当前没有可用的关键人姓名；问题必须指向具体事件或决策节点，不能泛化问‘谁’。";
+  return `\n\n${gateSection}\n${contactSection}\n\n问题质量要求：\n- 必须是 SAM 能用一段话直接回答的事实性问题\n- 必须包含具体人名或具体事件\n- 必须承接本轮临时问答，不能要求 SAM 重复已经回答的内容\n- 禁止问“你计划做什么”或“你打算怎样”，只问“他说了什么”或“发生了什么”\n- 禁止出现 MEDDPICC、Win 公式、Champion 等方法论术语`;
+}
+
 export type FullMeetingSignals = {
   meetingSummary: string;
   meddpiccUpdates: Array<{

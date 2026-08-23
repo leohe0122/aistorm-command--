@@ -23,17 +23,13 @@ import { calculateWinFactors, type WinFactorName } from "@shared/winFactors";
 import { AIActiveGuidancePanel } from "@/components/AIActiveGuidancePanel";
 import { StageAdvanceGuidance } from "@/components/StageAdvanceGuidance";
 
-type RoomSection = "overview" | "meddpicc" | "bluesheet" | "strategy" | "spin" | "threewhy" | "value" | "gonogo" | "actions";
+type RoomSection = "overview" | "evidence" | "threewhy" | "gate" | "actions";
 
 const roomSections: Array<{ id: RoomSection; label: string; icon: typeof Target }> = [
   { id: "overview", label: "战情总览", icon: Target },
-  { id: "meddpicc", label: "MEDDPICC 证据", icon: Gauge },
-  { id: "bluesheet", label: "Blue Sheet", icon: Network },
-  { id: "strategy", label: "Win Strategy", icon: Crosshair },
-  { id: "spin", label: "SPIN", icon: BrainCircuit },
+  { id: "evidence", label: "作战证据", icon: FileText },
   { id: "threewhy", label: "3 Why", icon: BrainCircuit },
-  { id: "value", label: "Pain & Metrics", icon: Gauge },
-  { id: "gonogo", label: "Go / No-Go", icon: ShieldAlert },
+  { id: "gate", label: "决策门控", icon: ShieldAlert },
   { id: "actions", label: "行动任务", icon: ClipboardCheck },
 ];
 
@@ -265,22 +261,18 @@ function MeddpiccEvidence({ clientId, opportunityId, meddpicc }: { clientId: num
   );
 }
 
-function BlueSheetWorkspace({ clientId, opportunity }: { clientId: number; opportunity: any }) {
+function DecisionBlueprintWorkspace({ clientId, opportunity }: { clientId: number; opportunity: any }) {
   const utils = trpc.useUtils();
-  const [form, setForm] = useState({ bizObjective: "", valueProposition: "", champion: "", championStance: "未知", blueSheetCompetitor: "", winStrategy: "", keyMilestones: "", riskAndMitigation: "" });
-  useEffect(() => setForm({ bizObjective: opportunity.bizObjective || "", valueProposition: opportunity.valueProposition || "", champion: opportunity.champion || "", championStance: opportunity.championStance || "未知", blueSheetCompetitor: opportunity.blueSheetCompetitor || "", winStrategy: opportunity.winStrategy || "", keyMilestones: opportunity.keyMilestones || "", riskAndMitigation: opportunity.riskAndMitigation || "" }), [opportunity]);
-  const saveMutation = trpc.opportunities.updateBlueSheet.useMutation({ onSuccess: () => { utils.opportunities.listByClient.invalidate({ clientId }); toast.success("Blue Sheet 已保存"); }, onError: (error) => toast.error(`保存失败：${error.message}`) });
+  const [form, setForm] = useState({ bizObjective: "", keyMilestones: "", valueProposition: "" });
+  useEffect(() => setForm({ bizObjective: opportunity.bizObjective || "", keyMilestones: opportunity.keyMilestones || "", valueProposition: opportunity.valueProposition || "" }), [opportunity]);
+  const saveMutation = trpc.opportunities.updateBlueSheet.useMutation({ onSuccess: () => { utils.opportunities.listByClient.invalidate({ clientId }); toast.success("决策蓝图已保存"); }, onError: (error) => toast.error(`保存失败：${error.message}`) });
   const update = (key: keyof typeof form, value: string) => setForm(prev => ({ ...prev, [key]: value }));
-  const cells: Array<{ key: keyof typeof form; label: string; hint: string; multiline?: boolean }> = [
-    { key: "bizObjective", label: "客户业务目标", hint: "客户想达成的业务结果；不要只写产品需求", multiline: true },
-    { key: "valueProposition", label: "我方价值主张", hint: "可被客户验证的差异化价值", multiline: true },
-    { key: "champion", label: "内部 Champion", hint: "姓名或角色；请在关键人图谱中保留行为证据" },
-    { key: "blueSheetCompetitor", label: "竞争态势", hint: "已确认的竞品与待验证假设" },
-    { key: "winStrategy", label: "赢单策略", hint: "围绕决策标准、关系路径与资源分工的打法", multiline: true },
-    { key: "keyMilestones", label: "关键里程碑", hint: "时间节点与可验收的完成标准", multiline: true },
-    { key: "riskAndMitigation", label: "风险与应对", hint: "事实风险、影响以及责任人", multiline: true },
+  const cells: Array<{ key: keyof typeof form; label: string; hint: string }> = [
+    { key: "bizObjective", label: "客户业务目标", hint: "客户希望达成的业务结果；不要只写我方产品目标。" },
+    { key: "keyMilestones", label: "关键里程碑", hint: "客户侧时间节点与可验收的完成标准。" },
+    { key: "valueProposition", label: "差异化假设", hint: "必须可由客户或竞争事实验证；未知项保持待验证。" },
   ];
-  return <div className="space-y-4"><div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4"><div className="text-sm font-semibold text-slate-100">Blue Sheet 商机蓝图</div><p className="mt-1 text-xs leading-5 text-slate-500">每一项都是该商机的作战假设，AI Review 将与 MEDDPICC、关键人和拜访记录交叉核验，避免“策略已具备”的无证据表达。</p></div><div className="grid gap-4 lg:grid-cols-2">{cells.map(cell => <div key={cell.key} className={cn("rounded-xl border border-slate-700/60 bg-slate-950/55 p-4", cell.multiline && "lg:col-span-1")}><Label className="text-xs text-slate-200">{cell.label}</Label><p className="mb-2 mt-1 text-[11px] text-slate-500">{cell.hint}</p>{cell.multiline ? <Textarea value={form[cell.key]} onChange={event => update(cell.key, event.target.value)} className="min-h-[104px] resize-y border-slate-700/70 bg-slate-900/45 text-xs leading-5" /> : <Input value={form[cell.key]} onChange={event => update(cell.key, event.target.value)} className="border-slate-700/70 bg-slate-900/45 text-xs" />}</div>)}</div><div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700/60 bg-slate-900/40 p-4"><div><Label className="text-xs text-slate-200">Champion 立场</Label><p className="mt-1 text-[11px] text-slate-500">立场不是 Champion 真实性证据，仍需以关键人行为记录验证。</p></div><Select value={form.championStance} onValueChange={value => update("championStance", value)}><SelectTrigger className="h-8 w-28 border-slate-700 bg-slate-950 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="支持">支持</SelectItem><SelectItem value="中立">中立</SelectItem><SelectItem value="反对">反对</SelectItem><SelectItem value="未知">未知</SelectItem></SelectContent></Select></div><div className="flex justify-end"><Button onClick={() => saveMutation.mutate({ id: opportunity.id, ...form, championStance: form.championStance as "支持" | "中立" | "反对" | "未知" })} disabled={saveMutation.isPending} className="gap-1.5"><Save className="h-3.5 w-3.5" />{saveMutation.isPending ? "保存中…" : "保存 Blue Sheet"}</Button></div></div>;
+  return <section className="space-y-4 rounded-xl border border-violet-400/20 bg-violet-400/[0.04] p-4"><div><div className="text-sm font-semibold text-violet-100">精简决策蓝图</div><p className="mt-1 text-xs leading-5 text-slate-500">Blue Sheet 不再作为独立工作区，只保留会影响决策门控的三个可核验字段；其他历史字段仍保留在数据库。</p></div><div className="grid gap-4 lg:grid-cols-3">{cells.map(cell => <div key={cell.key} className="rounded-xl border border-slate-700/60 bg-slate-950/55 p-4"><Label className="text-xs text-slate-200">{cell.label}</Label><p className="mb-2 mt-1 text-[11px] leading-4 text-slate-500">{cell.hint}</p><Textarea value={form[cell.key]} onChange={event => update(cell.key, event.target.value)} className="min-h-[96px] resize-y border-slate-700/70 bg-slate-900/45 text-xs leading-5" /></div>)}</div><div className="flex justify-end"><Button onClick={() => saveMutation.mutate({ id: opportunity.id, ...form })} disabled={saveMutation.isPending} className="gap-1.5"><Save className="h-3.5 w-3.5" />{saveMutation.isPending ? "保存中…" : "保存决策蓝图"}</Button></div></section>;
 }
 
 function StrategyWorkspace({ opportunity, contacts, meddpicc }: { opportunity: any; contacts: any[]; meddpicc: any }) {
@@ -294,19 +286,6 @@ function StrategyWorkspace({ opportunity, contacts, meddpicc }: { opportunity: a
     { label: "赢单路径", value: opportunity.winStrategy, fallback: "尚未定义；请先补全 Blue Sheet 与 MEDDPICC 证据。" },
   ];
   return <div className="space-y-4"><div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-semibold text-slate-100">Win Strategy</div><p className="mt-1 text-xs leading-5 text-slate-500">把 Blue Sheet 假设、Buying Group 覆盖和 MEDDPICC 证据汇合为可执行取胜路径，而非脱离事实的总结。</p></div><span className={cn("w-fit rounded-full border px-2.5 py-1 text-xs", health === null ? "border-slate-700 text-slate-400" : scoreTone(health))}>{health === null ? "证据待补充" : `MEDDPICC ${health}%`}</span></div></div><div className="grid gap-3 lg:grid-cols-2">{blocks.map(block => <article key={block.label} className="rounded-xl border border-slate-700/60 bg-slate-950/55 p-4"><div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/70">{block.label}</div><p className="text-sm leading-6 text-slate-200">{block.value || block.fallback}</p></article>)}</div><div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-100"><ShieldAlert className="h-4 w-4" />策略质量检查</div><p className="mt-2 text-xs leading-5 text-amber-50/75">只有当前面的事实、评分与角色覆盖均已入库时，策略才可以被视为可信。未验证项应保持为“待验证假设”，而不是写成确定结论。</p></div></div>;
-}
-
-function SpinWorkspace({ opportunity, meddpicc }: { opportunity: any; meddpicc: any }) {
-  const weak = MEDDPICC_DIMENSIONS.filter(dim => (Number(meddpicc?.[dim.key]) || 0) <= 1);
-  const focus = weak.slice(0, 2).map(dim => dim.chineseName).join("、") || "当前商机的客户目标与决策流程";
-  const title = opportunity.name || "该商机";
-  const prompts = [
-    { code: "S", title: "Situation · 现状", owner: "SAM 会前摸底", text: `围绕 ${title}，客户目前如何处理 ${focus}？请区分已确认事实与待验证信息。`, tone: "border-blue-400/25 bg-blue-400/[0.07] text-blue-100" },
-    { code: "P", title: "Problem · 困难", owner: "SAM 初次接触", text: `现有做法在哪些具体场景无法满足客户目标？请让客户描述问题影响，而不是由销售替客户下结论。`, tone: "border-amber-400/25 bg-amber-400/[0.07] text-amber-100" },
-    { code: "I", title: "Implication · 影响", owner: "AD / SA 深度会谈", text: `如果 ${focus} 在本周期无法改善，对业务、风险、成本或决策时间线将造成什么可量化影响？`, tone: "border-orange-400/25 bg-orange-400/[0.07] text-orange-100" },
-    { code: "N", title: "Need-payoff · 需求回报", owner: "AD 高层会面", text: `如果客户获得可验证的改善结果，哪一个价值指标、验收标准或内部决策条件会因此被满足？`, tone: "border-emerald-400/25 bg-emerald-400/[0.07] text-emerald-100" },
-  ];
-  return <div className="space-y-4"><div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-4"><div className="text-sm font-semibold text-slate-100">SPIN 证据导向提问</div><p className="mt-1 text-xs leading-5 text-slate-500">问题根据本商机尚未闭合的 MEDDPICC 维度生成。回答必须回填到拜访记录与证据备注，才能改善商机判断。</p></div><div className="grid gap-3 xl:grid-cols-2">{prompts.map(prompt => <article key={prompt.code} className={cn("rounded-xl border p-4", prompt.tone)}><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold">{prompt.code} · {prompt.title}</span><span className="text-[10px] opacity-70">{prompt.owner}</span></div><p className="text-sm leading-6 text-slate-100/90">{prompt.text}</p><p className="mt-3 text-[11px] leading-5 text-slate-300/75">会后动作：将客户原话、关键人反应及下一步承诺录入拜访作战日志；AI 之后才会重新评估对应维度。</p></article>)}</div></div>;
 }
 
 function DealBattleTools({ client, opportunity, contacts }: { client: any; opportunity: any; contacts: any[] }) {
@@ -532,18 +511,14 @@ export default function OpportunityRoom() {
 
   const sectionContent = new Proxy<Record<RoomSection, React.ReactNode>>({
     overview: <div className="space-y-5"><div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]"><section className="rounded-2xl border border-slate-700/60 bg-slate-950/55 p-5"><div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-100"><Crosshair className="h-4 w-4 text-amber-300" />商机战情</div><div className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-slate-700/60 bg-slate-900/35 p-4"><div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">竞争状态</div><p className="mt-2 text-sm leading-6 text-slate-200">{opportunity.blueSheetCompetitor || opportunity.competitorName || "数据不足，暂不判断"}</p></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/35 p-4"><div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">客户决策与 Champion</div><p className="mt-2 text-sm leading-6 text-slate-200">{opportunity.champion ? `${opportunity.champion} · ${opportunity.championStance || "立场待确认"}` : "尚未在该商机 Blue Sheet 中形成 Champion 结论"}</p></div><div className="rounded-xl border border-slate-700/60 bg-slate-900/35 p-4 sm:col-span-2"><div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">当前最大作战缺口</div><p className="mt-2 text-sm leading-6 text-slate-200">{weakDimensionNames.join("、") || "当前评分未识别低分维度；请审阅证据时效与备注完整度。"}</p></div></div></section><section className="rounded-2xl border border-slate-700/60 bg-slate-950/55 p-5"><div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-100"><UsersRound className="h-4 w-4 text-violet-300" />Buying Group</div><div className="space-y-2">{contacts.length === 0 ? <p className="text-xs text-slate-500">数据不足，暂不判断。请先在客户作战台补充关键人。</p> : contacts.map((contact: any) => <div key={contact.id} className="flex items-center justify-between rounded-lg border border-slate-700/50 bg-slate-900/35 px-3 py-2"><div><div className="text-xs font-medium text-slate-200">{contact.name}</div><div className="text-[10px] text-slate-500">{contact.title || "职位待补充"}</div></div><span className="rounded bg-violet-400/10 px-1.5 py-0.5 text-[10px] text-violet-200">{contact.buyingRole || "角色待确认"}</span></div>)}</div></section></div><section className="rounded-2xl border border-slate-700/60 bg-slate-950/55 p-5"><div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-100"><CalendarClock className="h-4 w-4 text-cyan-300" />近期拜访与情报事实</div><div className="grid gap-3 lg:grid-cols-2"><div className="space-y-2">{recentMeetings.length === 0 ? <p className="rounded-lg border border-dashed border-slate-700 px-3 py-6 text-center text-xs text-slate-500">暂无拜访事实</p> : recentMeetings.map((meeting: any) => <div key={meeting.id} className="rounded-lg border border-slate-700/50 bg-slate-900/35 p-3"><div className="mb-1 flex items-center justify-between"><span className="text-xs font-medium text-slate-200">{meeting.subject || "客户拜访"}</span><span className="text-[10px] text-slate-500">{formatDate(meeting.meetingDate)}</span></div><p className="line-clamp-3 text-[11px] leading-5 text-slate-500">{meeting.aiMinutes || meeting.keyPoints || meeting.nextSteps || "已入库拜访事实"}</p></div>)}</div><div className="space-y-2">{signals.slice(0, 3).length === 0 ? <p className="rounded-lg border border-dashed border-slate-700 px-3 py-6 text-center text-xs text-slate-500">暂无情报信号</p> : signals.slice(0, 3).map((signal: any) => <div key={signal.id} className="rounded-lg border border-slate-700/50 bg-slate-900/35 p-3"><div className="mb-1 flex items-center justify-between"><span className="text-xs font-medium text-slate-200">{signal.signalType || "客户情报"}</span><span className="text-[10px] text-slate-500">{formatDate(signal.createdAt || signal.publishedAt)}</span></div><p className="line-clamp-3 text-[11px] leading-5 text-slate-500">{signal.rawSignal || signal.summary || "已入库情报信号"}</p></div>)}</div></div></section></div>,
-    meddpicc: <div className="space-y-4"><AIProcessGuide methodology="MEDDPICC：以维度化证据衡量该商机的可验证赢单质量。" facts="读取八个商机级分值及其备注；评分数据采用 0–4 的持久化刻度。" judgement="分数较高但备注不足时会被标记为低置信度；没有记录时显示待补充，不推断赢单概率。" action="SAM/AD 补充客户原话、会议结论或行为证据，再保存评分。" /><MeddpiccEvidence clientId={clientId} opportunityId={opportunityId} meddpicc={meddpicc} /></div>,
-    bluesheet: <div className="space-y-4"><AIProcessGuide methodology="Blue Sheet：把客户目标、竞争、Champion、风险和里程碑组织为单商机作战假设。" facts="读取本商机已保存的 Blue Sheet 字段；不引用其他商机的策略文本。" judgement="空白字段保持“待验证”，并会被 AI Review 与 MEDDPICC、Buying Group 事实交叉检查。" action="负责人补齐假设并保存；下一次 AI Review 再基于更新后的事实判断。" /><BlueSheetWorkspace clientId={clientId} opportunity={opportunity} /></div>,
-    strategy: <div className="space-y-4"><AIProcessGuide methodology="Win Strategy：汇合 MEDDPICC、Buying Group 和 Blue Sheet，形成可审核的取胜路径。" facts="读取当前商机评分、关键人角色、竞争信息与 Blue Sheet 内容。" judgement="缺少 EB、技术决策人或 Champion，或缺少价值、竞争证据时，策略只能视为待验证假设。" action="AD/SAM/SA 审核资源分工和里程碑；不能由 AI 自动改变策略或阶段。" /><StrategyWorkspace opportunity={opportunity} contacts={contacts as any[]} meddpicc={meddpicc} /></div>,
-    spin: <div className="space-y-4"><AIProcessGuide methodology="SPIN：从未闭合的 MEDDPICC 维度反推下一轮应验证的问题。" facts="读取低分或未评分维度、商机名称及已入库的客户事实。" judgement="问题用于获取事实，不能替代事实本身；未获得客户回答前，AI 不会把问题当作证据。" action="SAM/AD 在会谈中使用并把客户原话回填至拜访作战日志与对应证据字段。" /><SpinWorkspace opportunity={opportunity} meddpicc={meddpicc} /></div>,
+    evidence: <div className="space-y-5"><AIProcessGuide methodology="作战证据：统一查看 MEDDPICC 与 Pain & Metrics，不再维护两套互相脱节的赢单输入。" facts="读取同一商机的八维评分、证据备注、客户痛点、量化价值与证据强度。" judgement="没有客户原话、行为或可追溯来源时保持数据不足；高分但无备注视为低置信。" action="SAM/AD 只核对或修订同一事实层；AI 候选仍须人工确认后才写入。" /><MeddpiccEvidence clientId={clientId} opportunityId={opportunityId} meddpicc={meddpicc} /><DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="value" /></div>,
     threewhy: <DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="threewhy" />,
-    value: <DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="value" />,
-    gonogo: <DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="gonogo" />,
+    gate: <div className="space-y-5"><DealMapWorkspace clientId={clientId} opportunityId={opportunityId} mode="gonogo" /><DecisionBlueprintWorkspace clientId={clientId} opportunity={opportunity} /></div>,
     actions: <div className="space-y-4"><AIProcessGuide methodology="行动闭环：将经人工审核的 AI 建议转化为有责任角色和状态的任务。" facts="只读取已关联本商机的行动指令和 POD 任务；客户级或其他商机任务不会混入。" judgement="未关联、未审核或数据不足的建议不会被自动下发。" action="AD/SAM/SA 明确责任、截止与完成标准，并由负责人显式关闭任务。" /><DealBattleTools client={client} opportunity={opportunity} contacts={contacts as any[]} /><ActionWorkspace clientId={clientId} opportunityId={opportunityId} initialReviewId={linkedReviewId} /></div>,
   }, {
     get(target, property) {
       const content = target[property as RoomSection];
-      return property === "overview" ? <div className="space-y-5"><WinFormulaDashboard result={winFactors} />{content}</div> : content;
+      return property === "overview" ? <div className="space-y-5"><WinFormulaDashboard result={winFactors} /><StrategyWorkspace opportunity={opportunity} contacts={contacts as any[]} meddpicc={meddpicc} />{content}</div> : content;
     },
   });
 

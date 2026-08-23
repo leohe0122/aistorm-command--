@@ -15,7 +15,8 @@ import { evaluateCustomerReadiness, type CustomerStage } from "../shared/custome
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
 import { classifyExplicitOpportunityFact, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion, topicMeddpiccDimension, type GuidanceHistoryTurn, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
-import { AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, normalizeFullMeetingSignals } from "./aiNativeGuidance";
+import { AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
+import { calculateWinFactors } from "../shared/winFactors";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -128,7 +129,6 @@ const AI_ANSWER_INTERPRETATION_SCHEMA = {
   type: "object",
   properties: {
     message: { type: "string" },
-    nextQuestion: { type: "string" },
     candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] },
     signalType: { type: "string", enum: ["intent_subject", "decision_chain", "trigger_event", ""] },
     meddpiccDim: { type: "string", enum: ["M", "E", "D1", "D2", "P", "I", "C1", "C2", ""] },
@@ -138,7 +138,7 @@ const AI_ANSWER_INTERPRETATION_SCHEMA = {
     confidence: { type: "string", enum: ["high", "medium", "low"] },
     topicStatus: { type: "string", enum: ["continue", "exhausted"] },
   },
-  required: ["message", "nextQuestion", "candidateTarget", "signalType", "meddpiccDim", "subjectName", "evidence", "suggestedScore", "confidence", "topicStatus"],
+  required: ["message", "candidateTarget", "signalType", "meddpiccDim", "subjectName", "evidence", "suggestedScore", "confidence", "topicStatus"],
   additionalProperties: false,
 } as const;
 
@@ -387,9 +387,10 @@ ${snapshot}
 
 判断优先级（严格按顺序）：
 0. 若快照含“阶段优先门控”，先围绕其中第一条未满足门控提问。这是当前阶段或下一阶段的客观准入证据，优先级高于 Win 因子；不得跳回与此无关的泛化高层态度问题。
-1. 只有阶段门控已满足或当前阶段没有定义硬门控时，才判断 Pain、Power、Champion、Value、Control 中哪一类最接近零或证据最薄弱。评分映射为：Pain=implicatePainScore；Power=economicBuyerScore、decisionProcessScore；Champion=championScore；Value=metricsScore；Control=paperProcessScore、competitionScore。
-2. 再判断该优先缺口具体缺什么已知事实，并翻译成 SAM 能直接回答的问题。例如商务谈判的采购流程，问“合同走哪个部门审批？法务和采购分别关心什么？”；竞争可防御性，问“竞品目前处于什么状态？他们提出过什么你暂时无法反驳的论点？”。
-3. 严禁把销售动作伪装成问题：不要要求 SAM 去问客户、转发原话、补充记录或填写字段；不要出现 MEDDPICC、3 Why、Win Formula 等术语。
+1. 只有阶段门控已满足或当前阶段没有定义硬门控时，才判断 Pain、Power、Champion、Value、Control 中哪一类最弱或证据最薄弱，并围绕该因子的具体事实缺口提问。
+2. 若五个 Win 因子都不低于 75，最后只验证竞争防守风险：客户是否仍有 No Decision、存量厂商或无法反驳的竞品论点。
+3. 问题必须引用快照中已知的具体人物或具体事件，并承接本轮临时问答；严禁泛化问“谁对方案有态度”，也不得要求 SAM 重复已经回答的内容。
+4. 严禁把销售动作伪装成问题：不要要求 SAM 去问客户、转发原话、补充记录或填写字段；不要出现 MEDDPICC、3 Why、Win Formula 等术语。
 
 输出约束：primaryQuestion 必须允许 SAM 用一段描述性文字直接回答，且答案能够被提取为对应事实候选。factSummary 只能复述支撑本题的 1-2 条已有事实，总计不超过 90 个中文字符，不能添加推断。数据不足时明确写“数据不足，暂不判断”。doNotAssume 最多列 2 项不得假定的客户意图或事实。严格按 JSON Schema 输出，不输出 JSON 外文字。`;
   const primaryController = new AbortController();
@@ -433,16 +434,17 @@ function resolveGuidanceStageTarget(currentStage: string, requestedStage?: strin
 async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId: number, transientContext = "", requestedStage?: string) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
-  const { opportunities, opportunityMeddpicc, threeWhy, painMetrics, competitionMap } = await import("../drizzle/schema");
+  const { opportunities, opportunityMeddpicc, threeWhy, painMetrics, competitionMap, keyContacts } = await import("../drizzle/schema");
   const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, opportunityId)).limit(1);
   if (!opportunity || opportunity.clientId !== clientId) throw new TRPCError({ code: "NOT_FOUND", message: "未找到商机" });
   const [meddpicc, why] = await Promise.all([
     db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, opportunityId)).limit(1),
     db.select().from(threeWhy).where(eq(threeWhy.opportunityId, opportunityId)).limit(1),
   ]);
-  const [pains, competitions, dealContext] = await Promise.all([
+  const [pains, competitions, contacts, dealContext] = await Promise.all([
     db.select().from(painMetrics).where(eq(painMetrics.opportunityId, opportunityId)),
     db.select().from(competitionMap).where(eq(competitionMap.opportunityId, opportunityId)),
+    db.select().from(keyContacts).where(eq(keyContacts.clientId, clientId)),
     getDealDiagnosticContext(clientId, opportunityId),
   ]);
   const stageTarget = resolveGuidanceStageTarget(opportunity.stage, requestedStage);
@@ -460,41 +462,24 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
   const stageGateContext = stageRequirements.length
     ? `\n\n【阶段优先门控】\n当前阶段：${opportunity.stage}；本轮引导对应阶段：${stageTarget}。\n${missingStageRequirements.length ? `尚未满足的准入证据（按顺序）：${missingStageRequirements.map(item => `${item.label}；自然语言问题：${item.question}`).join("\n")}` : "该阶段定义的准入证据已入库；才可使用 Win 因子排序其他补证问题。"}`
     : `\n\n【阶段优先门控】\n当前阶段：${opportunity.stage}；没有额外硬门控定义，可使用 Win 因子排序补证问题。`;
-  return `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}${stageGateContext}\n\n${dealContext}${transientContext}`;
+  const contactNames = selectGuidancePowerContacts(contacts)
+    .concat(contacts.map((contact: any) => String(contact.name || "").trim()).filter(Boolean))
+    .filter((name, index, all) => name && all.indexOf(name) === index)
+    .slice(0, 8);
+  const annualValue = pains.reduce((sum: number, pain: any) => sum + Number(pain.annualValue || 0), 0);
+  const winFactors = calculateWinFactors({ meddpicc: meddpicc[0] || null, threeWhy: why[0] || null, annualValue, contactCount: contacts.length });
+  const stageAwareSuffix = buildStageAwareGuidancePromptSuffix(stageTarget || opportunity.stage, missingStageRequirements, contactNames);
+  return `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}\nWin 因子：${JSON.stringify(winFactors)}${stageGateContext}${stageAwareSuffix}\n\n${dealContext}${transientContext}`;
 }
 
-async function resolveOpportunityFollowUpQuestion({
-  clientId,
-  opportunityId,
-  currentQuestion,
-  fallbackQuestion,
-  history,
-  stageTarget,
-}: {
-  clientId: number;
-  opportunityId: number;
-  currentQuestion: string;
-  fallbackQuestion: string;
-  history: GuidanceHistoryTurn[];
-  stageTarget?: string;
-}) {
-  try {
-    const temporaryEvidence = history.length
-      ? `\n\n【本轮临时问答：尚未确认、尚未写入数据库】\n${history.map((turn, index) => `${index + 1}. 已问：${compactGuidanceText(turn.question, 260)}\n   SAM 已答：${compactGuidanceText(turn.answer, 520)}`).join("\n")}\n\n这些内容只用于避免重复提问与判断下一条最值得验证的缺口。不得将其当作已入库事实、不得补全客户意图、不得要求 SAM 重复已经回答的内容。`
-      : "";
-    const snapshot = await buildOpportunityGuidanceSnapshot(clientId, opportunityId, temporaryEvidence, stageTarget);
-    const stageGateQuestion = extractStageGateQuestion(snapshot);
-    const freshGuidance = await generateAIGuidance("opportunity", snapshot);
-    const freshQuestion = String(freshGuidance?.primaryQuestion || "").trim();
-    const normalizeQuestion = (value: string) => value.replace(/[\s，。？！：；,.?!:;]/g, "").toLowerCase();
-    if (freshQuestion && normalizeQuestion(freshQuestion) !== normalizeQuestion(currentQuestion) && !isQuestionTopicAlreadyCovered(freshQuestion, history)) {
-      return freshQuestion;
-    }
-    if (stageGateQuestion && !isQuestionTopicAlreadyCovered(stageGateQuestion, history)) return stageGateQuestion;
-  } catch (error) {
-    console.warn("[AI Guidance] follow-up diagnostic fallback", error instanceof Error ? error.message : String(error));
-  }
-  return fallbackQuestion;
+function buildTransientGuidanceContext(history: GuidanceHistoryTurn[]) {
+  if (!history.length) return "";
+  return `\n\n【本轮临时问答：尚未确认、尚未写入数据库】\n${history.slice(-12).map((turn, index) => `${index + 1}. 已问：${compactGuidanceText(turn.question, 260)}\n   SAM 已答：${compactGuidanceText(turn.answer, 520)}`).join("\n")}\n\n这些内容只用于避免重复提问与判断下一条最值得验证的缺口。不得将其当作已入库事实、不得补全客户意图、不得要求 SAM 重复已经回答的内容。`;
+}
+
+function toAnswerExtractionResult(candidate: any) {
+  const { nextQuestion: _nextQuestion, ...result } = candidate || {};
+  return result;
 }
 
 export const appRouter = router({
@@ -520,8 +505,13 @@ export const appRouter = router({
       const snapshot = buildCustomerGuidanceSnapshot({ client, contacts, meetings, signals, readiness, meddpicc });
       return generateAIGuidance("customer", snapshot, contacts);
     }),
-    opportunityGuide: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number(), stageTarget: z.enum(["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"]).optional() })).mutation(async ({ input }) => {
-      const snapshot = await buildOpportunityGuidanceSnapshot(input.clientId, input.opportunityId, "", input.stageTarget);
+    opportunityGuide: protectedProcedure.input(z.object({
+      clientId: z.number(), opportunityId: z.number(),
+      stageTarget: z.enum(["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"]).optional(),
+      history: z.array(z.object({ question: z.string().min(3).max(1600), answer: z.string().min(1).max(6000) })).max(12).optional(),
+    })).mutation(async ({ input }) => {
+      const history = (input.history || []).map(turn => ({ question: turn.question.trim(), answer: turn.answer.trim() }));
+      const snapshot = await buildOpportunityGuidanceSnapshot(input.clientId, input.opportunityId, buildTransientGuidanceContext(history), input.stageTarget);
       return generateAIGuidance("opportunity", snapshot);
     }),
     interpretAnswer: protectedProcedure.input(z.object({
@@ -530,7 +520,6 @@ export const appRouter = router({
       stageTarget: z.enum(["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"]).optional(),
     })).mutation(async ({ input }) => {
       if (input.scope === "opportunity" && !input.opportunityId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机引导需要关联商机。" });
-      let existingContext = "";
       let uncoveredMeddpiccDims: MeddpiccDimCode[] = [];
       const conversationHistory: GuidanceHistoryTurn[] = (input.history || []).slice(-12).map(turn => ({ question: turn.question.trim(), answer: turn.answer.trim() }));
       const fullConversationHistory = [...conversationHistory, { question: input.question.trim(), answer: input.answer.trim() }];
@@ -552,13 +541,9 @@ export const appRouter = router({
                 ["championScore", "championNotes", "C1", "内部支持者"],
                 ["competitionScore", "competitionNotes", "C2", "竞争态势"],
               ];
-              const scored = scoreLabels
-                .filter(([scoreKey, notesKey]) => Number(meddpicc[scoreKey]) > 0 && String(meddpicc[notesKey] || "").trim().length > 0)
-                .map(([, , , label]) => label);
               uncoveredMeddpiccDims = scoreLabels
                 .filter(([scoreKey, notesKey]) => Number(meddpicc[scoreKey]) <= 0 || String(meddpicc[notesKey] || "").trim().length === 0)
                 .map(([, , dim]) => dim);
-              existingContext = `\n\n已有证据方向：${scored.length ? scored.join("、") : "暂无"}。尚未覆盖的维度：${uncoveredMeddpiccDims.length ? uncoveredMeddpiccDims.join("、") : "暂无"}。nextQuestion 必须针对评分为 0 或证据备注为空的维度，且不得重复 AI 问题原文。`;
             }
           }
         } catch {
@@ -567,15 +552,12 @@ export const appRouter = router({
       }
       if (isGuidanceTopicExhaustionAnswer(input.answer)) {
         const exhausted = buildTopicExhaustedAnswerInterpretation(input.scope, input.question, uncoveredMeddpiccDims, fullConversationHistory);
-        if (input.scope === "opportunity" && input.opportunityId) {
-          exhausted.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: exhausted.nextQuestion, history: fullConversationHistory });
-        }
-        return exhausted;
+        return toAnswerExtractionResult(exhausted);
       }
       const conversationContext = conversationHistory.length
         ? `\n\n本轮此前问答（仅用于避免重复，不是已写入事实）：\n${conversationHistory.map((turn, index) => `${index + 1}. AI 问：${compactGuidanceText(turn.question, 300)}\n   SAM 答：${compactGuidanceText(turn.answer, 500)}`).join("\n")}`
         : "";
-      const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、客户原话、SAM 对已发生客户表态的转述、决策接触、触发事件或商机证据，必须返回一个待确认候选；不能仅因不是逐字原话而判定为 none。\n- 商机场景若明确指出最终签字人、审批人、关键人物的支持/反对或权力关系，candidateTarget=meddpicc，meddpiccDim=E。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 只有回答纯属计划、愿望、推测且没有任何已发生人物/表态/动作时，candidateTarget 才能为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- nextQuestion 可作为降级备用问题；正式下一问会重新基于完整商机诊断生成。不得重复已问主题、不要出现 MEDDPICC、3 Why、Win Formula 等术语。\n- topicStatus 固定返回 continue。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。${existingContext}${conversationContext}`;
+      const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。你只负责事实提取，不负责生成、建议或决定下一问。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、客户原话、SAM 对已发生客户表态的转述、决策接触、触发事件或商机证据，必须返回一个待确认候选；不能仅因不是逐字原话而判定为 none。\n- 商机场景若明确指出最终签字人、审批人、关键人物的支持/反对或权力关系，candidateTarget=meddpicc，meddpiccDim=E。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 只有回答纯属计划、愿望、推测且没有任何已发生人物/表态/动作时，candidateTarget 才能为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- topicStatus 固定返回 continue。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。${conversationContext}`;
       let result: Awaited<ReturnType<typeof invokeLLM>> | undefined;
       try {
         result = await invokeLLM({
@@ -586,35 +568,22 @@ export const appRouter = router({
       } catch (error) {
         console.warn("[AI Guidance] interpretAnswer model fallback", error instanceof Error ? error.message : String(error));
         const fallback = buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims, fullConversationHistory);
-        if (input.scope === "opportunity" && input.opportunityId) fallback.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: fallback.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget });
-        return fallback;
+        return toAnswerExtractionResult(fallback);
       }
       const raw = getLLMTextContent(result?.choices?.[0]?.message?.content);
       if (!raw) {
         const fallback = buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims, fullConversationHistory);
-        if (input.scope === "opportunity" && input.opportunityId) fallback.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: fallback.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget });
-        return fallback;
+        return toAnswerExtractionResult(fallback);
       }
       try {
         const parsed = JSON.parse(extractJSON(raw));
         const explicitCandidate = input.scope === "opportunity" ? buildExplicitOpportunityCandidate(input.answer, uncoveredMeddpiccDims, fullConversationHistory) : null;
-        if (explicitCandidate) {
-          explicitCandidate.nextQuestion = input.opportunityId ? await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: explicitCandidate.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget }) : explicitCandidate.nextQuestion;
-          return explicitCandidate;
-        }
-        const normalizeQuestion = (value: unknown) => String(value || "").replace(/[\s，。？！：；,.?!:;]/g, "").toLowerCase();
-        if (!parsed.nextQuestion || normalizeQuestion(parsed.nextQuestion) === normalizeQuestion(input.question) || isQuestionTopicAlreadyCovered(parsed.nextQuestion, fullConversationHistory)) {
-          parsed.nextQuestion = parsed.candidateTarget === "meddpicc" && parsed.meddpiccDim
-            ? nextUncoveredMeddpiccQuestion(uncoveredMeddpiccDims, parsed.meddpiccDim, fullConversationHistory.map(turn => turn.question))
-            : buildNoWriteAnswerInterpretation(input.scope, input.question, uncoveredMeddpiccDims, fullConversationHistory).nextQuestion;
-        }
+        if (explicitCandidate) return toAnswerExtractionResult(explicitCandidate);
         parsed.topicStatus = "continue";
-        if (input.scope === "opportunity" && input.opportunityId) parsed.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: parsed.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget });
-        return parsed;
+        return toAnswerExtractionResult(parsed);
       } catch {
         const fallback = buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims, fullConversationHistory);
-        if (input.scope === "opportunity" && input.opportunityId) fallback.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: fallback.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget });
-        return fallback;
+        return toAnswerExtractionResult(fallback);
       }
     }),
   }),

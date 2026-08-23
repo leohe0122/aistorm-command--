@@ -1,5 +1,5 @@
 // AIStorm Command Service Worker
-const CACHE_NAME = 'aistorm-command-v20260823-ai-guidance-stage-gates-complete-v3';
+const CACHE_NAME = 'aistorm-command-v20260823-opportunity-room-system-refactor-v4';
 
 // Install: skip waiting so new SW activates immediately
 self.addEventListener('install', (event) => {
