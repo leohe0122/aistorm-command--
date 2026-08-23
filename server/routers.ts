@@ -15,7 +15,7 @@ import { evaluateCustomerReadiness, type CustomerStage } from "../shared/custome
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
 import { classifyExplicitOpportunityFact, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion, topicMeddpiccDimension, type GuidanceHistoryTurn, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
-import { AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
+import { AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildStageAwareGuidancePromptSuffix, buildAccountGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 import { calculateWinFactors } from "../shared/winFactors";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -450,14 +450,30 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
   const stageTarget = resolveGuidanceStageTarget(opportunity.stage, requestedStage);
   const stageRequirements = STAGE_REQUIREMENTS[stageTarget as keyof typeof STAGE_REQUIREMENTS] || [];
   const stageMeddpicc = meddpicc[0] as any;
+  // 提取本轮history中已覆盖的MEDDPICC维度和特殊门控，用于临时跳过已回答的门控
+  const historyLines = transientContext ? transientContext.split("\n").filter(line => line.includes("SAM 已答：")).map(line => line.replace(/.*SAM 已答：/, "").trim()) : [];
+  const historyCoveredDims = new Set<string>();
+  for (const answer of historyLines) {
+    const fact = classifyExplicitOpportunityFact(answer);
+    if (fact?.dim) historyCoveredDims.add(fact.dim);
+    // 竞争相关回答临时满足 gate8CompDefensible
+    if (/(竞品|竞争|crowdstrike|奇安信|深信服|sentinelone|替换|其他厂商)/i.test(answer)) historyCoveredDims.add("gate8CompDefensible");
+    // 触发事件相关回答临时满足 gate_trigger
+    if (/(到期|不续签|renew|renewal|截止|deadline|时间节点|触发)/i.test(answer)) historyCoveredDims.add("gate_trigger");
+    // 技术决策链相关回答临时满足 gate_tech_owner
+    if (/(技术.*签字|签字.*技术|poc.*谁|谁.*poc|评估.*谁|谁.*评估)/i.test(answer)) historyCoveredDims.add("gate_tech_owner");
+  }
   const missingStageRequirements = stageRequirements.map(requirement => {
     const isCompetition = requirement.key === "gate8CompDefensible";
-    const mapping = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
+    const isCustomGate = ["gate_trigger", "gate_tech_owner"].includes(requirement.key);
+    const mapping = (isCompetition || isCustomGate) ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
     const evidence = isCompetition
       ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || stageMeddpicc?.competitionNotes || "").trim()
-      : String(stageMeddpicc?.[mapping?.notes || ""] || "").trim();
-    const score = isCompetition ? Number(stageMeddpicc?.competitionScore || 0) : Number(stageMeddpicc?.[mapping?.score || ""] || 0);
-    return { ...requirement, met: score >= 2 && evidence.length >= 10, evidence };
+      : isCustomGate ? "" : String(stageMeddpicc?.[mapping?.notes || ""] || "").trim();
+    // 信任SAM原则：notes非空即满足；本轮history已回答该维度则临时移除，避免重复提问
+    const metByDb = evidence.length >= 5;
+    const metByHistory = historyCoveredDims.has(requirement.key);
+    return { ...requirement, met: metByDb || metByHistory, evidence };
   }).filter(requirement => !requirement.met);
   const stageGateContext = stageRequirements.length
     ? `\n\n【阶段优先门控】\n当前阶段：${opportunity.stage}；本轮引导对应阶段：${stageTarget}。\n${missingStageRequirements.length ? `尚未满足的准入证据（按顺序）：${missingStageRequirements.map(item => `${item.label}；自然语言问题：${item.question}`).join("\n")}` : "该阶段定义的准入证据已入库；才可使用 Win 因子排序其他补证问题。"}`
@@ -557,7 +573,7 @@ export const appRouter = router({
       const conversationContext = conversationHistory.length
         ? `\n\n本轮此前问答（仅用于避免重复，不是已写入事实）：\n${conversationHistory.map((turn, index) => `${index + 1}. AI 问：${compactGuidanceText(turn.question, 300)}\n   SAM 答：${compactGuidanceText(turn.answer, 500)}`).join("\n")}`
         : "";
-      const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。你只负责事实提取，不负责生成、建议或决定下一问。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、客户原话、SAM 对已发生客户表态的转述、决策接触、触发事件或商机证据，必须返回一个待确认候选；不能仅因不是逐字原话而判定为 none。\n- 商机场景若明确指出最终签字人、审批人、关键人物的支持/反对或权力关系，candidateTarget=meddpicc，meddpiccDim=E。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 只有回答纯属计划、愿望、推测且没有任何已发生人物/表态/动作时，candidateTarget 才能为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- topicStatus 固定返回 continue。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。${conversationContext}`;
+      const prompt = `你正在帮助 SAM 把他已经知道的客户事实整理成结构化候选，供他一键确认写入系统。\n\nSAM 是专业销售，他的回答默认反映真实客户情况。你的任务是提取和整理，不是评判真假。\n\n当前场景：${input.scope === “customer” ? “客户经营与购买信号” : “商机赢单与客户证据”}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n提取规则：\n- 只要 SAM 回答了实质性内容（包含人物、动作、表态、时间节点、数字或关系描述），必须输出一个候选让 SAM 确认；不能因为不是”客户原话逐字转述”就判为 none。\n- 商机场景：SAM 提到最终签字人、审批人、支持者或决策关系，candidateTarget=meddpicc；根据内容选最匹配的 meddpiccDim（E=签字人/权力，M=预算/数字，C1=Champion，C2=竞争，D1=标准，D2=流程，P=采购，I=痛点）。\n- 客户经营场景：candidateTarget=purchase_signal。\n- candidateTarget=none 只保留给 SAM 明确说”不知道”/”没有”/”暂时不清楚”的情况；此时 message 写”SAM 暂无此信息，跳过”，evidence 留空。\n- evidence 用 SAM 自己的话简洁转述，不添加未提及信息，不做价值判断。\n- confidence 默认 medium；SAM 提到具体原话或直接引用客户表态时用 high。\n- topicStatus 固定返回 continue。\n- 严格按 JSON Schema 返回，JSON 外不输出文字。${conversationContext}`;
       let result: Awaited<ReturnType<typeof invokeLLM>> | undefined;
       try {
         result = await invokeLLM({
@@ -4480,7 +4496,7 @@ ${contactList}
           ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || (meddpicc[0] as any)?.competitionNotes || "").trim()
           : String((meddpicc[0] as any)?.[notesField || ""] || "").trim();
         const score = isCompetition ? Number((meddpicc[0] as any)?.competitionScore || 0) : Number((meddpicc[0] as any)?.[scoreField || ""] || 0);
-        const met = score >= 2 && evidence.length >= 10;
+        const met = evidence.length >= 5;
         return { ...requirement, met, evidence: met ? evidence : "数据不足，暂不判断" };
       });
       return { currentStage: opportunity.stage, targetStage: input.targetStage, requirements, isReady: requirements.every(item => item.met), missing: requirements.filter(item => !item.met) };
