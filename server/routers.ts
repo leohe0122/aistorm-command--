@@ -247,7 +247,21 @@ function selectGuidancePowerContacts(contacts: any[]): string[] {
     .map(contact => String(contact.name).trim());
 }
 
-function buildBaselineGuidance(scope: "customer" | "opportunity", contacts: any[] = []) {
+function extractStageGateQuestion(snapshot: string) {
+  return snapshot.match(/自然语言问题：([^\n]+)/)?.[1]?.trim() || "";
+}
+
+function buildBaselineGuidance(scope: "customer" | "opportunity", contacts: any[] = [], stageGateQuestion = "") {
+  if (scope === "opportunity" && stageGateQuestion) {
+    return {
+      dataSufficiency: "insufficient" as const,
+      factSummary: "数据不足，暂不判断。当前阶段的准入证据尚未形成完整记录。",
+      primaryQuestion: stageGateQuestion,
+      whyThisQuestion: "当前阶段仍缺少这项客观准入证据；在补齐前，不应以其他赢单分数替代阶段判断。",
+      answerFocus: "decision_chain" as const,
+      doNotAssume: ["不能假定当前阶段已经满足推进条件", "不能假定客户已经接受合同或竞争方案"],
+    };
+  }
   const powerContacts = selectGuidancePowerContacts(contacts);
   const target = powerContacts.length ? powerContacts.join("、") : scope === "customer" ? "最能影响这家客户走向的高层" : "最能影响这笔商机走向的关键人";
   const namedTarget = powerContacts.length > 0;
@@ -380,15 +394,15 @@ ${snapshot}
       // 使用同一事实契约与 Schema 的快速模型，不改变事实约束或确认写入边界。
       result = await runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal);
     } catch {
-      return buildBaselineGuidance(scope, contacts);
+      return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot));
     }
   } finally {
     clearTimeout(primaryTimer);
     clearTimeout(totalTimer);
   }
   const raw = getLLMTextContent(result.choices[0]?.message.content);
-  if (!raw) return buildBaselineGuidance(scope, contacts);
-  try { return JSON.parse(extractJSON(raw)); } catch { return buildBaselineGuidance(scope, contacts); }
+  if (!raw) return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot));
+  try { return JSON.parse(extractJSON(raw)); } catch { return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)); }
 }
 
 const OPPORTUNITY_STAGE_ORDER = ["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"] as const;
@@ -455,12 +469,14 @@ async function resolveOpportunityFollowUpQuestion({
       ? `\n\n【本轮临时问答：尚未确认、尚未写入数据库】\n${history.map((turn, index) => `${index + 1}. 已问：${compactGuidanceText(turn.question, 260)}\n   SAM 已答：${compactGuidanceText(turn.answer, 520)}`).join("\n")}\n\n这些内容只用于避免重复提问与判断下一条最值得验证的缺口。不得将其当作已入库事实、不得补全客户意图、不得要求 SAM 重复已经回答的内容。`
       : "";
     const snapshot = await buildOpportunityGuidanceSnapshot(clientId, opportunityId, temporaryEvidence, stageTarget);
+    const stageGateQuestion = extractStageGateQuestion(snapshot);
     const freshGuidance = await generateAIGuidance("opportunity", snapshot);
     const freshQuestion = String(freshGuidance?.primaryQuestion || "").trim();
     const normalizeQuestion = (value: string) => value.replace(/[\s，。？！：；,.?!:;]/g, "").toLowerCase();
     if (freshQuestion && normalizeQuestion(freshQuestion) !== normalizeQuestion(currentQuestion) && !isQuestionTopicAlreadyCovered(freshQuestion, history)) {
       return freshQuestion;
     }
+    if (stageGateQuestion && !isQuestionTopicAlreadyCovered(stageGateQuestion, history)) return stageGateQuestion;
   } catch (error) {
     console.warn("[AI Guidance] follow-up diagnostic fallback", error instanceof Error ? error.message : String(error));
   }

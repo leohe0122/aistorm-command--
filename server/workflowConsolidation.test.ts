@@ -401,7 +401,8 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("AI_GUIDANCE_TOTAL_TIMEOUT_MS = 15_000");
     expect(routers).toContain('runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal)');
     expect(routers).toContain("maxRetries: 0");
-    expect(routers).toContain("buildBaselineGuidance(scope, contacts)");
+    expect(routers).toContain("buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot))");
+    expect(routers).toContain("extractStageGateQuestion(snapshot)");
     expect(routers).not.toContain('factor: { type: "string", enum: ["Pain", "Power", "Champion", "Value", "Control"] }');
     expect(routers).toContain("AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT");
     expect(routers).toContain('content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT');
