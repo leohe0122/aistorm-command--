@@ -111,7 +111,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
       customerGuideMutation.reset();
       opportunityGuideMutation.reset();
       toast.info("已切换为基础引导：不会写入任何事实，请如实补充客户原话或动作。");
-    }, 12_000);
+    }, 20_000);
     return () => window.clearTimeout(timeout);
   }, [pendingGuide, customerGuideMutation, opportunityGuideMutation, powerContactNames, scope]);
 

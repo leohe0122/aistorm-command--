@@ -212,19 +212,19 @@ function buildCustomerGuidanceSnapshot({
 
 const AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500;
 const AI_GUIDANCE_TOTAL_TIMEOUT_MS = 15_000;
-// 当前内置 Forge 模型目录没有 gpt-4o；主动引导保留目录中可用的高推理 gpt-5。
-// 此路径不传 reasoning，避免兼容提供商对该可选参数的差异影响交互可用性。
+// 主动引导与回答解释统一使用已验证稳定的 gpt-4o-mini 外部通道；
+// 仅在主路径失败时使用内置 gpt-5-mini 作为有限降级，不改变事实边界。
 const AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT = `你是 AIStorm Command 的主动式销售引导。你的唯一任务是帮助 SAM 把自己已经知道、但尚未录入系统的客户事实存入系统。
 只把客户原话、客户动作、已发生的会议/邮件、明确时间节点或可靠外部事件视为事实；不得将销售计划、主观判断或历史关系直接当作客户意图。
 你不是在指导 SAM 做销售动作，也不是要求 SAM 再去问客户、转发材料或补填方法论字段。你是在问 SAM：你已经知道什么、见过什么、对方说过什么。
 一次只问一个自然语言问题。不要在问题中使用销售方法论术语，不杜撰、不补全未知信息；信息不足时明确“数据不足，暂不判断”。
 输出必须满足传入的 JSON Schema，且不输出 JSON 以外文字。`;
 
-async function runGuidanceModel(model: "gpt-5" | "gpt-5-mini", scope: "customer" | "opportunity", prompt: string, signal?: AbortSignal) {
+async function runGuidanceModel(model: "gpt-4o-mini" | "gpt-5-mini", scope: "customer" | "opportunity", prompt: string, signal?: AbortSignal, useBuiltin = false) {
   return invokeLLM({
     model,
-    useBuiltin: true,
-    maxCompletionTokens: model === "gpt-5" ? 800 : 600,
+    ...(useBuiltin ? { useBuiltin: true } : {}),
+    maxCompletionTokens: model === "gpt-4o-mini" ? 800 : 600,
     signal,
     maxRetries: 0,
     messages: [{ role: "system", content: AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT }, { role: "user", content: prompt }],
@@ -402,12 +402,12 @@ ${snapshot}
   }, AI_GUIDANCE_TOTAL_TIMEOUT_MS);
   let result;
   try {
-    result = await runGuidanceModel("gpt-5", scope, prompt, primaryController.signal);
+    result = await runGuidanceModel("gpt-4o-mini", scope, prompt, primaryController.signal);
   } catch {
     try {
       // 交互层必须在有限窗口内给 SAM 下一问。仅在主模型未及时返回或不可用时
       // 使用同一事实契约与 Schema 的快速模型，不改变事实约束或确认写入边界。
-      result = await runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal);
+      result = await runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal, true);
     } catch {
       return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot));
     }

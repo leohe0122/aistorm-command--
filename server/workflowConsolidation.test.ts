@@ -134,8 +134,8 @@ describe("作战工作流入口收敛", () => {
     const indexHtml = projectFile("client/index.html");
     const serviceWorker = projectFile("client/public/sw.js");
     const app = projectFile("client/src/App.tsx");
-    expect(indexHtml).toContain("/sw.js?v=20260823-opportunity-room-system-refactor-v5");
-    expect(serviceWorker).toContain("aistorm-command-v20260823-opportunity-room-system-refactor-v5");
+    expect(indexHtml).toContain("/sw.js?v=20260823-ai-guidance-gpt4omini-timeout-v6");
+    expect(serviceWorker).toContain("aistorm-command-v20260823-ai-guidance-gpt4omini-timeout-v6");
     expect(serviceWorker).toContain("event.request.mode === 'navigate'");
     expect(app).toContain("controllerchange");
   });
@@ -381,9 +381,9 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("history }, { onSuccess, onError }");
     expect(guidancePanel).not.toContain("data.nextQuestion");
     expect(guidancePanel).toContain("系统未写入任何事实");
-    expect(guidancePanel).toContain("}, 12_000)");
+    expect(guidancePanel).toContain("}, 20_000)");
     expect(guidancePanel).toContain("已切换为基础引导");
-    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260823-opportunity-room-system-refactor-v5");
+    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260823-ai-guidance-gpt4omini-timeout-v6");
     expect(guidancePanel).toContain("const working = pendingGuide || interpretMutation.isPending");
     expect(guidancePanel).not.toContain("healthCheck.refetch()");
     expect(guidancePanel).not.toContain("health_timeout");
@@ -407,11 +407,12 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("meetings.slice(0, 2)");
     expect(routers).toContain("signals.slice(0, 3)");
     expect(routers).toContain("summarizeGuidanceMeddpiccScores");
-    expect(routers).toContain('maxCompletionTokens: model === "gpt-5" ? 800 : 600');
+    expect(routers).toContain('maxCompletionTokens: model === "gpt-4o-mini" ? 800 : 600');
     expect(routers).not.toContain("readiness.checks || []");
     expect(routers).toContain("AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500");
     expect(routers).toContain("AI_GUIDANCE_TOTAL_TIMEOUT_MS = 15_000");
-    expect(routers).toContain('runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal)');
+    expect(routers).toContain('runGuidanceModel("gpt-4o-mini", scope, prompt, primaryController.signal)');
+    expect(routers).toContain('runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal, true)');
     expect(routers).toContain("maxRetries: 0");
     expect(routers).toContain("buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot))");
     expect(routers).toContain("extractStageGateQuestion(snapshot)");
