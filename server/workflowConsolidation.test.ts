@@ -446,6 +446,14 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("补齐进入「{stageTarget}」所需的阶段证据");
   });
 
+  it("在模型忽略提示词时仍强制以未满足的阶段门控替换问题", () => {
+    const routers = projectFile("server/routers.ts");
+    expect(routers).toContain("function enforceStageGateGuidance");
+    expect(routers).toContain("primaryQuestion: stageGateQuestion");
+    expect(routers).toContain("不能用高层态度或其他赢单分数替代阶段判断");
+    expect(routers).toContain("return enforceStageGateGuidance(scope, snapshot, JSON.parse(extractJSON(raw)))");
+  });
+
   it("为不支持 reasoning 的兼容模型自动降级一次，且不对参数错误进行无效退避重试", () => {
     const llmCore = projectFile("server/_core/llm.ts");
     expect(llmCore).toContain("response.status === 429 || response.status >= 500");

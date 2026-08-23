@@ -251,6 +251,20 @@ function extractStageGateQuestion(snapshot: string) {
   return snapshot.match(/自然语言问题：([^\n]+)/)?.[1]?.trim() || "";
 }
 
+function enforceStageGateGuidance(scope: "customer" | "opportunity", snapshot: string, guidance: any) {
+  const stageGateQuestion = scope === "opportunity" ? extractStageGateQuestion(snapshot) : "";
+  if (!stageGateQuestion) return guidance;
+  return {
+    ...guidance,
+    dataSufficiency: "insufficient" as const,
+    factSummary: "数据不足，暂不判断。当前阶段的准入证据尚未形成完整记录。",
+    primaryQuestion: stageGateQuestion,
+    whyThisQuestion: "当前阶段仍缺少这项客观准入证据；在补齐前，不能用高层态度或其他赢单分数替代阶段判断。",
+    answerFocus: "decision_chain" as const,
+    doNotAssume: ["不能假定当前阶段已经满足推进条件", "不能假定客户已经接受合同或竞争方案"],
+  };
+}
+
 function buildBaselineGuidance(scope: "customer" | "opportunity", contacts: any[] = [], stageGateQuestion = "") {
   if (scope === "opportunity" && stageGateQuestion) {
     return {
@@ -402,7 +416,7 @@ ${snapshot}
   }
   const raw = getLLMTextContent(result.choices[0]?.message.content);
   if (!raw) return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot));
-  try { return JSON.parse(extractJSON(raw)); } catch { return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)); }
+  try { return enforceStageGateGuidance(scope, snapshot, JSON.parse(extractJSON(raw))); } catch { return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)); }
 }
 
 const OPPORTUNITY_STAGE_ORDER = ["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"] as const;
