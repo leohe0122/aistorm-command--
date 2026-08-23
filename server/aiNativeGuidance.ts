@@ -23,19 +23,24 @@ export const STAGE_REQUIREMENTS = {
   "需求挖掘": [
     { key: "I", label: "I 痛点牵连", question: "这个问题影响了哪个部门的哪位负责人？他上次提到这个问题时说了什么？" },
     { key: "M", label: "M 可量化价值", question: "如果这个问题不解决，客户每年大概损失多少？请记录他们的数字，不是我们的估算。" },
+    { key: "C1", label: "C1 潜在 Champion", question: "客户内部谁对这个问题最有感觉、最希望解决？他有没有主动找过你？" },
   ],
   "技术验证": [
     { key: "D1", label: "D1 决策标准", question: "客户评估技术方案的标准是什么？谁定的这个标准？" },
     { key: "C1", label: "C1 Champion", question: "谁在客户内部真正推动这个项目？他的个人动机和具体推动行为是什么？" },
+    { key: "gate8CompDefensible", label: "竞争初步态势", question: "客户还在看哪些其他方案？我们和他们相比，客户是怎么说的？" },
   ],
   "方案提案": [
     { key: "E", label: "E 经济决策人", question: "最终谁签字？他关心的是成本、风险还是合规？你见过他吗？" },
     { key: "D2", label: "D2 决策流程", question: "他们内部怎么做决定？需要几轮审批？谁可能一票否决？" },
     { key: "M", label: "M 可量化价值", question: "ROI 的数字是否已经准备好？客户的 CFO 或财务会如何看待这个投入？" },
+    { key: "C1", label: "C1 Champion 可靠性", question: "你的内部支持者有没有在高层面前替你说过话？说了什么？" },
   ],
   "商务谈判": [
-    { key: "P", label: "P 采购流程", question: "合同走哪个部门审批？法务和采购的关注点是什么？" },
+    { key: "P", label: "P 采购流程", question: "合同走哪个部门审批？法务和采购的关注点是什么？预计多久可以完成？" },
+    { key: "E", label: "E 最终签字人确认", question: "最终签字人对这个项目的立场，你最近一次接触是什么时候？他说了什么或做了什么？" },
     { key: "gate8CompDefensible", label: "竞争可防御性", question: "竞品目前的状态是什么？他们有没有提出你无法反驳的论点？" },
+    { key: "C1", label: "C1 Champion 行动", question: "你的内部支持者上次为推进这个项目具体做了什么行动？结果如何？" },
   ],
 } as const;
 
