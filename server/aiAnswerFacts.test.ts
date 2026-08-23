@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyExplicitOpportunityFact } from "../shared/aiAnswerFacts";
+import { classifyExplicitOpportunityFact, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion } from "../shared/aiAnswerFacts";
 
 describe("AI 主动引导明确商机事实分类", () => {
   const uncovered = ["M", "E", "D1", "D2", "P", "I", "C1", "C2"] as const;
@@ -31,5 +31,29 @@ describe("AI 主动引导明确商机事实分类", () => {
 
   it("不把没有事实的愿望识别为候选", () => {
     expect(classifyExplicitOpportunityFact("我希望客户尽快签单", [...uncovered])).toBeNull();
+  });
+
+  it("将部署规模、服务响应和巡检要求识别为决策标准，并转向采购决策流程", () => {
+    const result = classifyExplicitOpportunityFact("5000点部署，出问题要第一时间有人响应，每周至少一次安全巡检。", [...uncovered]);
+    expect(result?.dim).toBe("D1");
+    expect(result?.nextQuestion).toContain("评审或确认");
+    expect(inferGuidanceTopic("客户对于服务质量的期待和要求还有哪些？")).toBe("service_expectations");
+  });
+
+  it("将没有更多补充识别为主题收束，而不是新的客户事实", () => {
+    expect(isGuidanceTopicExhaustionAnswer("没有了")).toBe(true);
+    expect(isGuidanceTopicExhaustionAnswer("这些当前都还没有涉及。")).toBe(true);
+    expect(isGuidanceTopicExhaustionAnswer("Felix不认同EDR项目本身")).toBe(false);
+  });
+
+  it("不允许在已有服务要求回答后再次询问服务主题", () => {
+    const history = [{ question: "客户对于服务质量的期待和要求还有哪些？", answer: "出问题要第一时间有人响应，每周至少一次安全巡检。" }];
+    expect(isQuestionTopicAlreadyCovered("客户希望在服务方面有哪些具体的标准或预期？", history)).toBe(true);
+    expect(nextUncoveredMeddpiccQuestion([...uncovered], "D1", history.map(turn => turn.question))).toContain("评审或确认");
+  });
+
+  it("不允许在已确认人物立场或会议日期后回到同一主题", () => {
+    expect(isQuestionTopicAlreadyCovered("Felix 对当前方案的态度和分歧是什么？", [{ question: "谁对当前推进方向表达过明确态度？", answer: "Felix不认同EDR项目本身，认为并不紧迫。" }])).toBe(true);
+    expect(isQuestionTopicAlreadyCovered("你能分享更多关于会议的日期或此次接触的具体时间吗？", [{ question: "这次 Dinner 是什么时候确认的信息？", answer: "就是在上周的一次Dinner上确认的信息。" }])).toBe(true);
   });
 });

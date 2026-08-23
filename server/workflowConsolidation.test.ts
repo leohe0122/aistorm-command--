@@ -340,6 +340,12 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain('尚未覆盖的维度：${uncoveredMeddpiccDims.length ? uncoveredMeddpiccDims.join("、") : "暂无"}');
     expect(routers).toContain("评分为 0 或证据备注为空的维度");
     expect(routers).toContain("buildExplicitOpportunityCandidate");
+    expect(routers).toContain("buildOpportunityGuidanceSnapshot");
+    expect(routers).toContain("resolveOpportunityFollowUpQuestion");
+    expect(routers).toContain("【本轮临时问答：尚未确认、尚未写入数据库】");
+    expect(routers).toContain("不得将其当作已入库事实");
+    expect(routers).toContain("isGuidanceTopicExhaustionAnswer(input.answer)");
+    expect(routers).toContain("buildTopicExhaustedAnswerInterpretation");
     expect(routers).toContain("不得重复 AI 问题原文");
     expect(routers).toContain("normalizeQuestion(parsed.nextQuestion) === normalizeQuestion(input.question)");
     expect(routers).toContain("客户有没有说过具体的原话、提到时间节点、或做出明确的动作");
@@ -374,6 +380,9 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).not.toContain("**AI 当前判断**\\n${data.factSummary}");
     expect(guidancePanel).toContain("确认写入事实");
     expect(guidancePanel).toContain("暂不写入");
+    expect(guidancePanel).toContain("guidanceHistory");
+    expect(guidancePanel).toContain("pendingCandidates");
+    expect(guidancePanel).toContain("当前主题已收束");
     expect(guidancePanel).toContain("trpc.purchaseSignals.create.useMutation");
     expect(guidancePanel).toContain("trpc.opportunities.upsertMeddpicc.useMutation");
   });
