@@ -12,7 +12,7 @@ import { visitReminderHandler } from "../scheduled/visitReminder";
 import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
 
-const BUILD_MARKER = "20260823-ai-guidance-gpt4omini-timeout-v6";
+const BUILD_MARKER = "20260823-ai-guidance-full-design-trigger-v7";
 
 async function startServer() {
   console.log(`[STARTUP] PORT=${process.env.PORT ?? "undefined"} NODE_ENV=${process.env.NODE_ENV ?? "undefined"}`);
@@ -28,8 +28,8 @@ async function startServer() {
     res.status(200).json({
       build: BUILD_MARKER,
       aiReviewRoute: "review-one-to-n-v3-nonempty-guard",
-      aiGuidanceRoute: "contextual-guidance-gpt4omini-v6",
-      serviceWorker: "20260823-ai-guidance-gpt4omini-timeout-v6",
+      aiGuidanceRoute: "contextual-guidance-full-design-trigger-v7",
+      serviceWorker: "20260823-ai-guidance-full-design-trigger-v7",
       ts: Date.now(),
     });
   });

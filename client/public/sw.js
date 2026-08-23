@@ -1,5 +1,5 @@
 // AIStorm Command Service Worker
-const CACHE_NAME = 'aistorm-command-v20260823-ai-guidance-gpt4omini-timeout-v6';
+const CACHE_NAME = 'aistorm-command-v20260823-ai-guidance-full-design-trigger-v7';
 
 // Install: skip waiting so new SW activates immediately
 self.addEventListener('install', (event) => {
