@@ -13,9 +13,9 @@ import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildD
 import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
-import { classifyExplicitOpportunityFact, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion, topicMeddpiccDimension, type GuidanceHistoryTurn, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
+import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion, topicMeddpiccDimension, type GuidanceHistoryTurn, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
-import { AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
+import { ACCOUNT_REQUIREMENTS, AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildAccountGuidancePromptSuffix, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 import { calculateWinFactors } from "../shared/winFactors";
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -172,6 +172,33 @@ function summarizeGuidanceMeddpiccScores(meddpicc: unknown): Record<string, numb
   );
 }
 
+const ACCOUNT_GUIDANCE_STAGE_BY_CUSTOMER_STAGE: Record<CustomerStage, keyof typeof ACCOUNT_REQUIREMENTS> = {
+  "建图": "初步接触",
+  "进门": "关系发展",
+  "定痛": "关系发展",
+  "找人": "关系发展",
+  "进入商机": "战略锁定",
+};
+
+function accountRequirementHasEvidence(key: string, contacts: any[], meetings: any[], signals: any[]) {
+  const contactText = contacts.map(contact => `${contact.name || ""} ${contact.title || ""} ${contact.buyingRole || ""} ${contact.relationship || ""}`).join("\n");
+  const evidenceText = `${contactText}\n${meetings.map(meeting => `${meeting.attendees || ""} ${meeting.keyPoints || ""}`).join("\n")}\n${signals.map(signal => `${signal.subjectName || ""} ${signal.statement || signal.sourceReference || ""}`).join("\n")}`;
+  switch (key) {
+    case "contactCoverage": return contacts.length > 0;
+    case "contactInfluence": return contacts.some(contact => String(contact.buyingRole || "") !== "" && String(contact.buyingRole || "") !== "未知");
+    case "businessPressure": return signals.some(signal => ["intent_subject", "trigger_event"].includes(String(signal.signalType || ""))) || /(合规|监管|事故|风险|预算|高层指令|降本|到期|不续签)/i.test(evidenceText);
+    case "competitorPresence": return /(竞品|竞争|替换|crowdstrike|奇安信|深信服|sentinelone|defender|symantec|mcafee)/i.test(evidenceText);
+    case "championActivity": return contacts.some(contact => /champion|支持者|内线/i.test(`${contact.buyingRole || ""} ${contact.relationship || ""}`)) || /(主动联系|内部信息|帮我们推动|替我们推动)/i.test(evidenceText);
+    case "executiveEngagement": return /(ceo|cio|ciso|cto|cfo|vp|总裁|首席|副总裁)/i.test(evidenceText);
+    case "brandPerception": return /(品牌|认可|顾虑|印象|评价|倾向)/i.test(evidenceText);
+    case "blocker": return /(反对|抵触|保守|阻力|不同意|不认同)/i.test(evidenceText);
+    case "deliveryFeedback": return /(交付|上线|验收|反馈|评价)/i.test(evidenceText);
+    case "expansionOpportunity": return /(扩张|新增预算|规划|新项目|未来.*月)/i.test(evidenceText);
+    case "referenceWillingness": return /(案例|联合推广|标杆|背书|引用)/i.test(evidenceText);
+    default: return false;
+  }
+}
+
 function buildCustomerGuidanceSnapshot({
   client,
   contacts,
@@ -206,8 +233,16 @@ function buildCustomerGuidanceSnapshot({
     statement: compactGuidanceText(item.statement ?? item.sourceReference, 200),
   }));
   const blockers = (readiness?.blockers || []).slice(0, 4).map((item: unknown) => compactGuidanceText(item, 180));
+  const accountStage = ACCOUNT_GUIDANCE_STAGE_BY_CUSTOMER_STAGE[client.stage as CustomerStage] || "初步接触";
+  const accountRequirements = ACCOUNT_REQUIREMENTS[accountStage];
+  const missingAccountRequirements = accountRequirements.filter(requirement => !accountRequirementHasEvidence(requirement.key, contacts, meetings, signals));
+  const accountPromptSuffix = buildAccountGuidancePromptSuffix(
+    accountStage,
+    missingAccountRequirements,
+    selectGuidancePowerContacts(contacts),
+  );
 
-  return `【客户作战台已入库事实（精炼版）】\n客户：${client.name}\n当前阶段：${client.stage}\n当前缺口：${JSON.stringify(blockers)}\n关键人：${JSON.stringify(stakeholders)}\n最近两次客户对话：${JSON.stringify(recentMeetings)}\n最近三条购买信号：${JSON.stringify(recentSignals)}\n客户级证据评分：${JSON.stringify(summarizeGuidanceMeddpiccScores(meddpicc))}`;
+  return `【客户作战台已入库事实（精炼版）】\n客户：${client.name}\n当前阶段：${client.stage}\n当前缺口：${JSON.stringify(blockers)}\n关键人：${JSON.stringify(stakeholders)}\n最近两次客户对话：${JSON.stringify(recentMeetings)}\n最近三条购买信号：${JSON.stringify(recentSignals)}\n客户级证据评分：${JSON.stringify(summarizeGuidanceMeddpiccScores(meddpicc))}${accountPromptSuffix}`;
 }
 
 const AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500;
@@ -431,7 +466,7 @@ function resolveGuidanceStageTarget(currentStage: string, requestedStage?: strin
   return OPPORTUNITY_STAGE_ORDER[Math.min(Math.max(currentIndex + 1, 0), OPPORTUNITY_STAGE_ORDER.length - 1)];
 }
 
-async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId: number, transientContext = "", requestedStage?: string) {
+async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId: number, history: GuidanceHistoryTurn[] = [], requestedStage?: string) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
   const { opportunities, opportunityMeddpicc, threeWhy, painMetrics, competitionMap, keyContacts } = await import("../drizzle/schema");
@@ -450,14 +485,16 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
   const stageTarget = resolveGuidanceStageTarget(opportunity.stage, requestedStage);
   const stageRequirements = STAGE_REQUIREMENTS[stageTarget as keyof typeof STAGE_REQUIREMENTS] || [];
   const stageMeddpicc = meddpicc[0] as any;
+  const transientCoveredGates = getTransientStageGateCoverage(history);
   const missingStageRequirements = stageRequirements.map(requirement => {
     const isCompetition = requirement.key === "gate8CompDefensible";
     const mapping = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
     const evidence = isCompetition
       ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || stageMeddpicc?.competitionNotes || "").trim()
       : String(stageMeddpicc?.[mapping?.notes || ""] || "").trim();
-    const score = isCompetition ? Number(stageMeddpicc?.competitionScore || 0) : Number(stageMeddpicc?.[mapping?.score || ""] || 0);
-    return { ...requirement, met: score >= 2 && evidence.length >= 10, evidence };
+    const metByStoredFact = evidence.length >= 5;
+    const metByTransientAnswer = transientCoveredGates.has(requirement.key);
+    return { ...requirement, met: metByStoredFact || metByTransientAnswer, evidence, transient: metByTransientAnswer && !metByStoredFact };
   }).filter(requirement => !requirement.met);
   const stageGateContext = stageRequirements.length
     ? `\n\n【阶段优先门控】\n当前阶段：${opportunity.stage}；本轮引导对应阶段：${stageTarget}。\n${missingStageRequirements.length ? `尚未满足的准入证据（按顺序）：${missingStageRequirements.map(item => `${item.label}；自然语言问题：${item.question}`).join("\n")}` : "该阶段定义的准入证据已入库；才可使用 Win 因子排序其他补证问题。"}`
@@ -469,7 +506,7 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
   const annualValue = pains.reduce((sum: number, pain: any) => sum + Number(pain.annualValue || 0), 0);
   const winFactors = calculateWinFactors({ meddpicc: meddpicc[0] || null, threeWhy: why[0] || null, annualValue, contactCount: contacts.length });
   const stageAwareSuffix = buildStageAwareGuidancePromptSuffix(stageTarget || opportunity.stage, missingStageRequirements, contactNames);
-  return `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}\nWin 因子：${JSON.stringify(winFactors)}${stageGateContext}${stageAwareSuffix}\n\n${dealContext}${transientContext}`;
+  return `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}\nWin 因子：${JSON.stringify(winFactors)}${stageGateContext}${stageAwareSuffix}\n\n${dealContext}${buildTransientGuidanceContext(history)}`;
 }
 
 function buildTransientGuidanceContext(history: GuidanceHistoryTurn[]) {
@@ -511,7 +548,7 @@ export const appRouter = router({
       history: z.array(z.object({ question: z.string().min(3).max(1600), answer: z.string().min(1).max(6000) })).max(12).optional(),
     })).mutation(async ({ input }) => {
       const history = (input.history || []).map(turn => ({ question: turn.question.trim(), answer: turn.answer.trim() }));
-      const snapshot = await buildOpportunityGuidanceSnapshot(input.clientId, input.opportunityId, buildTransientGuidanceContext(history), input.stageTarget);
+      const snapshot = await buildOpportunityGuidanceSnapshot(input.clientId, input.opportunityId, history, input.stageTarget);
       return generateAIGuidance("opportunity", snapshot);
     }),
     interpretAnswer: protectedProcedure.input(z.object({
@@ -557,7 +594,7 @@ export const appRouter = router({
       const conversationContext = conversationHistory.length
         ? `\n\n本轮此前问答（仅用于避免重复，不是已写入事实）：\n${conversationHistory.map((turn, index) => `${index + 1}. AI 问：${compactGuidanceText(turn.question, 300)}\n   SAM 答：${compactGuidanceText(turn.answer, 500)}`).join("\n")}`
         : "";
-      const prompt = `你正在帮助 SAM 回答一个 AI 主动提出的问题。你只负责事实提取，不负责生成、建议或决定下一问。请只从 SAM 的回答中提取明确、可回溯的客户事实；不能把 SAM 的观点、愿望或推测当作客户事实。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n判断规则：\n- 若回答包含明确客户侧人物、客户原话、SAM 对已发生客户表态的转述、决策接触、触发事件或商机证据，必须返回一个待确认候选；不能仅因不是逐字原话而判定为 none。\n- 商机场景若明确指出最终签字人、审批人、关键人物的支持/反对或权力关系，candidateTarget=meddpicc，meddpiccDim=E。\n- 客户经营场景只能候选 purchase_signal；商机场景只能候选 meddpicc。\n- 只有回答纯属计划、愿望、推测且没有任何已发生人物/表态/动作时，candidateTarget 才能为 none，message 明确写“数据不足，暂不判断”，evidence 留空。\n- evidence 必须以 SAM 回答里的事实为依据；不得添加未提及的信息。\n- topicStatus 固定返回 continue。\n- 请严格按 JSON Schema 返回，JSON 外不得输出文字。${conversationContext}`;
+      const prompt = `你正在帮助 SAM 把他已经知道的客户事实整理成结构化候选，供他一键确认写入系统。\n\nSAM 是专业销售，他的实质性回答默认反映真实客户情况。你的任务是提取和整理，不是评判真假；候选在 SAM 确认前不会写入任何事实层。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n提取规则：\n- 只要 SAM 回答了实质性内容（人物、动作、表态、时间节点、数字或关系描述），必须输出一个待确认候选；不能因为不是客户原话逐字转述而判为 none。\n- 商机场景：最终签字人、审批人、支持者或决策关系映射到最匹配维度：E=签字人或权力，M=预算或数字，C1=Champion，C2=竞争，D1=标准，D2=流程，P=采购，I=痛点。\n- 客户经营场景：candidateTarget=purchase_signal。\n- candidateTarget=none 只保留给 SAM 明确回答“不知道”“没有”“暂时不清楚”或“没有更多补充”的情况；此时 message 写“SAM 暂无此信息，跳过”，evidence 留空。\n- evidence 用 SAM 自己的话简洁转述，不添加未提及信息，不做价值判断；confidence 默认 medium，直接引用客户表态时用 high。\n- topicStatus 固定返回 continue。\n- 严格按 JSON Schema 返回，JSON 外不得输出文字。${conversationContext}`;
       let result: Awaited<ReturnType<typeof invokeLLM>> | undefined;
       try {
         result = await invokeLLM({
@@ -583,6 +620,9 @@ export const appRouter = router({
         }
         const explicitCandidate = input.scope === "opportunity" ? buildExplicitOpportunityCandidate(input.answer, uncoveredMeddpiccDims, fullConversationHistory) : null;
         if (explicitCandidate) return toAnswerExtractionResult(explicitCandidate);
+        if (parsed?.candidateTarget === "none") {
+          return toAnswerExtractionResult(buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims, fullConversationHistory));
+        }
         parsed.topicStatus = "continue";
         return toAnswerExtractionResult(parsed);
       } catch {
@@ -4483,8 +4523,7 @@ ${contactList}
         const evidence = isCompetition
           ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || (meddpicc[0] as any)?.competitionNotes || "").trim()
           : String((meddpicc[0] as any)?.[notesField || ""] || "").trim();
-        const score = isCompetition ? Number((meddpicc[0] as any)?.competitionScore || 0) : Number((meddpicc[0] as any)?.[scoreField || ""] || 0);
-        const met = score >= 2 && evidence.length >= 10;
+        const met = evidence.length >= 5;
         return { ...requirement, met, evidence: met ? evidence : "数据不足，暂不判断" };
       });
       return { currentStage: opportunity.stage, targetStage: input.targetStage, requirements, isReady: requirements.every(item => item.met), missing: requirements.filter(item => !item.met) };

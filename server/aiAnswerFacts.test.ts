@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyExplicitOpportunityFact, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion } from "../shared/aiAnswerFacts";
+import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion } from "../shared/aiAnswerFacts";
 
 describe("AI 主动引导明确商机事实分类", () => {
   const uncovered = ["M", "E", "D1", "D2", "P", "I", "C1", "C2"] as const;
@@ -62,6 +62,22 @@ describe("AI 主动引导明确商机事实分类", () => {
     expect(result?.dim).toBe("P");
   });
 
+  it("将存量到期和不续签识别为决策流程时间触发事实", () => {
+    expect(inferGuidanceTopic("现有产品明年到期，客户明确表示不续签，必须尽快推进替换。"))
+      .toBe("decision_process");
+    expect(classifyExplicitOpportunityFact("现有许可明年到期，年底前必须完成内部决定。", [...uncovered])?.dim)
+      .toBe("D2");
+  });
+
+  it("将主流安全厂商名称识别为 C2，并阻止竞争主题重复追问", () => {
+    expect(classifyExplicitOpportunityFact("CrowdStrike 明年到期且客户不续签，奇安信也在参与竞争。", [...uncovered])?.dim)
+      .toBe("C2");
+    expect(isQuestionTopicAlreadyCovered(
+      "客户还在比较哪些竞品，各自被认可或质疑的点是什么？",
+      [{ question: "当前有哪些厂商参与竞争？", answer: "CrowdStrike 明年到期，奇安信也在竞争。" }],
+    )).toBe(true);
+  });
+
   it("保留模型已经产出的完整高置信候选，不再被确定性规则降级覆盖", () => {
     expect(hasValidExtractedFactCandidate({
       candidateTarget: "meddpicc",
@@ -78,5 +94,18 @@ describe("AI 主动引导明确商机事实分类", () => {
       candidateTarget: "none",
       evidence: "",
     })).toBe(false);
+  });
+
+  it("将未确认的最终签字人回答仅作为本轮 E 门控覆盖，推进到下一题而不写入事实", () => {
+    const covered = getTransientStageGateCoverage([
+      {
+        question: "最终谁签字批这笔预算？你见过他吗？他对这个安全项目说过什么或做过什么？",
+        answer: "Susanna 是最终签字人，我见过她，她与我们的创始人关系很好。",
+      },
+    ]);
+    expect(covered.has("E")).toBe(true);
+    expect(covered.has("D2")).toBe(false);
+    expect(covered.has("M")).toBe(false);
+    expect(covered.has("C1")).toBe(false);
   });
 });

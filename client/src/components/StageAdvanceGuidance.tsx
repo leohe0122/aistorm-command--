@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, ChevronRight, CircleAlert, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -7,12 +7,11 @@ import { cn } from "@/lib/utils";
 
 const STAGES = ["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"] as const;
 
-export function StageAdvanceGuidance({ clientId, opportunityId, currentStage, onTargetStageChange }: { clientId: number; opportunityId: number; currentStage: string; onTargetStageChange?: (stage: string) => void }) {
+export function StageAdvanceGuidance({ clientId, opportunityId, currentStage }: { clientId: number; opportunityId: number; currentStage: string }) {
   const utils = trpc.useUtils();
   const currentIndex = Math.max(0, STAGES.indexOf(currentStage as typeof STAGES[number]));
   const [targetStage, setTargetStage] = useState<(typeof STAGES)[number]>(() => STAGES[Math.min(currentIndex + 1, STAGES.length - 1)]);
   const input = useMemo(() => ({ clientId, opportunityId, targetStage }), [clientId, opportunityId, targetStage]);
-  useEffect(() => { onTargetStageChange?.(targetStage); }, [onTargetStageChange, targetStage]);
   const guidance = trpc.opportunities.getStageGuidance.useQuery(input);
   const advance = trpc.opportunities.advanceWithEvidence.useMutation({
     onSuccess: result => {

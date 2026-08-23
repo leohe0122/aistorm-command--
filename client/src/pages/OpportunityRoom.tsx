@@ -117,8 +117,6 @@ function AIWarJudgement({
   const [roleTaskReceipt, setRoleTaskReceipt] = useState<{ requested: number; created: number; skipped: number; error: string | null } | null>(null);
   const [reviewRunStatus, setReviewRunStatus] = useState<{ state: "idle" | "loading" | "success" | "error"; message?: string }>({ state: "idle" });
   const [forecastOpen, setForecastOpen] = useState(false);
-  const [guidanceStageTarget, setGuidanceStageTarget] = useState<string>(() => opportunity.stage);
-  useEffect(() => { setGuidanceStageTarget(opportunity.stage); }, [opportunity.stage]);
   const reviewMutation = trpc.insights.reviewOneToN.useMutation({
     onMutate: () => setReviewRunStatus({ state: "loading", message: "正在读取已入库事实、生成结构化 Review 并回写当前商机…" }),
     onSuccess: (result: any) => {
@@ -179,8 +177,8 @@ function AIWarJudgement({
         </Button></div>
       </div>
       <div className="px-4 pt-4"><EntryPurchaseSignals snapshot={opportunity.entryEvidenceSnapshot} /></div>
-      <div className="px-4 pt-4"><AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} stageTarget={guidanceStageTarget} /></div>
-      <div className="px-4 pt-4"><StageAdvanceGuidance clientId={clientId} opportunityId={opportunityId} currentStage={opportunity.stage} onTargetStageChange={setGuidanceStageTarget} /></div>
+      <div className="px-4 pt-4"><AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} stageTarget={opportunity.stage} /></div>
+      <div className="px-4 pt-4"><StageAdvanceGuidance clientId={clientId} opportunityId={opportunityId} currentStage={opportunity.stage} /></div>
       <div className="grid gap-px bg-cyan-300/10 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="bg-slate-950/60 p-4">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/70">判断</div>

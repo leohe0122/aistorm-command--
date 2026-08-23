@@ -354,19 +354,19 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("不得将其当作已入库事实");
     expect(routers).toContain("isGuidanceTopicExhaustionAnswer(input.answer)");
     expect(routers).toContain("buildTopicExhaustedAnswerInterpretation");
-    expect(routers).toContain("你只负责事实提取，不负责生成、建议或决定下一问");
+    expect(routers).toContain("SAM 是专业销售，他的实质性回答默认反映真实客户情况");
     expect(routers).not.toContain('nextQuestion: { type: "string" }');
     expect(routers).toContain('candidateTarget: scope === "opportunity" ? "meddpicc"');
     expect(routers).toContain('decisionEvidence ? "E" : processEvidence ? "D2" : "E"');
-    expect(routers).toContain("商机场景若明确指出最终签字人、审批人、关键人物的支持/反对或权力关系");
+    expect(routers).toContain("最终签字人、审批人、支持者或决策关系映射到最匹配维度");
     expect(routers).toContain("result?.choices?.[0]?.message?.content");
     expect(routers).toContain("health: protectedProcedure.query");
     expect(routers).toContain("数据不足，暂不判断");
     expect(routers).toContain('candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] }');
     expect(workstation).toContain('<AIActiveGuidancePanel scope="customer" clientId={clientId} powerContactNames={guidancePowerContactNames} />');
-    expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} stageTarget={guidanceStageTarget} />');
-    expect(opportunityRoom).toContain("useState<string>(() => opportunity.stage)");
-    expect(opportunityRoom).toContain("setGuidanceStageTarget(opportunity.stage)");
+    expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} stageTarget={opportunity.stage} />');
+    expect(opportunityRoom).not.toContain("guidanceStageTarget");
+    expect(opportunityRoom).not.toContain("setGuidanceStageTarget");
     expect(opportunityRoom).not.toContain("currentStageIndex + 1");
     expect(guidancePanel).toContain("让 AI 开始引导");
     expect(guidancePanel).toContain("当前判断");
@@ -422,6 +422,8 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("帮助 SAM 把脑子里的事实存入系统");
     expect(routers).toContain("严禁把销售动作伪装成问题");
     expect(routers).toContain("buildStageAwareGuidancePromptSuffix");
+    expect(routers).toContain("buildAccountGuidancePromptSuffix");
+    expect(routers).toContain("ACCOUNT_GUIDANCE_STAGE_BY_CUSTOMER_STAGE");
     expect(routers).toContain("calculateWinFactors");
     expect(routers).toContain("Win 因子：");
     const guidanceImplementation = routers.slice(routers.indexOf("const AI_GUIDANCE_PRIMARY_TIMEOUT_MS"), routers.indexOf("export const appRouter"));
@@ -460,7 +462,24 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("buildStageAwareGuidancePromptSuffix(stageTarget || opportunity.stage");
     expect(guidance).toContain("必须围绕第一项未满足门控提问");
     expect(guidance).toContain("提问时必须点名其中最相关的人");
-    expect(guidancePanel).toContain("补齐进入「{stageTarget}」所需的阶段证据");
+    expect(guidancePanel).toContain("当前阶段「{stageTarget}」的门控引导已激活");
+  });
+
+  it("让 AI 引导只读取当前商机阶段，不接受阶段推进下拉的目标阶段回写", () => {
+    const opportunityRoom = projectFile("client/src/pages/OpportunityRoom.tsx");
+    const stagePanel = projectFile("client/src/components/StageAdvanceGuidance.tsx");
+    expect(opportunityRoom).toContain("stageTarget={opportunity.stage}");
+    expect(opportunityRoom).not.toContain("guidanceStageTarget");
+    expect(opportunityRoom).not.toContain("onTargetStageChange={setGuidanceStageTarget}");
+    expect(stagePanel).not.toContain("onTargetStageChange");
+    expect(stagePanel).not.toContain("useEffect(() => { onTargetStageChange");
+  });
+
+  it("按信任 SAM 原则以已记录证据判定阶段门控，分数仅作为显示参考", () => {
+    const routers = projectFile("server/routers.ts");
+    expect((routers.match(/evidence\.length >= 5/g) || []).length).toBe(2);
+    expect(routers).not.toContain("score >= 2 && evidence.length >= 10");
+    expect(routers).not.toContain("score >= 50 && evidence.length >= 10");
   });
 
   it("在模型忽略提示词时仍强制以未满足的阶段门控替换问题", () => {
