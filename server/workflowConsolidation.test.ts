@@ -357,7 +357,7 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("数据不足，暂不判断");
     expect(routers).toContain('candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] }');
     expect(workstation).toContain('<AIActiveGuidancePanel scope="customer" clientId={clientId} powerContactNames={guidancePowerContactNames} />');
-    expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} />');
+    expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} stageTarget={guidanceStageTarget} />');
     expect(guidancePanel).toContain("让 AI 开始引导");
     expect(guidancePanel).toContain("当前判断");
     expect(guidancePanel).toContain("查看 AI 依据");
@@ -431,6 +431,18 @@ describe("作战工作流入口收敛", () => {
     expect(stagePanel).toContain("让 AI 引导补证");
     expect(stagePanel).toContain("确认推进至");
     expect(stagePanel).toContain("data-ai-active-guidance");
+  });
+
+  it("让商务谈判阶段的 AI 主动引导优先补采购与竞争门控，而非退回泛化 Win 因子问题", () => {
+    const routers = projectFile("server/routers.ts");
+    const guidancePanel = projectFile("client/src/components/AIActiveGuidancePanel.tsx");
+    expect(routers).toContain("【阶段优先门控】");
+    expect(routers).toContain("优先级高于 Win 因子");
+    expect(routers).toContain("商务谈判的采购流程");
+    expect(routers).toContain("gate8CompDefensible");
+    expect(routers).toContain("competitionNotes");
+    expect(routers).toContain("stageTarget: input.stageTarget");
+    expect(guidancePanel).toContain("补齐进入「{stageTarget}」所需的阶段证据");
   });
 
   it("为不支持 reasoning 的兼容模型自动降级一次，且不对参数错误进行无效退避重试", () => {

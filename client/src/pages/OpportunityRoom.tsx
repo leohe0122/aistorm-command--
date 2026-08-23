@@ -38,6 +38,7 @@ const roomSections: Array<{ id: RoomSection; label: string; icon: typeof Target 
 ];
 
 const roleOptions = ["AD", "SAM", "SA", "RSM"] as const;
+const GUIDANCE_STAGES = ["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"] as const;
 
 const scoreTone = (score: number) => score >= 75 ? "text-emerald-200 border-emerald-400/25 bg-emerald-400/10" : score >= 50 ? "text-amber-200 border-amber-400/25 bg-amber-400/10" : "text-rose-200 border-rose-400/25 bg-rose-400/10";
 
@@ -121,6 +122,9 @@ function AIWarJudgement({
   const [roleTaskReceipt, setRoleTaskReceipt] = useState<{ requested: number; created: number; skipped: number; error: string | null } | null>(null);
   const [reviewRunStatus, setReviewRunStatus] = useState<{ state: "idle" | "loading" | "success" | "error"; message?: string }>({ state: "idle" });
   const [forecastOpen, setForecastOpen] = useState(false);
+  const currentStageIndex = Math.max(0, GUIDANCE_STAGES.indexOf(opportunity.stage as typeof GUIDANCE_STAGES[number]));
+  const [guidanceStageTarget, setGuidanceStageTarget] = useState<string>(() => GUIDANCE_STAGES[Math.min(currentStageIndex + 1, GUIDANCE_STAGES.length - 1)]);
+  useEffect(() => { setGuidanceStageTarget(GUIDANCE_STAGES[Math.min(currentStageIndex + 1, GUIDANCE_STAGES.length - 1)]); }, [currentStageIndex]);
   const reviewMutation = trpc.insights.reviewOneToN.useMutation({
     onMutate: () => setReviewRunStatus({ state: "loading", message: "正在读取已入库事实、生成结构化 Review 并回写当前商机…" }),
     onSuccess: (result: any) => {
@@ -181,8 +185,8 @@ function AIWarJudgement({
         </Button></div>
       </div>
       <div className="px-4 pt-4"><EntryPurchaseSignals snapshot={opportunity.entryEvidenceSnapshot} /></div>
-      <div className="px-4 pt-4"><AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} /></div>
-      <div className="px-4 pt-4"><StageAdvanceGuidance clientId={clientId} opportunityId={opportunityId} currentStage={opportunity.stage} /></div>
+      <div className="px-4 pt-4"><AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} stageTarget={guidanceStageTarget} /></div>
+      <div className="px-4 pt-4"><StageAdvanceGuidance clientId={clientId} opportunityId={opportunityId} currentStage={opportunity.stage} onTargetStageChange={setGuidanceStageTarget} /></div>
       <div className="grid gap-px bg-cyan-300/10 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="bg-slate-950/60 p-4">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/70">判断</div>

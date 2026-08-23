@@ -56,4 +56,9 @@ describe("AI 主动引导明确商机事实分类", () => {
     expect(isQuestionTopicAlreadyCovered("Felix 对当前方案的态度和分歧是什么？", [{ question: "谁对当前推进方向表达过明确态度？", answer: "Felix不认同EDR项目本身，认为并不紧迫。" }])).toBe(true);
     expect(isQuestionTopicAlreadyCovered("你能分享更多关于会议的日期或此次接触的具体时间吗？", [{ question: "这次 Dinner 是什么时候确认的信息？", answer: "就是在上周的一次Dinner上确认的信息。" }])).toBe(true);
   });
+
+  it("将商务谈判中的合同审批事实映射为采购流程 P", () => {
+    const result = classifyExplicitOpportunityFact("合同需要采购部、法务和财务三方审批，采购尤其关注服务响应条款。", [...uncovered]);
+    expect(result?.dim).toBe("P");
+  });
 });

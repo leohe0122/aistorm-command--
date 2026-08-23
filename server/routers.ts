@@ -358,10 +358,10 @@ async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: s
 ${snapshot}
 
 判断优先级（严格按顺序）：
-1. 先判断 Pain、Power、Champion、Value、Control 中哪一类最接近零或证据最薄弱。评分映射为：Pain=implicatePainScore；Power=economicBuyerScore、decisionProcessScore；Champion=championScore；Value=metricsScore；Control=paperProcessScore、competitionScore。
-2. 再判断这个薄弱处具体缺什么证据：例如 Power 薄弱时，是最终决策人未接触，还是已知高层之间的分歧尚未厘清。选其中最影响赢单、且 SAM 最可能已知的信息。
-3. 把缺口翻译成 SAM 能直接回答的问题。优先问“[人名]上次说了什么？原话是什么？”“你和[人名]上次见面，他对[话题]的反应是什么？”或“[人名]和[人名]的分歧，你理解的核心矛盾是什么？”。
-4. 严禁把销售动作伪装成问题：不要要求 SAM 去问客户、转发原话、补充记录或填写字段；不要出现 MEDDPICC、3 Why、Win Formula 等术语。
+0. 若快照含“阶段优先门控”，先围绕其中第一条未满足门控提问。这是当前阶段或下一阶段的客观准入证据，优先级高于 Win 因子；不得跳回与此无关的泛化高层态度问题。
+1. 只有阶段门控已满足或当前阶段没有定义硬门控时，才判断 Pain、Power、Champion、Value、Control 中哪一类最接近零或证据最薄弱。评分映射为：Pain=implicatePainScore；Power=economicBuyerScore、decisionProcessScore；Champion=championScore；Value=metricsScore；Control=paperProcessScore、competitionScore。
+2. 再判断该优先缺口具体缺什么已知事实，并翻译成 SAM 能直接回答的问题。例如商务谈判的采购流程，问“合同走哪个部门审批？法务和采购分别关心什么？”；竞争可防御性，问“竞品目前处于什么状态？他们提出过什么你暂时无法反驳的论点？”。
+3. 严禁把销售动作伪装成问题：不要要求 SAM 去问客户、转发原话、补充记录或填写字段；不要出现 MEDDPICC、3 Why、Win Formula 等术语。
 
 输出约束：primaryQuestion 必须允许 SAM 用一段描述性文字直接回答，且答案能够被提取为对应事实候选。factSummary 只能复述支撑本题的 1-2 条已有事实，总计不超过 90 个中文字符，不能添加推断。数据不足时明确写“数据不足，暂不判断”。doNotAssume 最多列 2 项不得假定的客户意图或事实。严格按 JSON Schema 输出，不输出 JSON 外文字。`;
   const primaryController = new AbortController();
@@ -391,7 +391,18 @@ ${snapshot}
   try { return JSON.parse(extractJSON(raw)); } catch { return buildBaselineGuidance(scope, contacts); }
 }
 
-async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId: number, transientContext = "") {
+const OPPORTUNITY_STAGE_ORDER = ["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"] as const;
+
+function resolveGuidanceStageTarget(currentStage: string, requestedStage?: string) {
+  const requestedRequirements = requestedStage ? STAGE_REQUIREMENTS[requestedStage as keyof typeof STAGE_REQUIREMENTS] : undefined;
+  if (requestedRequirements?.length) return requestedStage;
+  const currentRequirements = STAGE_REQUIREMENTS[currentStage as keyof typeof STAGE_REQUIREMENTS];
+  if (currentRequirements?.length) return currentStage;
+  const currentIndex = OPPORTUNITY_STAGE_ORDER.indexOf(currentStage as typeof OPPORTUNITY_STAGE_ORDER[number]);
+  return OPPORTUNITY_STAGE_ORDER[Math.min(Math.max(currentIndex + 1, 0), OPPORTUNITY_STAGE_ORDER.length - 1)];
+}
+
+async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId: number, transientContext = "", requestedStage?: string) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
   const { opportunities, opportunityMeddpicc, threeWhy, painMetrics, competitionMap } = await import("../drizzle/schema");
@@ -406,7 +417,22 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
     db.select().from(competitionMap).where(eq(competitionMap.opportunityId, opportunityId)),
     getDealDiagnosticContext(clientId, opportunityId),
   ]);
-  return `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}\n\n${dealContext}${transientContext}`;
+  const stageTarget = resolveGuidanceStageTarget(opportunity.stage, requestedStage);
+  const stageRequirements = STAGE_REQUIREMENTS[stageTarget as keyof typeof STAGE_REQUIREMENTS] || [];
+  const stageMeddpicc = meddpicc[0] as any;
+  const missingStageRequirements = stageRequirements.map(requirement => {
+    const isCompetition = requirement.key === "gate8CompDefensible";
+    const mapping = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
+    const evidence = isCompetition
+      ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || stageMeddpicc?.competitionNotes || "").trim()
+      : String(stageMeddpicc?.[mapping?.notes || ""] || "").trim();
+    const score = isCompetition ? Number(stageMeddpicc?.competitionScore || 0) : Number(stageMeddpicc?.[mapping?.score || ""] || 0);
+    return { ...requirement, met: score >= 2 && evidence.length >= 10, evidence };
+  }).filter(requirement => !requirement.met);
+  const stageGateContext = stageRequirements.length
+    ? `\n\n【阶段优先门控】\n当前阶段：${opportunity.stage}；本轮引导对应阶段：${stageTarget}。\n${missingStageRequirements.length ? `尚未满足的准入证据（按顺序）：${missingStageRequirements.map(item => `${item.label}；自然语言问题：${item.question}`).join("\n")}` : "该阶段定义的准入证据已入库；才可使用 Win 因子排序其他补证问题。"}`
+    : `\n\n【阶段优先门控】\n当前阶段：${opportunity.stage}；没有额外硬门控定义，可使用 Win 因子排序补证问题。`;
+  return `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}${stageGateContext}\n\n${dealContext}${transientContext}`;
 }
 
 async function resolveOpportunityFollowUpQuestion({
@@ -415,18 +441,20 @@ async function resolveOpportunityFollowUpQuestion({
   currentQuestion,
   fallbackQuestion,
   history,
+  stageTarget,
 }: {
   clientId: number;
   opportunityId: number;
   currentQuestion: string;
   fallbackQuestion: string;
   history: GuidanceHistoryTurn[];
+  stageTarget?: string;
 }) {
   try {
     const temporaryEvidence = history.length
       ? `\n\n【本轮临时问答：尚未确认、尚未写入数据库】\n${history.map((turn, index) => `${index + 1}. 已问：${compactGuidanceText(turn.question, 260)}\n   SAM 已答：${compactGuidanceText(turn.answer, 520)}`).join("\n")}\n\n这些内容只用于避免重复提问与判断下一条最值得验证的缺口。不得将其当作已入库事实、不得补全客户意图、不得要求 SAM 重复已经回答的内容。`
       : "";
-    const snapshot = await buildOpportunityGuidanceSnapshot(clientId, opportunityId, temporaryEvidence);
+    const snapshot = await buildOpportunityGuidanceSnapshot(clientId, opportunityId, temporaryEvidence, stageTarget);
     const freshGuidance = await generateAIGuidance("opportunity", snapshot);
     const freshQuestion = String(freshGuidance?.primaryQuestion || "").trim();
     const normalizeQuestion = (value: string) => value.replace(/[\s，。？！：；,.?!:;]/g, "").toLowerCase();
@@ -462,13 +490,14 @@ export const appRouter = router({
       const snapshot = buildCustomerGuidanceSnapshot({ client, contacts, meetings, signals, readiness, meddpicc });
       return generateAIGuidance("customer", snapshot, contacts);
     }),
-    opportunityGuide: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number() })).mutation(async ({ input }) => {
-      const snapshot = await buildOpportunityGuidanceSnapshot(input.clientId, input.opportunityId);
+    opportunityGuide: protectedProcedure.input(z.object({ clientId: z.number(), opportunityId: z.number(), stageTarget: z.enum(["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"]).optional() })).mutation(async ({ input }) => {
+      const snapshot = await buildOpportunityGuidanceSnapshot(input.clientId, input.opportunityId, "", input.stageTarget);
       return generateAIGuidance("opportunity", snapshot);
     }),
     interpretAnswer: protectedProcedure.input(z.object({
       scope: z.enum(["customer", "opportunity"]), clientId: z.number(), opportunityId: z.number().optional(), question: z.string().min(3), answer: z.string().min(3).max(6000),
       history: z.array(z.object({ question: z.string().min(3).max(1600), answer: z.string().min(1).max(6000) })).max(12).optional(),
+      stageTarget: z.enum(["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"]).optional(),
     })).mutation(async ({ input }) => {
       if (input.scope === "opportunity" && !input.opportunityId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机引导需要关联商机。" });
       let existingContext = "";
@@ -527,20 +556,20 @@ export const appRouter = router({
       } catch (error) {
         console.warn("[AI Guidance] interpretAnswer model fallback", error instanceof Error ? error.message : String(error));
         const fallback = buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims, fullConversationHistory);
-        if (input.scope === "opportunity" && input.opportunityId) fallback.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: fallback.nextQuestion, history: fullConversationHistory });
+        if (input.scope === "opportunity" && input.opportunityId) fallback.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: fallback.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget });
         return fallback;
       }
       const raw = getLLMTextContent(result?.choices?.[0]?.message?.content);
       if (!raw) {
         const fallback = buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims, fullConversationHistory);
-        if (input.scope === "opportunity" && input.opportunityId) fallback.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: fallback.nextQuestion, history: fullConversationHistory });
+        if (input.scope === "opportunity" && input.opportunityId) fallback.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: fallback.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget });
         return fallback;
       }
       try {
         const parsed = JSON.parse(extractJSON(raw));
         const explicitCandidate = input.scope === "opportunity" ? buildExplicitOpportunityCandidate(input.answer, uncoveredMeddpiccDims, fullConversationHistory) : null;
         if (explicitCandidate) {
-          explicitCandidate.nextQuestion = input.opportunityId ? await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: explicitCandidate.nextQuestion, history: fullConversationHistory }) : explicitCandidate.nextQuestion;
+          explicitCandidate.nextQuestion = input.opportunityId ? await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: explicitCandidate.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget }) : explicitCandidate.nextQuestion;
           return explicitCandidate;
         }
         const normalizeQuestion = (value: unknown) => String(value || "").replace(/[\s，。？！：；,.?!:;]/g, "").toLowerCase();
@@ -550,11 +579,11 @@ export const appRouter = router({
             : buildNoWriteAnswerInterpretation(input.scope, input.question, uncoveredMeddpiccDims, fullConversationHistory).nextQuestion;
         }
         parsed.topicStatus = "continue";
-        if (input.scope === "opportunity" && input.opportunityId) parsed.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: parsed.nextQuestion, history: fullConversationHistory });
+        if (input.scope === "opportunity" && input.opportunityId) parsed.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: parsed.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget });
         return parsed;
       } catch {
         const fallback = buildProvisionalAnswerCandidate(input.scope, input.question, input.answer, uncoveredMeddpiccDims, fullConversationHistory);
-        if (input.scope === "opportunity" && input.opportunityId) fallback.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: fallback.nextQuestion, history: fullConversationHistory });
+        if (input.scope === "opportunity" && input.opportunityId) fallback.nextQuestion = await resolveOpportunityFollowUpQuestion({ clientId: input.clientId, opportunityId: input.opportunityId, currentQuestion: input.question, fallbackQuestion: fallback.nextQuestion, history: fullConversationHistory, stageTarget: input.stageTarget });
         return fallback;
       }
     }),
@@ -4449,10 +4478,10 @@ ${contactList}
         const notesField = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP]?.notes;
         const scoreField = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP]?.score;
         const evidence = isCompetition
-          ? competitions.find((item: any) => String(item.counterAction || item.competitorName || "").trim())?.counterAction || ""
+          ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || (meddpicc[0] as any)?.competitionNotes || "").trim()
           : String((meddpicc[0] as any)?.[notesField || ""] || "").trim();
-        const score = isCompetition ? 0 : Number((meddpicc[0] as any)?.[scoreField || ""] || 0);
-        const met = isCompetition ? evidence.length >= 8 : score >= 2 && evidence.length >= 10;
+        const score = isCompetition ? Number((meddpicc[0] as any)?.competitionScore || 0) : Number((meddpicc[0] as any)?.[scoreField || ""] || 0);
+        const met = score >= 2 && evidence.length >= 10;
         return { ...requirement, met, evidence: met ? evidence : "数据不足，暂不判断" };
       });
       return { currentStage: opportunity.stage, targetStage: input.targetStage, requirements, isReady: requirements.every(item => item.met), missing: requirements.filter(item => !item.met) };
@@ -4470,7 +4499,7 @@ ${contactList}
         db.select().from(competitionMap).where(eq(competitionMap.opportunityId, input.opportunityId)),
       ]);
       const missing = (STAGE_REQUIREMENTS[input.targetStage as keyof typeof STAGE_REQUIREMENTS] || []).filter(requirement => {
-        if (requirement.key === "gate8CompDefensible") return !competitions.some((item: any) => String(item.counterAction || item.competitorName || "").trim().length >= 8);
+        if (requirement.key === "gate8CompDefensible") return Number((meddpicc[0] as any)?.competitionScore || 0) < 2 || String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || (meddpicc[0] as any)?.competitionNotes || "").trim().length < 10;
         const mapping = MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
         return Number((meddpicc[0] as any)?.[mapping.score] || 0) < 2 || String((meddpicc[0] as any)?.[mapping.notes] || "").trim().length < 10;
       });

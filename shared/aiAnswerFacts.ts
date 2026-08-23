@@ -112,6 +112,7 @@ export function classifyExplicitOpportunityFact(answer: string, uncovered: Meddp
   const text = answer.trim();
   const budgetEvidence = /(预算|金额|投入|报价|费用|年费|合同额)|\d[\d,.]*\s*(万|亿|千|百万|元|人民币|美元|港币|usd|hkd|rmb)/i.test(text);
   const competitionEvidence = /(替换|美资|国产|倾向我方|倾向我们|竞争|竞品|替代方案|其他厂商)/i.test(text);
+  const paperProcessEvidence = /(合同.{0,12}(审批|法务|采购)|法务.{0,12}(审批|合同|采购)|采购.{0,12}(审批|合同|部门|关注点)|招标)/i.test(text);
   const criteriaEvidence = /(偏好|选型|标准|要求|更看重|必须具备|需要具备|服务|响应|巡检|总结报告|部署|点位)/i.test(text);
   const decisionEvidence = /(最终签字|最终审批|最终决定|决策人|签字审批|决定权|否决权|支持|反对|认同|不同意|不认同|不重要|答应|汇报给)/i.test(text);
   const processEvidence = /(采购阶段|采购流程|审批流程|poc|测试结束|技术验证|合同流程|招标|评审|年内完成|完成部署)/i.test(text);
@@ -119,13 +120,15 @@ export function classifyExplicitOpportunityFact(answer: string, uncovered: Meddp
     ? "M"
     : competitionEvidence
       ? "C2"
-      : decisionEvidence
-        ? "E"
-        : criteriaEvidence
-          ? "D1"
-          : processEvidence
-            ? "D2"
-            : null;
+    : decisionEvidence
+      ? "E"
+        : paperProcessEvidence
+          ? "P"
+          : criteriaEvidence
+            ? "D1"
+            : processEvidence
+              ? "D2"
+              : null;
   if (!dim) return null;
   return { dim, nextQuestion: nextUncoveredMeddpiccQuestion(uncovered, dim) };
 }
