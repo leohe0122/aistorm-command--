@@ -12,7 +12,7 @@ import { visitReminderHandler } from "../scheduled/visitReminder";
 import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
 
-const BUILD_MARKER = "20260823-ai-guidance-stage-gate-enforced-v2";
+const BUILD_MARKER = "20260823-ai-guidance-stage-gates-complete-v3";
 
 async function startServer() {
   console.log(`[STARTUP] PORT=${process.env.PORT ?? "undefined"} NODE_ENV=${process.env.NODE_ENV ?? "undefined"}`);
@@ -28,8 +28,8 @@ async function startServer() {
     res.status(200).json({
       build: BUILD_MARKER,
       aiReviewRoute: "review-one-to-n-v3-nonempty-guard",
-      aiGuidanceRoute: "stage-gate-enforced-question-selection-v2",
-      serviceWorker: "20260823-ai-guidance-stage-gate-enforced-v2",
+      aiGuidanceRoute: "stage-gates-complete-enforced-v3",
+      serviceWorker: "20260823-ai-guidance-stage-gates-complete-v3",
       ts: Date.now(),
     });
   });
