@@ -309,6 +309,13 @@
       "when": 1787073977390,
       "tag": "0043_spicy_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "5",
+      "when": 1787893356290,
+      "tag": "0044_fast_shinko_yamashiro",
+      "breakpoints": true
     }
   ]
 }

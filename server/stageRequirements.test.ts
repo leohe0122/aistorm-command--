@@ -4,9 +4,11 @@ import { STAGE_REQUIREMENTS } from "./aiNativeGuidance";
 describe("完整商机阶段门控", () => {
   const keys = (stage: keyof typeof STAGE_REQUIREMENTS) => STAGE_REQUIREMENTS[stage].map(item => item.key);
 
-  it("需求挖掘必须先验证触发事件，再验证痛点、可量化价值与潜在 Champion", () => {
-    expect(keys("需求挖掘")).toEqual(["gate_trigger", "I", "M", "C1"]);
-    const trigger = STAGE_REQUIREMENTS["需求挖掘"][0];
+  it("需求挖掘必须先确认项目参与人和触发事件，再验证痛点、可量化价值与潜在 Champion", () => {
+    expect(keys("需求挖掘")).toEqual(["gate_participants", "gate_trigger", "I", "M", "C1"]);
+    const participants = STAGE_REQUIREMENTS["需求挖掘"][0];
+    const trigger = STAGE_REQUIREMENTS["需求挖掘"][1];
+    expect(participants.question).toContain("项目里");
     expect(trigger.question).toContain("必须现在");
     expect(trigger.followUp?.length).toBeGreaterThan(0);
   });

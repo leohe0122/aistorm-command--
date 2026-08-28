@@ -44,6 +44,8 @@ describe("AI 主动引导明确商机事实分类", () => {
     expect(isGuidanceTopicExhaustionAnswer("没有了")).toBe(true);
     expect(isGuidanceTopicExhaustionAnswer("这些当前都还没有涉及。")).toBe(true);
     expect(isGuidanceTopicExhaustionAnswer("不知道 Susanna 的具体立场")).toBe(true);
+    expect(isGuidanceTopicExhaustionAnswer("各方都没有明确表态")).toBe(true);
+    expect(isGuidanceTopicExhaustionAnswer("下周五才开评审会，目前还没有结果")).toBe(true);
     expect(isGuidanceTopicExhaustionAnswer("不知道 Susanna 的具体立场，但是 Marcos 说她关心风险")).toBe(false);
     expect(isGuidanceTopicExhaustionAnswer("Felix不认同EDR项目本身")).toBe(false);
   });
@@ -62,6 +64,7 @@ describe("AI 主动引导明确商机事实分类", () => {
   it("将商务谈判中的合同审批事实映射为采购流程 P", () => {
     const result = classifyExplicitOpportunityFact("合同需要采购部、法务和财务三方审批，采购尤其关注服务响应条款。", [...uncovered]);
     expect(result?.dim).toBe("P");
+    expect(classifyExplicitOpportunityFact("总经理最终签字，之后交采购中心走合同流程。", [...uncovered])?.dim).toBe("P");
   });
 
   it("将存量到期和不续签识别为决策流程时间触发事实", () => {

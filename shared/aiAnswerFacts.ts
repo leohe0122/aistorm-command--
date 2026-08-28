@@ -1,6 +1,7 @@
 export type MeddpiccDimCode = "M" | "E" | "D1" | "D2" | "P" | "I" | "C1" | "C2";
 
 export type GuidanceTopic =
+  | "project_participants"
   | "decision_stance"
   | "meeting_time"
   | "implementation_requirements"
@@ -40,6 +41,7 @@ const TOPIC_BY_DIMENSION: Record<MeddpiccDimCode, GuidanceTopic> = {
 
 export function inferGuidanceTopic(value: string): GuidanceTopic {
   const text = value.replace(/\s+/g, "").toLowerCase();
+  if (/(项目参与人|项目里.*哪些人|谁会参与这个项目|项目相关人)/i.test(text)) return "project_participants";
   if (/(服务|响应|巡检|总结报告|sla|支持质量|售后)/i.test(text)) return "service_expectations";
   if (/(部署|点位|上线|实施|交付|5000点|5000个点)/i.test(text)) return "implementation_requirements";
   if (/(到期|不续签|不renew|norenew|renew|renewal|续签|合同到期|存量到期|倒逼|截止日期|deadline|时间节点|时间压力|触发事件|必须在.*前|年底前|季度末|年内必须|尽快推进|必须尽快)/i.test(text)) return "decision_process";
@@ -58,7 +60,10 @@ export function inferGuidanceTopic(value: string): GuidanceTopic {
 export function isGuidanceTopicExhaustionAnswer(answer: string) {
   const original = answer.trim();
   const text = original.replace(/[\s，。！!；;、]/g, "").toLowerCase();
-  if (/^(没有了|没了|没有更多|没有更多了|暂无更多|暂时没有|尚未涉及|还没有涉及|这些当前都还没有涉及|当前都还没有涉及|不清楚|不知道)$/.test(text)) return true;
+  if (/^(没有了|没了|没有更多|没有更多了|暂无更多|暂时没有|尚未涉及|还没有涉及|这些当前都还没有涉及|当前都还没有涉及|不清楚|不知道|没有表达|未表达|没有不同意见|没有明确态度|大家一致|意见一致)$/.test(text)) return true;
+  if (/^(?:目前|这次|客户|他们|各方)?(?:都|均)?(?:没有|未)(?:明确)?(?:表达|表态|反馈|意见|不同意见|态度)(?:过|任何)?(?:.*)?$/.test(original)) return true;
+  if (/^(?:目前|这次|客户|他们|各方)?(?:意见|态度)?(?:一致|没有分歧)(?:.*)?$/.test(original)) return true;
+  if (/(下周|下月|下季度|下次).{0,24}(开会|评审|汇报|报告|会议).{0,24}(还没|尚未|未).{0,16}(发生|开始|举行|完成|结果|结论|反馈)/.test(original)) return true;
   // “不知道 Susanna 的具体立场”一类回答同样意味着当前主题没有可录入的客户事实，
   // 但含有“但是/不过”等转折补充的回答不得被误判为未知。
   return /^(?:我)?(?:不清楚|不知道|不了解|暂不清楚|暂时不清楚)(?:关于|对|谁|哪位|客户|他|她)?[^，。；;！!]{0,28}$/i.test(original)
@@ -139,7 +144,8 @@ export function getTransientStageGateCoverage(history: GuidanceHistoryTurn[]) {
       // 这绝不改变数据库事实或实际阶段就绪状态；刷新后仍会显示该真实缺口。
       if (askedDim) covered.add(askedDim);
       const exhaustedTurnText = `${question}\n${answer}`;
-      if (/(到期|不续签|renew|renewal|截止|deadline|时间节点|触发)/i.test(exhaustedTurnText)) covered.add("gate_trigger");
+    if (/(到期|不续签|renew|renewal|截止|deadline|时间节点|触发)/i.test(exhaustedTurnText)) covered.add("gate_trigger");
+    if (inferGuidanceTopic(question) === "project_participants") covered.add("gate_participants");
       continue;
     }
     const answerFact = classifyExplicitOpportunityFact(answer);
@@ -149,6 +155,7 @@ export function getTransientStageGateCoverage(history: GuidanceHistoryTurn[]) {
     if (/(竞品|竞争|crowdstrike|奇安信|深信服|sentinelone|替换|其他厂商)/i.test(turnText)) covered.add("gate8CompDefensible");
     if (/(到期|不续签|renew|renewal|截止|deadline|时间节点|触发)/i.test(turnText)) covered.add("gate_trigger");
     if (/(技术.*签字|签字.*技术|poc.*谁|谁.*poc|评估.*谁|谁.*评估)/i.test(turnText)) covered.add("gate_tech_owner");
+    if (inferGuidanceTopic(question) === "project_participants") covered.add("gate_participants");
   }
   return covered;
 }
@@ -180,7 +187,7 @@ export function classifyExplicitOpportunityFact(answer: string, uncovered: Meddp
   const text = answer.trim();
   const budgetEvidence = /(预算|金额|投入|报价|费用|年费|合同额)|\d[\d,.]*\s*(万|亿|千|百万|元|人民币|美元|港币|usd|hkd|rmb)/i.test(text);
   const competitionEvidence = /(替换|美资|国产|倾向我方|倾向我们|竞争|竞品|替代方案|其他厂商|奇安信|深信服|安天|绿盟|启明星辰|360安全|crowdstrike|sentinelone|mcafee|symantec|碳黑|carbonblack|paloalto|趋势科技|trendmicro|cylance|defender)/i.test(text);
-  const paperProcessEvidence = /(合同.{0,12}(审批|法务|采购)|法务.{0,12}(审批|合同|采购)|采购.{0,12}(审批|合同|部门|关注点)|招标)/i.test(text);
+  const paperProcessEvidence = /(合同.{0,12}(审批|法务|采购)|法务.{0,12}(审批|合同|采购)|采购.{0,12}(审批|合同|部门|关注点|中心)|采购中心|走流程|流程由|招标)/i.test(text);
   const criteriaEvidence = /(偏好|选型|标准|要求|更看重|必须具备|需要具备|服务|响应|巡检|总结报告|部署|点位)/i.test(text);
   const decisionEvidence = /(最终签字|最终审批|最终决定|决策人|签字审批|决定权|否决权|支持|反对|认同|不同意|不认同|不重要|答应|汇报给)/i.test(text);
   const processEvidence = /(采购阶段|采购流程|审批流程|poc|测试结束|技术验证|合同流程|招标|评审|年内完成|完成部署|到期|不续签|不renew|renewal|renew|续签|合同到期|存量到期|截止日期|deadline|时间节点|倒逼|必须在.*前|年底前|季度末|尽快推进)/i.test(text);
@@ -188,10 +195,10 @@ export function classifyExplicitOpportunityFact(answer: string, uncovered: Meddp
     ? "M"
     : competitionEvidence
       ? "C2"
-    : decisionEvidence
-      ? "E"
-        : paperProcessEvidence
-          ? "P"
+    : paperProcessEvidence
+      ? "P"
+        : decisionEvidence
+          ? "E"
           : criteriaEvidence
             ? "D1"
             : processEvidence
@@ -202,6 +209,9 @@ export function classifyExplicitOpportunityFact(answer: string, uncovered: Meddp
 }
 
 export function hasValidExtractedFactCandidate(value: any) {
+  if (value?.candidateTarget === "participants") {
+    return Array.isArray(value?.participants) && value.participants.some((person: any) => String(person?.name || "").trim() && ["技术评估", "使用方", "决策人", "评审人", "签字人", "阻力", "无关"].includes(person?.role));
+  }
   const evidence = String(value?.evidence || "").trim();
   if (!evidence) return false;
   if (value?.candidateTarget === "purchase_signal") {
@@ -211,4 +221,12 @@ export function hasValidExtractedFactCandidate(value: any) {
     return ["M", "E", "D1", "D2", "P", "I", "C1", "C2"].includes(value?.meddpiccDim);
   }
   return false;
+}
+
+/** 明确“与项目无关”的回答只改变项目参与人范围，绝不生成客户事实候选。 */
+export function inferIrrelevantProjectParticipants(answer: string) {
+  const names = Array.from(answer.matchAll(/(?:^|[，,；;、\s])([A-Za-z][A-Za-z .'-]{1,70}|[\u4e00-\u9fff]{2,8})(?:与|跟)?(?:本)?项目无关/g))
+    .map(match => String(match[1] || "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(names)).map(name => ({ name, role: "无关" as const }));
 }

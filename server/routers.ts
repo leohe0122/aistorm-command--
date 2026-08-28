@@ -13,7 +13,7 @@ import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildD
 import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
-import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidancePersonTopicAlreadyCovered, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion, topicMeddpiccDimension, type GuidanceHistoryTurn, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
+import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasValidExtractedFactCandidate, inferGuidanceTopic, inferIrrelevantProjectParticipants, isGuidancePersonTopicAlreadyCovered, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion, topicMeddpiccDimension, type GuidanceHistoryTurn, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
 import { ACCOUNT_REQUIREMENTS, AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildAccountGuidancePromptSuffix, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 import { calculateWinFactors } from "../shared/winFactors";
@@ -129,7 +129,7 @@ const AI_ANSWER_INTERPRETATION_SCHEMA = {
   type: "object",
   properties: {
     message: { type: "string" },
-    candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] },
+    candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "participants", "none"] },
     signalType: { type: "string", enum: ["intent_subject", "decision_chain", "trigger_event", ""] },
     meddpiccDim: { type: "string", enum: ["M", "E", "D1", "D2", "P", "I", "C1", "C2", ""] },
     subjectName: { type: "string" },
@@ -137,8 +137,20 @@ const AI_ANSWER_INTERPRETATION_SCHEMA = {
     suggestedScore: { type: "number", enum: [0, 25, 50, 75, 100] },
     confidence: { type: "string", enum: ["high", "medium", "low"] },
     topicStatus: { type: "string", enum: ["continue", "exhausted"] },
+    participants: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          role: { type: "string", enum: ["技术评估", "使用方", "决策人", "评审人", "签字人", "阻力", "无关"] },
+        },
+        required: ["name", "role"],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ["message", "candidateTarget", "signalType", "meddpiccDim", "subjectName", "evidence", "suggestedScore", "confidence", "topicStatus"],
+  required: ["message", "candidateTarget", "signalType", "meddpiccDim", "subjectName", "evidence", "suggestedScore", "confidence", "topicStatus", "participants"],
   additionalProperties: false,
 } as const;
 
@@ -252,6 +264,7 @@ const AI_GUIDANCE_TOTAL_TIMEOUT_MS = 15_000;
 const AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT = `你是 AIStorm Command 的主动式销售引导。你的唯一任务是帮助 SAM 把自己已经知道、但尚未录入系统的客户事实存入系统。
 只把客户原话、客户动作、已发生的会议/邮件、明确时间节点或可靠外部事件视为事实；不得将销售计划、主观判断或历史关系直接当作客户意图。
 你不是在指导 SAM 做销售动作，也不是要求 SAM 再去问客户、转发材料或补填方法论字段。你是在问 SAM：你已经知道什么、见过什么、对方说过什么。
+严禁询问尚未发生的会议、评审、报告或未来事件的结果、反馈与评价。
 一次只问一个自然语言问题。不要在问题中使用销售方法论术语，不杜撰、不补全未知信息；信息不足时明确“数据不足，暂不判断”。
 输出必须满足传入的 JSON Schema，且不输出 JSON 以外文字。`;
 
@@ -503,10 +516,13 @@ function buildProvisionalAnswerCandidate(scope: "customer" | "opportunity", ques
 }
 
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string, contacts: any[] = [], history: GuidanceHistoryTurn[] = []) {
+  const currentDate = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
   const prompt = `你是 AIStorm Command 的主动式销售引导 AI。
 你的唯一任务是：读取 SAM 已知但尚未录入系统的信息，一次问一个问题，帮助 SAM 把脑子里的事实存入系统。
 
 你不是在指导 SAM 去做什么销售动作。你不是在要求 SAM 去问客户要什么东西。你是在问 SAM：“你已经知道什么？你见过什么？对方说过什么？”
+
+当前日期：${currentDate}。只能询问截至当前日期已发生的事情、已知事实或明确时间节点；不得询问未来会议、评审、报告的结果。
 
 ${snapshot}
 
@@ -563,17 +579,17 @@ function resolveGuidanceStageTarget(currentStage: string, requestedStage?: strin
 async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId: number, history: GuidanceHistoryTurn[] = [], requestedStage?: string) {
   const db = await getDb();
   if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
-  const { opportunities, opportunityMeddpicc, threeWhy, painMetrics, competitionMap, keyContacts } = await import("../drizzle/schema");
+  const { opportunities, opportunityMeddpicc, threeWhy, painMetrics, competitionMap, opportunityParticipants } = await import("../drizzle/schema");
   const [opportunity] = await db.select().from(opportunities).where(eq(opportunities.id, opportunityId)).limit(1);
   if (!opportunity || opportunity.clientId !== clientId) throw new TRPCError({ code: "NOT_FOUND", message: "未找到商机" });
   const [meddpicc, why] = await Promise.all([
     db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, opportunityId)).limit(1),
     db.select().from(threeWhy).where(eq(threeWhy.opportunityId, opportunityId)).limit(1),
   ]);
-  const [pains, competitions, contacts, dealContext] = await Promise.all([
+  const [pains, competitions, participants, dealContext] = await Promise.all([
     db.select().from(painMetrics).where(eq(painMetrics.opportunityId, opportunityId)),
     db.select().from(competitionMap).where(eq(competitionMap.opportunityId, opportunityId)),
-    db.select().from(keyContacts).where(eq(keyContacts.clientId, clientId)),
+    db.select().from(opportunityParticipants).where(eq(opportunityParticipants.opportunityId, opportunityId)),
     getDealDiagnosticContext(clientId, opportunityId),
   ]);
   const stageTarget = resolveGuidanceStageTarget(opportunity.stage, requestedStage);
@@ -583,6 +599,7 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
   const missingStageRequirements = stageRequirements.map(requirement => {
     const isCompetition = requirement.key === "gate8CompDefensible";
     const isTrigger = requirement.key === "gate_trigger";
+    const isParticipants = requirement.key === "gate_participants";
     const mapping = isCompetition ? null : MEDDPICC_FIELD_MAP[requirement.key as keyof typeof MEDDPICC_FIELD_MAP];
     const evidence = isCompetition
       ? String(competitions.find((item: any) => String(item.counterAction || "").trim())?.counterAction || stageMeddpicc?.competitionNotes || "").trim()
@@ -593,6 +610,8 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
             why[0]?.whyNowTrigger,
             why[0]?.whyNowEvidence,
           ].filter(Boolean).join("\n").trim()
+      : isParticipants
+        ? participants.filter((person: any) => person.role !== "无关").map((person: any) => `${person.name}（${person.role}）`).join("；").trim()
       : String(stageMeddpicc?.[mapping?.notes || ""] || "").trim();
     const metByStoredFact = evidence.length >= 5;
     const metByTransientAnswer = transientCoveredGates.has(requirement.key);
@@ -601,14 +620,16 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
   const stageGateContext = stageRequirements.length
     ? `\n\n【阶段优先门控】\n当前阶段：${opportunity.stage}；本轮引导对应阶段：${stageTarget}。\n${missingStageRequirements.length ? `尚未满足的准入证据（按顺序）：${missingStageRequirements.map(item => `${item.label}；自然语言问题：${item.question}`).join("\n")}` : "该阶段定义的准入证据已入库；才可使用 Win 因子排序其他补证问题。"}`
     : `\n\n【阶段优先门控】\n当前阶段：${opportunity.stage}；没有额外硬门控定义，可使用 Win 因子排序补证问题。`;
-  const contactNames = selectGuidancePowerContacts(contacts)
-    .concat(contacts.map((contact: any) => String(contact.name || "").trim()).filter(Boolean))
+  const activeParticipants = participants
+    .filter((person: any) => person.role !== "无关" && String(person.name || "").trim());
+  const contactNames = activeParticipants
+    .map((person: any) => String(person.name || "").trim())
     .filter((name, index, all) => name && all.indexOf(name) === index)
     .slice(0, 8);
   const annualValue = pains.reduce((sum: number, pain: any) => sum + Number(pain.annualValue || 0), 0);
-  const winFactors = calculateWinFactors({ meddpicc: meddpicc[0] || null, threeWhy: why[0] || null, annualValue, contactCount: contacts.length });
-  const stageAwareSuffix = buildStageAwareGuidancePromptSuffix(stageTarget || opportunity.stage, missingStageRequirements, contactNames);
-  return `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}\nWin 因子：${JSON.stringify(winFactors)}${stageGateContext}${stageAwareSuffix}\n\n${dealContext}${buildTransientGuidanceContext(history)}`;
+  const winFactors = calculateWinFactors({ meddpicc: meddpicc[0] || null, threeWhy: why[0] || null, annualValue, contactCount: activeParticipants.length });
+  const stageAwareSuffix = buildStageAwareGuidancePromptSuffix(stageTarget || opportunity.stage, missingStageRequirements, contactNames, activeParticipants as Array<{ name: string; role: string }>);
+  return `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}\n项目参与人：${JSON.stringify(activeParticipants)}\nWin 因子：${JSON.stringify(winFactors)}${stageGateContext}${stageAwareSuffix}${buildTransientGuidanceContext(history)}`;
 }
 
 function buildTransientGuidanceContext(history: GuidanceHistoryTurn[]) {
@@ -618,7 +639,7 @@ function buildTransientGuidanceContext(history: GuidanceHistoryTurn[]) {
 
 function toAnswerExtractionResult(candidate: any) {
   const { nextQuestion: _nextQuestion, ...result } = candidate || {};
-  return result;
+  return { ...result, participants: Array.isArray(result?.participants) ? result.participants : [] };
 }
 
 export const appRouter = router({
@@ -651,8 +672,15 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       const history = (input.history || []).map(turn => ({ question: turn.question.trim(), answer: turn.answer.trim() }));
       const snapshot = await buildOpportunityGuidanceSnapshot(input.clientId, input.opportunityId, history, input.stageTarget);
-      const contacts = await getContactsByClientId(input.clientId);
-      return generateAIGuidance("opportunity", snapshot, contacts, history);
+      const db = await getDb();
+      const { opportunityParticipants } = await import("../drizzle/schema.js");
+      const { eq } = await import("drizzle-orm");
+      const participantContacts = db
+        ? (await db.select().from(opportunityParticipants).where(eq(opportunityParticipants.opportunityId, input.opportunityId)))
+          .filter(person => person.role !== "无关")
+          .map(person => ({ name: person.name, title: person.role, buyingRole: person.role }))
+        : [];
+      return generateAIGuidance("opportunity", snapshot, participantContacts, history);
     }),
     interpretAnswer: protectedProcedure.input(z.object({
       scope: z.enum(["customer", "opportunity"]), clientId: z.number(), opportunityId: z.number().optional(), question: z.string().min(3), answer: z.string().min(3).max(6000),
@@ -663,6 +691,22 @@ export const appRouter = router({
       let uncoveredMeddpiccDims: MeddpiccDimCode[] = [];
       const conversationHistory: GuidanceHistoryTurn[] = (input.history || []).slice(-12).map(turn => ({ question: turn.question.trim(), answer: turn.answer.trim() }));
       const fullConversationHistory = [...conversationHistory, { question: input.question.trim(), answer: input.answer.trim() }];
+      const irrelevantParticipants = input.scope === "opportunity" ? inferIrrelevantProjectParticipants(input.answer) : [];
+      if (irrelevantParticipants.length) {
+        return toAnswerExtractionResult({
+          message: "已标记该联系人与当前项目无关，后续引导不会再围绕他提问。",
+          candidateTarget: "participants" as const,
+          signalType: "" as const,
+          meddpiccDim: "" as const,
+          subjectName: "",
+          evidence: "",
+          suggestedScore: 0 as const,
+          confidence: "medium" as const,
+          topicStatus: "continue" as const,
+          participants: irrelevantParticipants,
+          silent: true,
+        });
+      }
       if (input.opportunityId) {
         try {
           const db = await getDb();
@@ -697,7 +741,7 @@ export const appRouter = router({
       const conversationContext = conversationHistory.length
         ? `\n\n本轮此前问答（仅用于避免重复，不是已写入事实）：\n${conversationHistory.map((turn, index) => `${index + 1}. AI 问：${compactGuidanceText(turn.question, 300)}\n   SAM 答：${compactGuidanceText(turn.answer, 500)}`).join("\n")}`
         : "";
-      const prompt = `你正在帮助 SAM 把他已经知道的客户事实整理成结构化候选，供他一键确认写入系统。\n\nSAM 是专业销售，他的实质性回答默认反映真实客户情况。你的任务是提取和整理，不是评判真假；候选在 SAM 确认前不会写入任何事实层。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n提取规则：\n- 只要 SAM 回答了实质性内容（人物、动作、表态、时间节点、数字或关系描述），必须输出一个待确认候选；不能因为不是客户原话逐字转述而判为 none。\n- 商机场景：最终签字人、审批人、支持者或决策关系映射到最匹配维度：E=签字人或权力，M=预算或数字，C1=Champion，C2=竞争，D1=标准，D2=流程，P=采购，I=痛点。\n- 客户经营场景：candidateTarget=purchase_signal。\n- candidateTarget=none 只保留给 SAM 明确回答“不知道”“没有”“暂时不清楚”或“没有更多补充”的情况；此时 message 写“SAM 暂无此信息，跳过”，evidence 留空。\n- evidence 用 SAM 自己的话简洁转述，不添加未提及信息，不做价值判断；confidence 默认 medium，直接引用客户表态时用 high。\n- topicStatus 固定返回 continue。\n- 严格按 JSON Schema 返回，JSON 外不得输出文字。${conversationContext}`;
+      const prompt = `你正在帮助 SAM 把他已经知道的客户事实整理成结构化记录。SAM 是专业销售，他的实质性回答默认反映真实客户情况；有效记录会自动沉淀，SAM 可以随后补充修正。\n\n当前场景：${input.scope === "customer" ? "客户经营与购买信号" : "商机赢单与客户证据"}\nAI 问题：${input.question}\nSAM 回答：${input.answer}\n\n提取规则：\n- 只要 SAM 回答了实质性内容（人物、动作、表态、时间节点、数字或关系描述），必须输出一条可记录事实；不能因为不是客户原话逐字转述而判为 none。\n- 如果问题询问项目参与人，candidateTarget=participants，participants 必须给出每位人员的姓名及唯一角色（技术评估、使用方、决策人、评审人、签字人、阻力、无关）。明确“与本项目无关”的人写为角色“无关”。\n- 商机场景：最终签字人、审批人、支持者或决策关系映射到最匹配维度：E=签字人或权力，M=预算或数字，C1=Champion，C2=竞争，D1=标准，D2=流程，P=采购，I=痛点。\n- 客户经营场景：candidateTarget=purchase_signal。\n- candidateTarget=none 仅用于 SAM 明确回答“不知道”“没有”“没有表达”“意见一致”“与项目无关”或事项尚未发生；此时 message 写“SAM 暂无可入库事实，跳过”，evidence 留空。\n- evidence 用 SAM 自己的话简洁转述，不添加未提及信息，不做价值判断；confidence 默认 medium，直接引用客户表态时用 high。\n- topicStatus 固定返回 continue。\n- 严格按 JSON Schema 返回，JSON 外不得输出文字。${conversationContext}`;
       let result: Awaited<ReturnType<typeof invokeLLM>> | undefined;
       try {
         result = await invokeLLM({
@@ -4739,6 +4783,42 @@ ${contactList}
       }
       const [result] = await db.select().from(opportunityMeddpicc).where(eq(opportunityMeddpicc.opportunityId, opportunityId));
       return result;
+    }),
+
+    listParticipants: protectedProcedure.input(z.object({ opportunityId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { opportunityParticipants } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      return db.select().from(opportunityParticipants).where(eq(opportunityParticipants.opportunityId, input.opportunityId));
+    }),
+
+    recordParticipants: protectedProcedure.input(z.object({
+      opportunityId: z.number(),
+      clientId: z.number(),
+      source: z.enum(["sam_input", "ai_extracted"]).default("ai_extracted"),
+      participants: z.array(z.object({
+        name: z.string().min(1).max(100),
+        role: z.enum(["技术评估", "使用方", "决策人", "评审人", "签字人", "阻力", "无关"]),
+      })).min(1).max(20),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { opportunityParticipants, opportunities } = await import('../drizzle/schema.js');
+      const { eq } = await import('drizzle-orm');
+      const [opportunity] = await db.select({ id: opportunities.id, clientId: opportunities.clientId }).from(opportunities).where(eq(opportunities.id, input.opportunityId)).limit(1);
+      if (!opportunity || opportunity.clientId !== input.clientId) throw new TRPCError({ code: "NOT_FOUND", message: "未找到对应商机" });
+      const existing = await db.select().from(opportunityParticipants).where(eq(opportunityParticipants.opportunityId, input.opportunityId));
+      for (const participant of input.participants) {
+        const name = participant.name.trim();
+        const matched = existing.find(item => item.name.trim().toLowerCase() === name.toLowerCase());
+        if (matched) {
+          await db.update(opportunityParticipants).set({ role: participant.role, source: input.source }).where(eq(opportunityParticipants.id, matched.id));
+        } else {
+          await db.insert(opportunityParticipants).values({ opportunityId: input.opportunityId, clientId: input.clientId, name, role: participant.role, source: input.source });
+        }
+      }
+      return db.select().from(opportunityParticipants).where(eq(opportunityParticipants.opportunityId, input.opportunityId));
     }),
 
     // 获取客户所有商机的 MEDDPICC 汇总（用于 AD 指挥台）

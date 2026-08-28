@@ -134,8 +134,8 @@ describe("作战工作流入口收敛", () => {
     const indexHtml = projectFile("client/index.html");
     const serviceWorker = projectFile("client/public/sw.js");
     const app = projectFile("client/src/App.tsx");
-    expect(indexHtml).toContain("/sw.js?v=20260828-ai-guidance-person-topic-dedup-v9");
-    expect(serviceWorker).toContain("aistorm-command-v20260828-ai-guidance-person-topic-dedup-v9");
+    expect(indexHtml).toContain("/sw.js?v=20260828-ai-guidance-participants-auto-record-v10");
+    expect(serviceWorker).toContain("aistorm-command-v20260828-ai-guidance-participants-auto-record-v10");
     expect(serviceWorker).toContain("event.request.mode === 'navigate'");
     expect(app).toContain("controllerchange");
   });
@@ -365,7 +365,7 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("result?.choices?.[0]?.message?.content");
     expect(routers).toContain("health: protectedProcedure.query");
     expect(routers).toContain("数据不足，暂不判断");
-    expect(routers).toContain('candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "none"] }');
+    expect(routers).toContain('candidateTarget: { type: "string", enum: ["purchase_signal", "meddpicc", "participants", "none"] }');
     expect(workstation).toContain('<AIActiveGuidancePanel scope="customer" clientId={clientId} powerContactNames={guidancePowerContactNames} />');
     expect(opportunityRoom).toContain('<AIActiveGuidancePanel scope="opportunity" clientId={clientId} opportunityId={opportunityId} powerContactNames={powerContactNames} stageTarget={opportunity.stage} />');
     expect(opportunityRoom).not.toContain("guidanceStageTarget");
@@ -390,16 +390,16 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("requestGuidance(factHistory");
     expect(guidancePanel).toContain("}, 20_000)");
     expect(guidancePanel).toContain("已切换为基础引导");
-    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260828-ai-guidance-person-topic-dedup-v9");
+    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260828-ai-guidance-participants-auto-record-v10");
     expect(guidancePanel).toContain("const working = pendingGuide || interpretMutation.isPending");
     expect(guidancePanel).not.toContain("healthCheck.refetch()");
     expect(guidancePanel).not.toContain("health_timeout");
     expect(guidancePanel).not.toContain("checkingHealth");
     expect(guidancePanel).not.toContain("healthCheck.isFetching");
     expect(guidancePanel).not.toContain("**AI 当前判断**\\n${data.factSummary}");
-    expect(guidancePanel).toContain("确认无误，写入事实");
-    expect(guidancePanel).toContain("跳过并修正");
-    expect(guidancePanel).toContain("在你确认前不会写入系统");
+    expect(guidancePanel).toContain("正在记录");
+    expect(guidancePanel).toContain("已记录的");
+    expect(guidancePanel).toContain("新的明确描述会作为可追溯证据更新");
     expect(guidancePanel).toContain("guidanceHistory");
     expect(guidancePanel).toContain("pendingCandidates");
     expect(guidancePanel).toContain("当前主题已收束");
@@ -469,7 +469,7 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("competitionNotes");
     expect(routers).toContain("buildStageAwareGuidancePromptSuffix(stageTarget || opportunity.stage");
     expect(guidance).toContain("必须围绕第一项未满足门控提问");
-    expect(guidance).toContain("提问时必须点名其中最相关的人");
+    expect(guidance).toContain("项目参与人（已确认）");
     expect(guidancePanel).toContain("当前阶段「{stageTarget}」的门控引导已激活");
   });
 

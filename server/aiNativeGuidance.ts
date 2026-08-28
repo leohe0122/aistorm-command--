@@ -1,6 +1,6 @@
 /**
  * AI 原生交互的共享事实契约。
- * AI 只提出问题、提取明确信号和解释缺口；所有业务写入须由 SAM 确认。
+ * AI 只提出问题、提取明确信号和解释缺口；SAM 可对自动沉淀结果进行修正。
  */
 
 export const AI_NATIVE_GUIDANCE_VERSION = "ai-native-guidance-v1";
@@ -42,6 +42,7 @@ export const ACCOUNT_REQUIREMENTS = {
 
 export const STAGE_REQUIREMENTS = {
   "需求挖掘": [
+    { key: "gate_participants", label: "项目参与人确认", question: "这个项目里你直接接触过或间接了解过的人有哪些？每个人大概是什么角色？", followUp: ["除了技术团队，预算审批和最终拍板是谁负责的？", "有没有你还没接触过但知道会参与决策的人？"] },
     { key: "gate_trigger", label: "触发事件", question: "是什么让客户必须现在处理这个安全问题？是现有产品到期、合规截止、安全事件、预算周期还是高层指令？客户具体说了什么？", followUp: ["这个时间压力最晚到什么日期？如果错过会发生什么？", "这是客户原话、会议结论还是公开事件？谁在客户内部最在意它？"] },
     { key: "I", label: "I 痛点牵连", question: "这个安全问题影响了哪个部门的哪位负责人？他上次提到这个问题时原话是什么？", followUp: ["如果这个问题今年不解决，谁的 KPI 或绩效会直接受影响？", "客户有没有发生过具体的安全事故、数据泄露或合规处罚？"] },
     { key: "M", label: "M 可量化价值", question: "如果这个问题不解决，客户每年大概损失多少？请记录他们说的数字，不是我们的估算。", followUp: ["客户有没有因这类问题被罚款、审计或监管约谈过？影响是多少？", "这笔安全投入是单独立项还是包含在 IT 总预算里？谁管这笔钱？"] },
@@ -70,14 +71,29 @@ export function buildStageAwareGuidancePromptSuffix(
   stage: string,
   missingGates: Array<{ label: string; question: string; followUp?: readonly string[] }>,
   contactNames: string[],
+  participants: Array<{ name: string; role: string }> = [],
 ): string {
   const gateSection = missingGates.length
     ? `当前阶段“${stage}”尚未满足的门控（按顺序处理第一项）：\n${missingGates.map((gate, index) => `${index + 1}. ${gate.label}：${gate.question}${gate.followUp?.length ? `\n   追问备选（仅当本轮已回答主问题但信息仍不完整时使用）：${gate.followUp.slice(0, 2).map(question => `\n   • ${question}`).join("")}` : ""}`).join("\n")}\n\n规则：必须围绕第一项未满足门控提问；若本轮临时回答已覆盖主问题，直接处理下一门控或使用追问备选；不得重复主问题。全部满足后才可按 Win 因子排序。`
     : `当前阶段“${stage}”的门控已全部满足，按 Win 因子最弱维度排序提问。`;
-  const contactSection = contactNames.length
-    ? `已知客户关键人：${contactNames.join("、")}。提问时必须点名其中最相关的人，禁止泛化问“谁”。`
-    : "当前没有可用的关键人姓名；问题必须指向具体事件或决策节点，不能泛化问‘谁’。";
-  return `\n\n${gateSection}\n${contactSection}\n\n问题质量要求：\n- 必须是 SAM 能用一段话直接回答的事实性问题\n- 必须包含具体人名或具体事件\n- 必须承接本轮临时问答，不能要求 SAM 重复已经回答的内容\n- 禁止问“你计划做什么”或“你打算怎样”，只问“他说了什么”或“发生了什么”\n- 禁止出现 MEDDPICC、Win 公式、Champion 等方法论术语`;
+  const confirmedParticipants = participants.filter(person => person.role !== "无关");
+  const participantSection = confirmedParticipants.length
+    ? `项目参与人（已确认）：\n${confirmedParticipants.map(person => `- ${person.name}：${person.role}`).join("\n")}。标记为“无关”的客户联系人绝不可出现在任何引导问题中。`
+    : "尚未确认项目参与人。必须先问“项目参与人确认”，不得从客户级全量关键人中机械轮询。";
+  const firstMissingKey = missingGates[0]?.label || "";
+  const roleParticipants = firstMissingKey.includes("经济决策") || firstMissingKey.includes("最终签字")
+    ? confirmedParticipants.filter(person => ["签字人", "决策人"].includes(person.role))
+    : firstMissingKey.includes("Champion")
+      ? confirmedParticipants.filter(person => ["使用方", "技术评估"].includes(person.role))
+      : firstMissingKey.includes("竞争")
+        ? confirmedParticipants.filter(person => ["评审人", "阻力"].includes(person.role))
+        : [];
+  const roleHint = roleParticipants.length
+    ? `当前第一门控对应人物：${roleParticipants.map(person => `${person.name}（${person.role}）`).join("、")}。只能在这些相关参与人中选择提问对象。`
+    : contactNames.length && confirmedParticipants.length
+      ? `当前第一门控暂无已确认对应角色人物；仅可围绕具体事件或门控问题提问，不能回到客户级联系人逐一轮询。`
+      : "";
+  return `\n\n${gateSection}\n${participantSection}\n${roleHint}\n\n问题质量要求：\n- 必须是 SAM 能用一段话直接回答的事实性问题\n- 必须包含具体人名或具体事件\n- 必须承接本轮临时问答，不能要求 SAM 重复已经回答的内容\n- 严禁询问尚未发生的会议、评审、报告或未来事件的结果、反馈与评价\n- 禁止问“你计划做什么”或“你打算怎样”，只问“他说了什么”或“发生了什么”\n- 禁止出现 MEDDPICC、Win 公式、Champion 等方法论术语`;
 }
 
 export function buildAccountGuidancePromptSuffix(

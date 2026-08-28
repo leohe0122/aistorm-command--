@@ -15,10 +15,12 @@ type Guidance = {
   doNotAssume: string[];
 };
 type Candidate = {
-  message: string; candidateTarget: "purchase_signal" | "meddpicc" | "none";
+  message: string; candidateTarget: "purchase_signal" | "meddpicc" | "participants" | "none";
   signalType: "intent_subject" | "decision_chain" | "trigger_event" | ""; meddpiccDim: "M" | "E" | "D1" | "D2" | "P" | "I" | "C1" | "C2" | "";
   subjectName: string; evidence: string; suggestedScore: 0 | 25 | 50 | 75 | 100; confidence: "high" | "medium" | "low"; topicStatus: "continue" | "exhausted";
   actionAdvice?: string; actionQuestion?: string;
+  participants?: Array<{ name: string; role: "技术评估" | "使用方" | "决策人" | "评审人" | "签字人" | "阻力" | "无关" }>;
+  silent?: boolean;
 };
 type PendingCandidate = Candidate & { id: string };
 type GuidanceTurn = { question: string; answer: string };
@@ -86,6 +88,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
   const [guide, setGuide] = useState<Guidance | null>(null);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [pendingCandidates, setPendingCandidates] = useState<PendingCandidate[]>([]);
+  const [recordedCandidates, setRecordedCandidates] = useState<PendingCandidate[]>([]);
   const [guidanceHistory, setGuidanceHistory] = useState<GuidanceTurn[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [requestTimedOut, setRequestTimedOut] = useState(false);
@@ -94,6 +97,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
   const interpretMutation = trpc.aiGuidance.interpretAnswer.useMutation();
   const createSignal = trpc.purchaseSignals.create.useMutation();
   const updateMeddpicc = trpc.opportunities.upsertMeddpicc.useMutation();
+  const recordParticipants = trpc.opportunities.recordParticipants.useMutation();
   const pendingGuide = customerGuideMutation.isPending || opportunityGuideMutation.isPending;
   useEffect(() => {
     if (!pendingGuide) return;
@@ -143,7 +147,8 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
 
   const startGuide = () => {
     const initial = !guide;
-    setCandidate(null);
+      setCandidate(null);
+      setRecordedCandidates([]);
     if (initial) {
       setPendingCandidates([]);
       setGuidanceHistory([]);
@@ -166,11 +171,13 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
       return;
     }
     interpretMutation.mutate({ scope, clientId, opportunityId, question: currentQuestion, answer, history: guidanceHistory, stageTarget: stageTarget as any }, {
-      onSuccess: (data: Candidate) => {
+      onSuccess: async (data: Candidate) => {
         setCandidate(data);
         setGuidanceHistory(nextHistory);
         if (data.candidateTarget !== "none") {
-          setPendingCandidates(current => current.concat({ ...data, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }));
+          const autoCandidate = { ...data, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` };
+          setPendingCandidates(current => current.concat(autoCandidate));
+          await confirmCandidate(autoCandidate);
         }
         if (data.topicStatus === "exhausted" && data.actionQuestion) {
           setGuide({
@@ -186,12 +193,14 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
         }
         requestGuidance(nextHistory, data.message);
       },
-      onError: () => {
+      onError: async () => {
         const fallback = scope === "opportunity" ? buildClientProvisionalCandidate(scope, currentQuestion, answer) : buildClientNoWriteCandidate(currentQuestion);
         setCandidate(fallback);
         setGuidanceHistory(nextHistory);
         if (fallback.candidateTarget !== "none") {
-          setPendingCandidates(current => current.concat({ ...fallback, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }));
+          const autoCandidate = { ...fallback, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` };
+          setPendingCandidates(current => current.concat(autoCandidate));
+          await confirmCandidate(autoCandidate);
         }
         requestGuidance(nextHistory, fallback.message);
         toast.info("回答已作为未确认临时上下文保留；系统未写入任何事实。 ");
@@ -199,8 +208,24 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
     });
   };
   const removePendingCandidate = (id: string) => setPendingCandidates(current => current.filter(item => item.id !== id));
-  const confirmCandidate = (pendingCandidate: PendingCandidate) => {
+  const confirmCandidate = async (pendingCandidate: PendingCandidate) => {
     if (pendingCandidate.candidateTarget === "none") return;
+    const markRecorded = () => {
+      removePendingCandidate(pendingCandidate.id);
+      if (!pendingCandidate.silent) setRecordedCandidates(current => current.concat(pendingCandidate));
+    };
+    if (pendingCandidate.candidateTarget === "participants") {
+      if (!opportunityId || !pendingCandidate.participants?.length) return toast.error("AI 未识别到可记录的项目参与人，请补充姓名与角色。");
+      try {
+        await recordParticipants.mutateAsync({ opportunityId, clientId, source: "ai_extracted", participants: pendingCandidate.participants });
+        markRecorded();
+        toast.success("已记录项目参与人，可随时补充修正");
+        await Promise.all([utils.opportunities.listParticipants.invalidate({ opportunityId }), utils.opportunities.getStageGuidance.invalidate({ clientId, opportunityId })]);
+      } catch (error) {
+        toast.error(`记录项目参与人失败：${error instanceof Error ? error.message : "服务暂不可用"}`);
+      }
+      return;
+    }
     if (pendingCandidate.candidateTarget === "purchase_signal") {
       if (!pendingCandidate.signalType || !pendingCandidate.subjectName || !pendingCandidate.evidence) return toast.error("AI 未识别到可确认的客户事实，请继续补充。" );
       let effectiveSignalType = pendingCandidate.signalType;
@@ -213,24 +238,26 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
           effectiveSignalType = "intent_subject";
         }
       }
-      createSignal.mutate({ clientId, signalType: effectiveSignalType, subjectName: pendingCandidate.subjectName, subjectContactId, occurredAt: new Date().toISOString(), statement: pendingCandidate.evidence, sourceType: "other_evidence", sourceReference: "AI 主动引导问答，经 SAM 确认" }, {
-        onSuccess: () => { toast.success("已确认并写入客户购买事实"); removePendingCandidate(pendingCandidate.id); utils.purchaseSignals.listByClient.invalidate({ clientId }); utils.opportunities.customerReadiness.invalidate({ clientId }); },
-        onError: error => toast.error(`写入事实失败：${error.message}`),
-      });
+      try {
+        await createSignal.mutateAsync({ clientId, signalType: effectiveSignalType, subjectName: pendingCandidate.subjectName, subjectContactId, occurredAt: new Date().toISOString(), statement: pendingCandidate.evidence, sourceType: "other_evidence", sourceReference: "AI 主动引导问答，SAM 原始回答自动沉淀" });
+        toast.success("已记录客户购买事实，可随时补充修正");
+        markRecorded();
+        await Promise.all([utils.purchaseSignals.listByClient.invalidate({ clientId }), utils.opportunities.customerReadiness.invalidate({ clientId })]);
+      } catch (error) {
+        toast.error(`写入事实失败：${error instanceof Error ? error.message : "服务暂不可用"}`);
+      }
       return;
     }
     if (!opportunityId || !pendingCandidate.meddpiccDim || !pendingCandidate.evidence) return toast.error("当前回答不足以写入商机事实，请继续补充。" );
     const field = MEDDPICC_FIELDS[pendingCandidate.meddpiccDim];
-    updateMeddpicc.mutate({ opportunityId, clientId, [field.score]: pendingCandidate.suggestedScore / 25, [field.notes]: `[AI 主动引导问答 · 经 SAM 确认] ${pendingCandidate.evidence}` } as any, {
-      onSuccess: () => {
-        toast.success("已确认并写入商机证据");
-        removePendingCandidate(pendingCandidate.id);
-        utils.opportunities.getMeddpicc.invalidate({ opportunityId });
-        utils.command2.getDealMap.invalidate({ clientId, opportunityId });
-        utils.opportunities.getStageGuidance.invalidate({ clientId, opportunityId });
-      },
-      onError: error => toast.error(`写入商机证据失败：${error.message}`),
-    });
+    try {
+      await updateMeddpicc.mutateAsync({ opportunityId, clientId, [field.score]: pendingCandidate.suggestedScore / 25, [field.notes]: `[AI 主动引导问答 · SAM 原始回答自动沉淀] ${pendingCandidate.evidence}` } as any);
+      toast.success("已记录商机证据，可随时补充修正");
+      markRecorded();
+      await Promise.all([utils.opportunities.getMeddpicc.invalidate({ opportunityId }), utils.command2.getDealMap.invalidate({ clientId, opportunityId }), utils.opportunities.getStageGuidance.invalidate({ clientId, opportunityId })]);
+    } catch (error) {
+      toast.error(`写入商机证据失败：${error instanceof Error ? error.message : "服务暂不可用"}`);
+    }
   };
   const working = pendingGuide || interpretMutation.isPending;
   const targetLabel = scope === "customer" ? "客户事实" : "商机证据";
@@ -239,7 +266,8 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
     {!guide ? <div className="mt-4 rounded-xl border border-dashed border-fuchsia-400/20 bg-slate-950/35 p-4 text-xs leading-5 text-slate-400">{requestTimedOut ? <><p>AI 引导未在预期时间内返回，尚未写入任何事实。</p><Button type="button" size="sm" variant="outline" className="mt-3 h-8 text-xs" onClick={startGuide}>重新尝试</Button></> : "不需要先填写方法论表格。点击“让 AI 开始引导”，系统会基于已经存在的拜访、关键人、购买信号和商机事实，提出当前最有价值的问题。"}</div> : <>
       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]"><AIChatBox messages={messages} onSendMessage={sendAnswer} isLoading={working} height="330px" placeholder="用自然语言描述客户说过什么、做过什么，或你还不知道什么…" emptyStateMessage="AI 正在准备第一个问题" /><aside className="space-y-3 rounded-xl border border-slate-700/70 bg-slate-950/50 p-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/70">当前状态</div><p className="mt-1 text-xs leading-5 text-slate-300">{guide.dataSufficiency === "sufficient" ? "现有事实支持当前问题。" : guide.dataSufficiency === "partial" ? "已有部分事实，仍需用客户原话核实。" : "数据不足，暂不判断。"}</p></div><div><div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/70">暂不假定</div>{guide.doNotAssume.length ? <ul className="mt-1 space-y-1 text-[11px] leading-4 text-slate-400">{guide.doNotAssume.slice(0, 2).map((item, index) => <li key={index}>• {item}</li>)}</ul> : <p className="mt-1 text-[11px] text-slate-500">无</p>}</div><div><div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/70">回答提示</div><p className="mt-1 text-[11px] leading-4 text-amber-100/80">请优先补充本次问题所涉及的客户原话、动作或时间安排。</p></div><details className="rounded-lg border border-slate-700/60 bg-slate-950/35 px-2.5 py-2"><summary className="cursor-pointer text-[11px] font-medium text-fuchsia-100/80">查看 AI 依据</summary><p className="mt-2 text-[11px] leading-5 text-slate-400">{guide.factSummary}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">为什么现在问：{guide.whyThisQuestion}</p></details></aside></div>
       {candidate?.candidateTarget === "none" && <div className="mt-3 rounded-xl border border-slate-700/70 bg-slate-950/45 p-3"><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" /><div><div className="text-xs font-semibold text-slate-100">{candidate.topicStatus === "exhausted" ? "当前主题已收束" : "暂未形成待确认事实"}</div><p className="mt-1 text-xs leading-5 text-slate-300">{candidate.message}</p><p className="mt-1 text-[11px] text-slate-500">本次不会写入系统。AI 已切换到不同的事实方向。</p></div></div></div>}
-      {pendingCandidates.length > 0 && <div className="mt-3 space-y-3">{pendingCandidates.map(pendingCandidate => <div key={pendingCandidate.id} className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.055] p-3"><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-cyan-200" /><div className="min-w-0 flex-1"><div className="text-xs font-semibold text-cyan-100">待你确认后写入的{targetLabel}</div><p className="mt-1 text-xs leading-5 text-slate-300">{pendingCandidate.evidence}</p><p className="mt-1 text-[10px] text-slate-500">置信度：{pendingCandidate.confidence === "high" ? "高（回答中有明确事实）" : pendingCandidate.confidence === "medium" ? "中（建议继续核对）" : "低（不建议写入）"}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">如需修正，请跳过此候选并在输入框补充正确描述；在你确认前不会写入系统。</p></div></div><div className="mt-3 flex justify-end gap-2"><Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={() => removePendingCandidate(pendingCandidate.id)}>跳过并修正</Button><Button type="button" size="sm" className="h-8 gap-1 text-xs" onClick={() => confirmCandidate(pendingCandidate)} disabled={createSignal.isPending || updateMeddpicc.isPending}><CheckCircle2 className="h-3.5 w-3.5" />确认无误，写入事实</Button></div></div>)}</div>}
+      {pendingCandidates.length > 0 && <div className="mt-3 space-y-3">{pendingCandidates.map(pendingCandidate => <div key={pendingCandidate.id} className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.055] p-3"><div className="flex items-start gap-3"><Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-cyan-200" /><div className="min-w-0 flex-1"><div className="text-xs font-semibold text-cyan-100">正在记录{pendingCandidate.candidateTarget === "participants" ? "项目参与人" : targetLabel}</div><p className="mt-1 text-xs leading-5 text-slate-300">{pendingCandidate.evidence || pendingCandidate.participants?.map(person => `${person.name}（${person.role}）`).join("、")}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">系统正在以 SAM 原始回答为来源沉淀；完成后可补充修正。</p></div></div></div>)}</div>}
+      {recordedCandidates.length > 0 && <div className="mt-3 space-y-3">{recordedCandidates.slice(-3).map(recordedCandidate => <div key={recordedCandidate.id} className="rounded-xl border border-emerald-400/25 bg-emerald-400/[0.055] p-3"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-200" /><div className="min-w-0 flex-1"><div className="text-xs font-semibold text-emerald-100">已记录的{recordedCandidate.candidateTarget === "participants" ? "项目参与人" : targetLabel}</div><p className="mt-1 text-xs leading-5 text-slate-300">{recordedCandidate.evidence || recordedCandidate.participants?.map(person => `${person.name}（${person.role}）`).join("、")}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">如与实际不符，请在输入框补充正确描述；新的明确描述会作为可追溯证据更新。</p></div></div></div>)}</div>}
     </>}
   </section>;
 }

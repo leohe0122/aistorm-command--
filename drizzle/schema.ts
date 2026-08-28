@@ -797,6 +797,23 @@ export type Opportunity = typeof opportunities.$inferSelect;
 export type InsertOpportunity = typeof opportunities.$inferInsert;
 
 /**
+ * 商机参与人：只记录与单一商机相关的客户人员及其项目角色。
+ * 与客户级关键人图谱分离；角色为“无关”时，该人员不会进入任何商机 AI 引导问题。
+ */
+export const opportunityParticipants = mysqlTable("opportunity_participants", {
+  id: int("id").autoincrement().primaryKey(),
+  opportunityId: int("opportunityId").notNull(),
+  clientId: int("clientId").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  role: mysqlEnum("role", ["技术评估", "使用方", "决策人", "评审人", "签字人", "阻力", "无关"]).default("技术评估").notNull(),
+  source: mysqlEnum("source", ["sam_input", "ai_extracted"]).default("sam_input").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OpportunityParticipant = typeof opportunityParticipants.$inferSelect;
+export type InsertOpportunityParticipant = typeof opportunityParticipants.$inferInsert;
+
+/**
  * 商机级 MEDDPICC 评分（每条商机独立的 8 维评分）
  */
 export const opportunityMeddpicc = mysqlTable("opportunity_meddpicc", {

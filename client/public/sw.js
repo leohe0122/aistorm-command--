@@ -1,5 +1,5 @@
 // AIStorm Command Service Worker
-const CACHE_NAME = 'aistorm-command-v20260828-ai-guidance-person-topic-dedup-v9';
+const CACHE_NAME = 'aistorm-command-v20260828-ai-guidance-participants-auto-record-v10';
 
 // Install: skip waiting so new SW activates immediately
 self.addEventListener('install', (event) => {
