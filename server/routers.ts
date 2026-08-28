@@ -343,13 +343,67 @@ function buildNoWriteAnswerInterpretation(scope: "customer" | "opportunity", que
   };
 }
 
+type SalesActionAdvice = { advice: string; actionQuestion: string };
+
+function buildSalesActionAdvice(question: string): SalesActionAdvice {
+  const normalizedQuestion = question.replace(/\s+/g, "").toLowerCase();
+  const dimension = /(为什么现在|变得紧迫|到期|不续签|合规|安全事件|倒逼|截止)/i.test(normalizedQuestion)
+    ? "gate_trigger"
+    : topicMeddpiccDimension(inferGuidanceTopic(question));
+  const adviceByGap: Record<string, SalesActionAdvice> = {
+    E: {
+      advice: "这是当前关键人信息的缺口。若你已有内部支持者，可请其协助安排与最终签字人的非正式交流，或转达已准备的业务价值材料；在获得反馈前，不要假定对方已经支持。",
+      actionQuestion: "你下一次能与熟悉决策链的联系人沟通是什么时候？是否已有可协助约见最终签字人的内部入口？",
+    },
+    D2: {
+      advice: "先和项目牵头人把从现在到正式决定的关键时间点倒排出来，重点核实每一轮评审与可能卡住的环节，而不是假定流程会自然推进。",
+      actionQuestion: "你下一次能与项目牵头人核对推进时间和评审顺序是什么时候？",
+    },
+    M: {
+      advice: "可邀请业务和财务相关方共同校对一页 ROI 或风险成本材料，先记录客户认可的数字，不把我方估算当成客户事实。",
+      actionQuestion: "你下一次能与哪位业务或财务相关方核对价值数字？预计在什么时候？",
+    },
+    C1: {
+      advice: "先验证内部支持者是否愿意并能够采取具体行动，例如引荐关键人、推动内部讨论或反馈真实阻力；不要仅凭友好态度认定其会推动项目。",
+      actionQuestion: "你准备请哪位已知联系人协助推进一次具体动作？何时可以确认结果？",
+    },
+    C2: {
+      advice: "建议通过客户侧的真实反馈了解竞品位置、他们被认可的点和仍未解决的顾虑；不要预设客户一定会放弃其他厂商。",
+      actionQuestion: "你下一次可以向哪位已知联系人了解竞品动态？预计何时沟通？",
+    },
+    P: {
+      advice: "可请项目联系人明确合同将经过哪些部门、法务和采购各自关注什么，以及是否已有固定审批窗口；在获得确认前不要假定可以直接签约。",
+      actionQuestion: "你下一次能和哪位联系人核对合同审批路径与时间安排？",
+    },
+    I: {
+      advice: "先与受影响团队还原不解决问题的实际业务或安全后果，并记录对方原话；不要把我方对痛点的判断当作客户结论。",
+      actionQuestion: "你下一次能与哪位受影响联系人核对该问题带来的具体后果？",
+    },
+    D1: {
+      advice: "可请技术牵头人说明评估方案的具体标准、标准由谁确定，以及哪些要求尚未满足；不要仅凭我方理解替客户定义选型标准。",
+      actionQuestion: "你下一次能与技术牵头人核对选型标准和制定人是什么时候？",
+    },
+    gate_trigger: {
+      advice: "当前缺的是客户为什么必须现在行动。可围绕现有产品到期、不续签、合规截止、安全事件、预算周期或高层指令逐一核实，并只记录客户已明确表达的紧迫原因。",
+      actionQuestion: "你下一次能向哪位已知联系人核实项目的到期、截止或其他紧迫事件？预计什么时候沟通？",
+    },
+  };
+  return adviceByGap[dimension || ""] || {
+    advice: "当前缺口尚无客户事实支撑。建议先选择最熟悉该事项的已知联系人，核实对方说过的原话、已发生动作或明确时间点，不要补全未知意图。",
+    actionQuestion: "你下一次能与哪位已知联系人核实这个缺口？预计什么时候沟通？",
+  };
+}
+
 function buildTopicExhaustedAnswerInterpretation(scope: "customer" | "opportunity", question: string, uncovered: MeddpiccDimCode[] = [], history: GuidanceHistoryTurn[] = []) {
   const completed = topicMeddpiccDimension(inferGuidanceTopic(question));
+  const action = buildSalesActionAdvice(question);
   return {
-    message: "已记录：这个主题目前没有更多补充。系统不会把“没有了”写成客户事实，现已切换到另一个尚未覆盖的事实方向。",
+    message: `当前对此没有更多可确认的客户事实，因此不会写入系统。行动建议：${action.advice}`,
     nextQuestion: scope === "opportunity"
       ? nextUncoveredMeddpiccQuestion(uncovered, completed, history.map(turn => turn.question))
       : "除了刚才的话题，客户最近一次沟通中还提到过哪些明确的时间节点、人物表态或已发生动作？",
+    actionAdvice: action.advice,
+    actionQuestion: action.actionQuestion,
     candidateTarget: "none" as const,
     signalType: "" as const,
     meddpiccDim: "" as const,

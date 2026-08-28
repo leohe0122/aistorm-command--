@@ -43,6 +43,8 @@ describe("AI 主动引导明确商机事实分类", () => {
   it("将没有更多补充识别为主题收束，而不是新的客户事实", () => {
     expect(isGuidanceTopicExhaustionAnswer("没有了")).toBe(true);
     expect(isGuidanceTopicExhaustionAnswer("这些当前都还没有涉及。")).toBe(true);
+    expect(isGuidanceTopicExhaustionAnswer("不知道 Susanna 的具体立场")).toBe(true);
+    expect(isGuidanceTopicExhaustionAnswer("不知道 Susanna 的具体立场，但是 Marcos 说她关心风险")).toBe(false);
     expect(isGuidanceTopicExhaustionAnswer("Felix不认同EDR项目本身")).toBe(false);
   });
 
@@ -107,5 +109,16 @@ describe("AI 主动引导明确商机事实分类", () => {
     expect(covered.has("D2")).toBe(false);
     expect(covered.has("M")).toBe(false);
     expect(covered.has("C1")).toBe(false);
+  });
+
+  it("将明确不知道最终签字人仅作为本轮 E 门控收束，避免重复主问题", () => {
+    const covered = getTransientStageGateCoverage([
+      {
+        question: "最终谁签字批这笔预算？你见过他吗？他对这个安全项目说过什么或做过什么？",
+        answer: "不知道 Susanna 的具体立场",
+      },
+    ]);
+    expect(covered.has("E")).toBe(true);
+    expect(covered.has("M")).toBe(false);
   });
 });

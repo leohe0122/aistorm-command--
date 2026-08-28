@@ -18,6 +18,7 @@ type Candidate = {
   message: string; candidateTarget: "purchase_signal" | "meddpicc" | "none";
   signalType: "intent_subject" | "decision_chain" | "trigger_event" | ""; meddpiccDim: "M" | "E" | "D1" | "D2" | "P" | "I" | "C1" | "C2" | "";
   subjectName: string; evidence: string; suggestedScore: 0 | 25 | 50 | 75 | 100; confidence: "high" | "medium" | "low"; topicStatus: "continue" | "exhausted";
+  actionAdvice?: string; actionQuestion?: string;
 };
 type PendingCandidate = Candidate & { id: string };
 type GuidanceTurn = { question: string; answer: string };
@@ -156,12 +157,32 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
     const currentQuestion = guide.primaryQuestion;
     const nextHistory = guidanceHistory.concat({ question: currentQuestion, answer }).slice(-10);
     setMessages(current => current.concat({ role: "user", content: answer }));
+    if (guide.answerFocus === "action_plan") {
+      // 行动安排不是客户事实，也不能作为临时门控覆盖；仅保留此前的事实问答历史。
+      const factHistory = guidanceHistory;
+      setGuidanceHistory(factHistory);
+      setCandidate(buildClientNoWriteCandidate(currentQuestion));
+      requestGuidance(factHistory, "已记录本轮行动安排；它不会作为客户事实写入系统。继续补齐下一项客户证据。");
+      return;
+    }
     interpretMutation.mutate({ scope, clientId, opportunityId, question: currentQuestion, answer, history: guidanceHistory, stageTarget: stageTarget as any }, {
       onSuccess: (data: Candidate) => {
         setCandidate(data);
         setGuidanceHistory(nextHistory);
         if (data.candidateTarget !== "none") {
           setPendingCandidates(current => current.concat({ ...data, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }));
+        }
+        if (data.topicStatus === "exhausted" && data.actionQuestion) {
+          setGuide({
+            dataSufficiency: "insufficient",
+            factSummary: "数据不足，暂不判断。当前缺口尚未形成客户事实。",
+            primaryQuestion: data.actionQuestion,
+            whyThisQuestion: "先把未知事实转化为一次可执行的核实动作；行动安排不会写入客户事实层。",
+            answerFocus: "action_plan",
+            doNotAssume: ["不能假定客户已经支持当前方案", "不能把行动计划当作客户事实"],
+          });
+          setMessages(current => current.concat({ role: "assistant", content: `**行动建议（不写入客户事实）**\n${data.actionAdvice || data.message}\n\n**下一步我想确认：** ${data.actionQuestion}` }));
+          return;
         }
         requestGuidance(nextHistory, data.message);
       },
@@ -218,7 +239,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
     {!guide ? <div className="mt-4 rounded-xl border border-dashed border-fuchsia-400/20 bg-slate-950/35 p-4 text-xs leading-5 text-slate-400">{requestTimedOut ? <><p>AI 引导未在预期时间内返回，尚未写入任何事实。</p><Button type="button" size="sm" variant="outline" className="mt-3 h-8 text-xs" onClick={startGuide}>重新尝试</Button></> : "不需要先填写方法论表格。点击“让 AI 开始引导”，系统会基于已经存在的拜访、关键人、购买信号和商机事实，提出当前最有价值的问题。"}</div> : <>
       <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]"><AIChatBox messages={messages} onSendMessage={sendAnswer} isLoading={working} height="330px" placeholder="用自然语言描述客户说过什么、做过什么，或你还不知道什么…" emptyStateMessage="AI 正在准备第一个问题" /><aside className="space-y-3 rounded-xl border border-slate-700/70 bg-slate-950/50 p-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/70">当前状态</div><p className="mt-1 text-xs leading-5 text-slate-300">{guide.dataSufficiency === "sufficient" ? "现有事实支持当前问题。" : guide.dataSufficiency === "partial" ? "已有部分事实，仍需用客户原话核实。" : "数据不足，暂不判断。"}</p></div><div><div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/70">暂不假定</div>{guide.doNotAssume.length ? <ul className="mt-1 space-y-1 text-[11px] leading-4 text-slate-400">{guide.doNotAssume.slice(0, 2).map((item, index) => <li key={index}>• {item}</li>)}</ul> : <p className="mt-1 text-[11px] text-slate-500">无</p>}</div><div><div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-fuchsia-200/70">回答提示</div><p className="mt-1 text-[11px] leading-4 text-amber-100/80">请优先补充本次问题所涉及的客户原话、动作或时间安排。</p></div><details className="rounded-lg border border-slate-700/60 bg-slate-950/35 px-2.5 py-2"><summary className="cursor-pointer text-[11px] font-medium text-fuchsia-100/80">查看 AI 依据</summary><p className="mt-2 text-[11px] leading-5 text-slate-400">{guide.factSummary}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">为什么现在问：{guide.whyThisQuestion}</p></details></aside></div>
       {candidate?.candidateTarget === "none" && <div className="mt-3 rounded-xl border border-slate-700/70 bg-slate-950/45 p-3"><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" /><div><div className="text-xs font-semibold text-slate-100">{candidate.topicStatus === "exhausted" ? "当前主题已收束" : "暂未形成待确认事实"}</div><p className="mt-1 text-xs leading-5 text-slate-300">{candidate.message}</p><p className="mt-1 text-[11px] text-slate-500">本次不会写入系统。AI 已切换到不同的事实方向。</p></div></div></div>}
-      {pendingCandidates.length > 0 && <div className="mt-3 space-y-3">{pendingCandidates.map(pendingCandidate => <div key={pendingCandidate.id} className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.055] p-3"><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-cyan-200" /><div className="min-w-0 flex-1"><div className="text-xs font-semibold text-cyan-100">AI 识别到一条待确认的{targetLabel}</div><p className="mt-1 text-xs leading-5 text-slate-300">{pendingCandidate.evidence}</p><p className="mt-1 text-[10px] text-slate-500">置信度：{pendingCandidate.confidence === "high" ? "高（回答中有明确事实）" : pendingCandidate.confidence === "medium" ? "中（建议继续核对）" : "低（不建议写入）"}</p></div></div><div className="mt-3 flex justify-end gap-2"><Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={() => removePendingCandidate(pendingCandidate.id)}>暂不写入</Button><Button type="button" size="sm" className="h-8 gap-1 text-xs" onClick={() => confirmCandidate(pendingCandidate)} disabled={createSignal.isPending || updateMeddpicc.isPending}><CheckCircle2 className="h-3.5 w-3.5" />确认写入事实</Button></div></div>)}</div>}
+      {pendingCandidates.length > 0 && <div className="mt-3 space-y-3">{pendingCandidates.map(pendingCandidate => <div key={pendingCandidate.id} className="rounded-xl border border-cyan-400/25 bg-cyan-400/[0.055] p-3"><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-cyan-200" /><div className="min-w-0 flex-1"><div className="text-xs font-semibold text-cyan-100">待你确认后写入的{targetLabel}</div><p className="mt-1 text-xs leading-5 text-slate-300">{pendingCandidate.evidence}</p><p className="mt-1 text-[10px] text-slate-500">置信度：{pendingCandidate.confidence === "high" ? "高（回答中有明确事实）" : pendingCandidate.confidence === "medium" ? "中（建议继续核对）" : "低（不建议写入）"}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">如需修正，请跳过此候选并在输入框补充正确描述；在你确认前不会写入系统。</p></div></div><div className="mt-3 flex justify-end gap-2"><Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={() => removePendingCandidate(pendingCandidate.id)}>跳过并修正</Button><Button type="button" size="sm" className="h-8 gap-1 text-xs" onClick={() => confirmCandidate(pendingCandidate)} disabled={createSignal.isPending || updateMeddpicc.isPending}><CheckCircle2 className="h-3.5 w-3.5" />确认无误，写入事实</Button></div></div>)}</div>}
     </>}
   </section>;
 }

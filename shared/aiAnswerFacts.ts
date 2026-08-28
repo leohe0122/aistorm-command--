@@ -56,8 +56,13 @@ export function inferGuidanceTopic(value: string): GuidanceTopic {
 }
 
 export function isGuidanceTopicExhaustionAnswer(answer: string) {
-  const text = answer.replace(/[\s，。！!；;、]/g, "").toLowerCase();
-  return /^(没有了|没了|没有更多|没有更多了|暂无更多|暂时没有|尚未涉及|还没有涉及|这些当前都还没有涉及|当前都还没有涉及|不清楚|不知道)$/.test(text);
+  const original = answer.trim();
+  const text = original.replace(/[\s，。！!；;、]/g, "").toLowerCase();
+  if (/^(没有了|没了|没有更多|没有更多了|暂无更多|暂时没有|尚未涉及|还没有涉及|这些当前都还没有涉及|当前都还没有涉及|不清楚|不知道)$/.test(text)) return true;
+  // “不知道 Susanna 的具体立场”一类回答同样意味着当前主题没有可录入的客户事实，
+  // 但含有“但是/不过”等转折补充的回答不得被误判为未知。
+  return /^(?:我)?(?:不清楚|不知道|不了解|暂不清楚|暂时不清楚)(?:关于|对|谁|哪位|客户|他|她)?[^，。；;！!]{0,28}$/i.test(original)
+    && !/(但是|不过|可是|但)/.test(original);
 }
 
 export function topicMeddpiccDimension(topic: GuidanceTopic): MeddpiccDimCode | undefined {
@@ -95,10 +100,18 @@ export function getTransientStageGateCoverage(history: GuidanceHistoryTurn[]) {
   for (const turn of history) {
     const question = String(turn.question || "").trim();
     const answer = String(turn.answer || "").trim();
-    if (!question || !answer || isGuidanceTopicExhaustionAnswer(answer)) continue;
+    if (!question || !answer) continue;
+    const askedDim = topicMeddpiccDimension(inferGuidanceTopic(question));
+    if (isGuidanceTopicExhaustionAnswer(answer)) {
+      // 仅在本轮对话中暂时跳过已明确“不知道”的门控，避免原题循环。
+      // 这绝不改变数据库事实或实际阶段就绪状态；刷新后仍会显示该真实缺口。
+      if (askedDim) covered.add(askedDim);
+      const exhaustedTurnText = `${question}\n${answer}`;
+      if (/(到期|不续签|renew|renewal|截止|deadline|时间节点|触发)/i.test(exhaustedTurnText)) covered.add("gate_trigger");
+      continue;
+    }
     const answerFact = classifyExplicitOpportunityFact(answer);
     if (answerFact?.dim) covered.add(answerFact.dim);
-    const askedDim = topicMeddpiccDimension(inferGuidanceTopic(question));
     if (askedDim) covered.add(askedDim);
     const turnText = `${question}\n${answer}`;
     if (/(竞品|竞争|crowdstrike|奇安信|深信服|sentinelone|替换|其他厂商)/i.test(turnText)) covered.add("gate8CompDefensible");
