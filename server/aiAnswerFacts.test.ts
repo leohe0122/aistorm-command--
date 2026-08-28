@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion } from "../shared/aiAnswerFacts";
+import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidancePersonTopicAlreadyCovered, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion } from "../shared/aiAnswerFacts";
 
 describe("AI 主动引导明确商机事实分类", () => {
   const uncovered = ["M", "E", "D1", "D2", "P", "I", "C1", "C2"] as const;
@@ -120,5 +120,16 @@ describe("AI 主动引导明确商机事实分类", () => {
     ]);
     expect(covered.has("E")).toBe(true);
     expect(covered.has("M")).toBe(false);
+  });
+
+  it("阻止同一关键人被重复询问同一立场主题，但允许改问尚未覆盖的人", () => {
+    const people = ["Ronald TK Lau", "Marcos Chow", "Felix"];
+    const history = [
+      { question: "Ronald TK Lau 在关于 EDR 方案的讨论中，是否提过自己的观点或支持情况？", answer: "尽管和我们关系很好，但需要测试结果说话。" },
+      { question: "Marcos Chow 是否提到在会议中对 EDR 方案的看法或态度？", answer: "非常倾向于我们。" },
+      { question: "Felix 在 EDR 方案的讨论中，有没有表达出他对此方案的支持或反对意见？", answer: "明确反对。" },
+    ];
+    expect(isGuidancePersonTopicAlreadyCovered("Ronald TK Lau 在关于 EDR 方案的讨论中，是否有进一步的支持或反对言论？", history, people)).toBe(true);
+    expect(isGuidancePersonTopicAlreadyCovered("另一位尚未覆盖的技术负责人，对 EDR 的态度是什么？", history, people)).toBe(true);
   });
 });

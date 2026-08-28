@@ -13,7 +13,7 @@ import { SALES_METHODOLOGY_SYSTEM_PROMPT, buildAccountMapDiagnosticLayer, buildD
 import { calculateDealHealth, calculateGoNoGo, GO_NO_GO_GATE_KEYS } from "../shared/command2";
 import { evaluateCustomerReadiness, type CustomerStage } from "../shared/customerReadiness";
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
-import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion, topicMeddpiccDimension, type GuidanceHistoryTurn, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
+import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasValidExtractedFactCandidate, inferGuidanceTopic, isGuidancePersonTopicAlreadyCovered, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion, topicMeddpiccDimension, type GuidanceHistoryTurn, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
 import { ACCOUNT_REQUIREMENTS, AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildAccountGuidancePromptSuffix, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 import { calculateWinFactors } from "../shared/winFactors";
@@ -300,6 +300,42 @@ function enforceStageGateGuidance(scope: "customer" | "opportunity", snapshot: s
   };
 }
 
+/**
+ * 阶段门控和 Win 因子都不得绕开已经问过的“人物 × 主题”。本轮历史只用于
+ * 选择下一问，绝不代表已经写入或确认任何客户事实。
+ */
+function preventGuidancePersonTopicLoop(
+  scope: "customer" | "opportunity",
+  guidance: any,
+  contacts: any[],
+  history: GuidanceHistoryTurn[],
+) {
+  if (!history.length || !guidance?.primaryQuestion) return guidance;
+  const knownPeople = contacts.map(contact => String(contact?.name || "").trim()).filter(Boolean);
+  if (!isGuidancePersonTopicAlreadyCovered(guidance.primaryQuestion, history, knownPeople)) return guidance;
+
+  if (scope === "opportunity") {
+    const lastTopic = inferGuidanceTopic(history.at(-1)?.question || "");
+    const alternative = nextUncoveredMeddpiccQuestion(
+      ["M", "E", "D1", "D2", "P", "I", "C1", "C2"],
+      topicMeddpiccDimension(lastTopic),
+      history.map(turn => turn.question),
+    );
+    return {
+      ...guidance,
+      primaryQuestion: alternative,
+      whyThisQuestion: "同一位关键人的同一主题本轮已回答；现转向另一项尚需核实的客户事实。",
+      doNotAssume: ["不能因关系良好而假定关键人支持", "不能把本轮未确认回答写入事实层"],
+    };
+  }
+
+  return {
+    ...guidance,
+    primaryQuestion: "客户最近有没有发生过新的会议、事件或明确时间节点，能帮助你判断这项业务压力？",
+    whyThisQuestion: "同一位联系人的同一主题本轮已回答；现转向尚未覆盖的具体事件。",
+  };
+}
+
 function buildBaselineGuidance(scope: "customer" | "opportunity", contacts: any[] = [], stageGateQuestion = "") {
   if (scope === "opportunity" && stageGateQuestion) {
     return {
@@ -466,7 +502,7 @@ function buildProvisionalAnswerCandidate(scope: "customer" | "opportunity", ques
   };
 }
 
-async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string, contacts: any[] = []) {
+async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string, contacts: any[] = [], history: GuidanceHistoryTurn[] = []) {
   const prompt = `你是 AIStorm Command 的主动式销售引导 AI。
 你的唯一任务是：读取 SAM 已知但尚未录入系统的信息，一次问一个问题，帮助 SAM 把脑子里的事实存入系统。
 
@@ -498,15 +534,19 @@ ${snapshot}
       // 使用同一事实契约与 Schema 的快速模型，不改变事实约束或确认写入边界。
       result = await runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal, true);
     } catch {
-      return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot));
+      return preventGuidancePersonTopicLoop(scope, buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)), contacts, history);
     }
   } finally {
     clearTimeout(primaryTimer);
     clearTimeout(totalTimer);
   }
   const raw = getLLMTextContent(result.choices[0]?.message.content);
-  if (!raw) return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot));
-  try { return enforceStageGateGuidance(scope, snapshot, JSON.parse(extractJSON(raw))); } catch { return buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)); }
+  if (!raw) return preventGuidancePersonTopicLoop(scope, buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)), contacts, history);
+  try {
+    return preventGuidancePersonTopicLoop(scope, enforceStageGateGuidance(scope, snapshot, JSON.parse(extractJSON(raw))), contacts, history);
+  } catch {
+    return preventGuidancePersonTopicLoop(scope, buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)), contacts, history);
+  }
 }
 
 const OPPORTUNITY_STAGE_ORDER = ["初步需求", "需求挖掘", "技术验证", "方案提案", "商务谈判", "赢单", "丢单"] as const;
@@ -611,7 +651,8 @@ export const appRouter = router({
     })).mutation(async ({ input }) => {
       const history = (input.history || []).map(turn => ({ question: turn.question.trim(), answer: turn.answer.trim() }));
       const snapshot = await buildOpportunityGuidanceSnapshot(input.clientId, input.opportunityId, history, input.stageTarget);
-      return generateAIGuidance("opportunity", snapshot);
+      const contacts = await getContactsByClientId(input.clientId);
+      return generateAIGuidance("opportunity", snapshot, contacts, history);
     }),
     interpretAnswer: protectedProcedure.input(z.object({
       scope: z.enum(["customer", "opportunity"]), clientId: z.number(), opportunityId: z.number().optional(), question: z.string().min(3), answer: z.string().min(3).max(6000),

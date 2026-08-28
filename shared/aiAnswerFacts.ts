@@ -92,6 +92,38 @@ export function isQuestionTopicAlreadyCovered(question: string, history: Guidanc
 }
 
 /**
+ * 从问题中识别被点名的已知关键人。人物是 AI 追问去重的最小单位：
+ * 允许同一门控改问未覆盖的人，但不允许围绕同一人反复问同一主题。
+ */
+export function getGuidanceQuestionPersonNames(question: string, knownPeople: string[] = []) {
+  const normalizedQuestion = question.replace(/\s+/g, " ").toLowerCase();
+  return knownPeople
+    .map(name => name.trim())
+    .filter(Boolean)
+    .filter(name => normalizedQuestion.includes(name.toLowerCase()));
+}
+
+export function isGuidancePersonTopicAlreadyCovered(
+  question: string,
+  history: GuidanceHistoryTurn[],
+  knownPeople: string[] = [],
+) {
+  const topic = inferGuidanceTopic(question);
+  if (topic === "unknown") return false;
+  const askedPeople = getGuidanceQuestionPersonNames(question, knownPeople);
+  const historicalTopics = history.map(turn => inferGuidanceTopic(turn.question));
+
+  // 没有具体人物的同主题追问会把已覆盖的事项重新泛化，直接拦截。
+  if (!askedPeople.length) return historicalTopics.includes(topic);
+
+  return askedPeople.some(person => history.some(turn =>
+    inferGuidanceTopic(turn.question) === topic
+    && getGuidanceQuestionPersonNames(turn.question, knownPeople).some(previous => previous.toLowerCase() === person.toLowerCase())
+    && Boolean(turn.answer.trim()),
+  ));
+}
+
+/**
  * 本轮问答只用于选择下一问，绝不代表已经写入或确认的商机事实。
  * 它让阶段门控跳过 SAM 已明确回答的主题，避免同一轮中重复追问。
  */
