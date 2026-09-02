@@ -661,7 +661,8 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
   const annualValue = pains.reduce((sum: number, pain: any) => sum + Number(pain.annualValue || 0), 0);
   const winFactors = calculateWinFactors({ meddpicc: meddpicc[0] || null, threeWhy: why[0] || null, annualValue, contactCount: activeParticipants.length });
   const stageAwareSuffix = buildStageAwareGuidancePromptSuffix(stageTarget || opportunity.stage, missingStageRequirements, contactNames, activeParticipants as Array<{ name: string; role: string }>);
-  return `【商机作战室原始事实】\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}\n项目参与人：${JSON.stringify(activeParticipants)}\nWin 因子：${JSON.stringify(winFactors)}${stageGateContext}${stageAwareSuffix}${buildTransientGuidanceContext(history)}`;
+  const currentDate = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
+  return `【商机作战室原始事实】\n今天日期：${currentDate}。只能询问截至此日期已经发生的客户事实、原话、动作或明确时间节点；不得追问未来会议、评审、报告的结果，也不得将计划、预计或打算当作事实。\n商机：${opportunity.name}\n阶段：${opportunity.stage}\n金额：${opportunity.estimatedValue || "数据不足"}\n商机 MEDDPICC：${JSON.stringify(meddpicc[0] || {})}\n客户改变原因：${JSON.stringify(why[0] || {})}\n痛点与量化：${JSON.stringify(pains)}\n竞争事实：${JSON.stringify(competitions)}\n项目参与人：${JSON.stringify(activeParticipants)}\nWin 因子：${JSON.stringify(winFactors)}${stageGateContext}${stageAwareSuffix}${buildTransientGuidanceContext(history)}`;
 }
 
 function buildTransientGuidanceContext(history: GuidanceHistoryTurn[]) {

@@ -134,8 +134,8 @@ describe("作战工作流入口收敛", () => {
     const indexHtml = projectFile("client/index.html");
     const serviceWorker = projectFile("client/public/sw.js");
     const app = projectFile("client/src/App.tsx");
-    expect(indexHtml).toContain("/sw.js?v=20260902-ai-guidance-account-deal-isolation-v11");
-    expect(serviceWorker).toContain("aistorm-command-v20260902-ai-guidance-account-deal-isolation-v11");
+    expect(indexHtml).toContain("/sw.js?v=20260902-ai-guidance-fact-boundary-v12");
+    expect(serviceWorker).toContain("aistorm-command-v20260902-ai-guidance-fact-boundary-v12");
     expect(serviceWorker).toContain("event.request.mode === 'navigate'");
     expect(app).toContain("controllerchange");
   });
@@ -348,6 +348,8 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain('if (hasValidExtractedFactCandidate(parsed))');
     expect(routers).toContain("buildOpportunityGuidanceSnapshot");
     expect(routers).toContain("buildTransientGuidanceContext");
+    expect(routers).toContain("今天日期：${currentDate}");
+    expect(routers).toContain("不得将计划、预计或打算当作事实");
     expect(routers).toContain("function enforceOpportunityGuidanceScope");
     expect(routers).toContain("【范围硬约束：商机作战室（Deal Map）】");
     expect(routers).toContain("toAnswerExtractionResult");
@@ -392,7 +394,7 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("requestGuidance(factHistory");
     expect(guidancePanel).toContain("}, 20_000)");
     expect(guidancePanel).toContain("已切换为基础引导");
-    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260902-ai-guidance-account-deal-isolation-v11");
+    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260902-ai-guidance-fact-boundary-v12");
     expect(guidancePanel).toContain("const working = pendingGuide || interpretMutation.isPending");
     expect(guidancePanel).not.toContain("healthCheck.refetch()");
     expect(guidancePanel).not.toContain("health_timeout");

@@ -65,6 +65,7 @@ describe("AI 主动引导明确商机事实分类", () => {
     const result = classifyExplicitOpportunityFact("合同需要采购部、法务和财务三方审批，采购尤其关注服务响应条款。", [...uncovered]);
     expect(result?.dim).toBe("P");
     expect(classifyExplicitOpportunityFact("总经理最终签字，之后交采购中心走合同流程。", [...uncovered])?.dim).toBe("P");
+    expect(classifyExplicitOpportunityFact("采购委员会将先邀标和比价，完成后才安排合同盖章。", [...uncovered])?.dim).toBe("P");
   });
 
   it("将存量到期和不续签识别为决策流程时间触发事实", () => {
@@ -145,6 +146,25 @@ describe("AI 主动引导明确商机事实分类", () => {
     ]);
     expect(covered.has("deliveryFeedback")).toBe(true);
     expect(covered.has("E")).toBe(false);
+  });
+
+  it("临时覆盖客户经营的标杆、支持者、高层、品牌和阻力题目，并识别采购自然表达", () => {
+    const covered = getTransientStageGateCoverage([
+      { question: "客户愿意参与案例标杆或联合推广吗？", answer: "暂时不知道。" },
+      { question: "内部支持者最近有没有主动联系或传递内部信息？", answer: "暂无信息。" },
+      { question: "CISO 或 VP 是否参与过演示、会议或活动？", answer: "还没了解到。" },
+      { question: "客户对我们品牌的第一印象或顾虑是什么？", answer: "不太清楚。" },
+      { question: "客户内部是否存在反对或阻力？", answer: "没有掌握。" },
+      { question: "采购流程有哪些审批与关注点？", answer: "采购委员会先邀标比价，再安排合同盖章与付款。" },
+    ]);
+    expect(covered).toEqual(expect.objectContaining(new Set([
+      "referenceWillingness", "championActivity", "executiveEngagement", "brandPerception", "blocker", "P",
+    ])));
+  });
+
+  it("将短未知表达收束为无事实，但不吞掉较长的实质描述", () => {
+    expect(isGuidanceTopicExhaustionAnswer("还没了解到")).toBe(true);
+    expect(isGuidanceTopicExhaustionAnswer("我不知道最终签字人，但 Marcos 明确说预算已经通过并交采购中心走流程了")).toBe(false);
   });
 
   it("阻止同一关键人被重复询问同一立场主题，但允许改问尚未覆盖的人", () => {
