@@ -141,7 +141,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
       if (leadMessage) setMessages(current => current.concat({ role: "assistant", content: `${leadMessage}\n\n下一问生成失败，本次未写入任何事实。请点击“更新 AI 问题”重试。` }));
       toast.error(`完整诊断暂不可用：${error.message}`);
     };
-    if (scope === "customer") customerGuideMutation.mutate({ clientId }, { onSuccess, onError });
+    if (scope === "customer") customerGuideMutation.mutate({ clientId, history }, { onSuccess, onError });
     else if (opportunityId) opportunityGuideMutation.mutate({ clientId, opportunityId, stageTarget: stageTarget as any, history }, { onSuccess, onError });
   };
 

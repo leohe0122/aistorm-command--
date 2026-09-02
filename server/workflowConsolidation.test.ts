@@ -134,8 +134,8 @@ describe("作战工作流入口收敛", () => {
     const indexHtml = projectFile("client/index.html");
     const serviceWorker = projectFile("client/public/sw.js");
     const app = projectFile("client/src/App.tsx");
-    expect(indexHtml).toContain("/sw.js?v=20260828-ai-guidance-participants-auto-record-v10");
-    expect(serviceWorker).toContain("aistorm-command-v20260828-ai-guidance-participants-auto-record-v10");
+    expect(indexHtml).toContain("/sw.js?v=20260902-ai-guidance-account-deal-isolation-v11");
+    expect(serviceWorker).toContain("aistorm-command-v20260902-ai-guidance-account-deal-isolation-v11");
     expect(serviceWorker).toContain("event.request.mode === 'navigate'");
     expect(app).toContain("controllerchange");
   });
@@ -348,6 +348,8 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain('if (hasValidExtractedFactCandidate(parsed))');
     expect(routers).toContain("buildOpportunityGuidanceSnapshot");
     expect(routers).toContain("buildTransientGuidanceContext");
+    expect(routers).toContain("function enforceOpportunityGuidanceScope");
+    expect(routers).toContain("【范围硬约束：商机作战室（Deal Map）】");
     expect(routers).toContain("toAnswerExtractionResult");
     expect(routers).not.toContain("resolveOpportunityFollowUpQuestion");
     expect(routers).toContain("【本轮临时问答：尚未确认、尚未写入数据库】");
@@ -390,7 +392,7 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("requestGuidance(factHistory");
     expect(guidancePanel).toContain("}, 20_000)");
     expect(guidancePanel).toContain("已切换为基础引导");
-    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260828-ai-guidance-participants-auto-record-v10");
+    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260902-ai-guidance-account-deal-isolation-v11");
     expect(guidancePanel).toContain("const working = pendingGuide || interpretMutation.isPending");
     expect(guidancePanel).not.toContain("healthCheck.refetch()");
     expect(guidancePanel).not.toContain("health_timeout");
@@ -401,6 +403,7 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("已记录的");
     expect(guidancePanel).toContain("新的明确描述会作为可追溯证据更新");
     expect(guidancePanel).toContain("guidanceHistory");
+    expect(guidancePanel).toContain("customerGuideMutation.mutate({ clientId, history }");
     expect(guidancePanel).toContain("pendingCandidates");
     expect(guidancePanel).toContain("当前主题已收束");
     expect(guidancePanel).toContain("trpc.purchaseSignals.create.useMutation");
@@ -495,9 +498,10 @@ describe("作战工作流入口收敛", () => {
     expect(routers).toContain("function enforceStageGateGuidance");
     expect(routers).toContain("primaryQuestion: stageGateQuestion");
     expect(routers).toContain("不能用高层态度或其他赢单分数替代阶段判断");
+    expect(routers).toContain("function enforceOpportunityGuidanceScope");
     expect(routers).toContain("function preventGuidancePersonTopicLoop");
     expect(routers).toContain("isGuidancePersonTopicAlreadyCovered");
-    expect(routers).toContain("preventGuidancePersonTopicLoop(scope, enforceStageGateGuidance(scope, snapshot, JSON.parse(extractJSON(raw))), contacts, history)");
+    expect(routers).toContain("enforceOpportunityGuidanceScope(scope, snapshot, enforceStageGateGuidance(scope, snapshot, JSON.parse(extractJSON(raw))))");
   });
 
   it("为不支持 reasoning 的兼容模型自动降级一次，且不对参数错误进行无效退避重试", () => {

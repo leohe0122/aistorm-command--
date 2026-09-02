@@ -218,6 +218,7 @@ function buildCustomerGuidanceSnapshot({
   signals,
   readiness,
   meddpicc,
+  history = [],
 }: {
   client: any;
   contacts: any[];
@@ -225,6 +226,7 @@ function buildCustomerGuidanceSnapshot({
   signals: any[];
   readiness: any;
   meddpicc: unknown;
+  history?: GuidanceHistoryTurn[];
 }) {
   const stakeholders = contacts.slice(0, 8).map(item => ({
     name: item.name,
@@ -247,14 +249,18 @@ function buildCustomerGuidanceSnapshot({
   const blockers = (readiness?.blockers || []).slice(0, 4).map((item: unknown) => compactGuidanceText(item, 180));
   const accountStage = ACCOUNT_GUIDANCE_STAGE_BY_CUSTOMER_STAGE[client.stage as CustomerStage] || "初步接触";
   const accountRequirements = ACCOUNT_REQUIREMENTS[accountStage];
-  const missingAccountRequirements = accountRequirements.filter(requirement => !accountRequirementHasEvidence(requirement.key, contacts, meetings, signals));
+  const transientCoveredGates = getTransientStageGateCoverage(history);
+  const missingAccountRequirements = accountRequirements.filter(requirement =>
+    !accountRequirementHasEvidence(requirement.key, contacts, meetings, signals)
+    && !transientCoveredGates.has(requirement.key)
+  );
   const accountPromptSuffix = buildAccountGuidancePromptSuffix(
     accountStage,
     missingAccountRequirements,
     selectGuidancePowerContacts(contacts),
   );
 
-  return `【客户作战台已入库事实（精炼版）】\n客户：${client.name}\n当前阶段：${client.stage}\n当前缺口：${JSON.stringify(blockers)}\n关键人：${JSON.stringify(stakeholders)}\n最近两次客户对话：${JSON.stringify(recentMeetings)}\n最近三条购买信号：${JSON.stringify(recentSignals)}\n客户级证据评分：${JSON.stringify(summarizeGuidanceMeddpiccScores(meddpicc))}${accountPromptSuffix}`;
+  return `【客户作战台已入库事实（精炼版）】\n客户：${client.name}\n当前阶段：${client.stage}\n当前缺口：${JSON.stringify(blockers)}\n关键人：${JSON.stringify(stakeholders)}\n最近两次客户对话：${JSON.stringify(recentMeetings)}\n最近三条购买信号：${JSON.stringify(recentSignals)}\n客户级证据评分：${JSON.stringify(summarizeGuidanceMeddpiccScores(meddpicc))}${accountPromptSuffix}${buildTransientGuidanceContext(history)}`;
 }
 
 const AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500;
@@ -310,6 +316,26 @@ function enforceStageGateGuidance(scope: "customer" | "opportunity", snapshot: s
     whyThisQuestion: "当前阶段仍缺少这项客观准入证据；在补齐前，不能用高层态度或其他赢单分数替代阶段判断。",
     answerFocus: "decision_chain" as const,
     doNotAssume: ["不能假定当前阶段已经满足推进条件", "不能假定客户已经接受合同或竞争方案"],
+  };
+}
+
+/** 只属于客户经营 Account Map 的问题不能出现在商机 Deal Map 引导中。 */
+function isAccountMapOnlyQuestion(question: string) {
+  const normalized = String(question || "").replace(/\s+/g, "");
+  return /(?:第(?:一个|1)项目|首个项目).{0,28}(?:完成|交付|上线|验收).{0,28}(?:反馈|评价)|(?:交付|上线|验收)后.{0,28}(?:反馈|评价)|未来.{0,24}(?:12个?月|一年|明年)?.{0,18}(?:安全)?(?:预算|项目规划|下一个项目)|(?:预算|项目).{0,20}(?:规划|下一个项目)|(?:案例合作|联合推广|标杆转化)/i.test(normalized);
+}
+
+function enforceOpportunityGuidanceScope(scope: "customer" | "opportunity", snapshot: string, guidance: any) {
+  if (scope !== "opportunity" || !guidance?.primaryQuestion || !isAccountMapOnlyQuestion(guidance.primaryQuestion)) return guidance;
+  const stageGateQuestion = extractStageGateQuestion(snapshot);
+  return {
+    ...guidance,
+    dataSufficiency: "insufficient" as const,
+    factSummary: "数据不足，暂不判断。当前应先补齐这笔商机自身的推进证据。",
+    primaryQuestion: stageGateQuestion || "围绕当前这笔商机，客户最近一次对方案推进、审批节点或内部决策有没有给出新的明确原话或动作？请复述最关键的一条。",
+    whyThisQuestion: "当前处于商机阶段引导，只补当前商机可验证的推进、审批或决策事实，不转入客户经营题库。",
+    answerFocus: "decision_chain" as const,
+    doNotAssume: ["不能把其他项目的交付反馈当作当前商机事实", "不能以未来其他项目预算替代当前商机准入证据"],
   };
 }
 
@@ -517,12 +543,17 @@ function buildProvisionalAnswerCandidate(scope: "customer" | "opportunity", ques
 
 async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: string, contacts: any[] = [], history: GuidanceHistoryTurn[] = []) {
   const currentDate = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
+  const scopeBoundary = scope === "opportunity"
+    ? "【范围硬约束：商机作战室（Deal Map）】只围绕当前这一笔商机的阶段门控、方案推进、审批、决策、价值、竞争与项目参与人提问。不得询问第一个项目的交付反馈、未来其他安全预算或项目规划、案例合作、联合推广等客户经营（Account Map）题目。"
+    : "【范围硬约束：客户经营（Account Map）】只围绕客户关系、组织认知、交付反馈、扩张机会和标杆转化提问；不得代替某一笔商机的阶段门控。";
   const prompt = `你是 AIStorm Command 的主动式销售引导 AI。
 你的唯一任务是：读取 SAM 已知但尚未录入系统的信息，一次问一个问题，帮助 SAM 把脑子里的事实存入系统。
 
 你不是在指导 SAM 去做什么销售动作。你不是在要求 SAM 去问客户要什么东西。你是在问 SAM：“你已经知道什么？你见过什么？对方说过什么？”
 
 当前日期：${currentDate}。只能询问截至当前日期已发生的事情、已知事实或明确时间节点；不得询问未来会议、评审、报告的结果。
+
+${scopeBoundary}
 
 ${snapshot}
 
@@ -550,18 +581,18 @@ ${snapshot}
       // 使用同一事实契约与 Schema 的快速模型，不改变事实约束或确认写入边界。
       result = await runGuidanceModel("gpt-5-mini", scope, prompt, totalController.signal, true);
     } catch {
-      return preventGuidancePersonTopicLoop(scope, buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)), contacts, history);
+      return preventGuidancePersonTopicLoop(scope, enforceOpportunityGuidanceScope(scope, snapshot, buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot))), contacts, history);
     }
   } finally {
     clearTimeout(primaryTimer);
     clearTimeout(totalTimer);
   }
   const raw = getLLMTextContent(result.choices[0]?.message.content);
-  if (!raw) return preventGuidancePersonTopicLoop(scope, buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)), contacts, history);
+  if (!raw) return preventGuidancePersonTopicLoop(scope, enforceOpportunityGuidanceScope(scope, snapshot, buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot))), contacts, history);
   try {
-    return preventGuidancePersonTopicLoop(scope, enforceStageGateGuidance(scope, snapshot, JSON.parse(extractJSON(raw))), contacts, history);
+    return preventGuidancePersonTopicLoop(scope, enforceOpportunityGuidanceScope(scope, snapshot, enforceStageGateGuidance(scope, snapshot, JSON.parse(extractJSON(raw)))), contacts, history);
   } catch {
-    return preventGuidancePersonTopicLoop(scope, buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot)), contacts, history);
+    return preventGuidancePersonTopicLoop(scope, enforceOpportunityGuidanceScope(scope, snapshot, buildBaselineGuidance(scope, contacts, extractStageGateQuestion(snapshot))), contacts, history);
   }
 }
 
@@ -593,6 +624,7 @@ async function buildOpportunityGuidanceSnapshot(clientId: number, opportunityId:
     getDealDiagnosticContext(clientId, opportunityId),
   ]);
   const stageTarget = resolveGuidanceStageTarget(opportunity.stage, requestedStage);
+  // Deal Map 仅消费商机阶段题库；客户经营 ACCOUNT_REQUIREMENTS 只能由 customerGuide 使用。
   const stageRequirements = STAGE_REQUIREMENTS[stageTarget as keyof typeof STAGE_REQUIREMENTS] || [];
   const stageMeddpicc = meddpicc[0] as any;
   const transientCoveredGates = getTransientStageGateCoverage(history);
@@ -659,11 +691,15 @@ export const appRouter = router({
       authenticated: Boolean(ctx.user?.id),
       route: "ai-guidance-v1" as const,
     })),
-    customerGuide: protectedProcedure.input(z.object({ clientId: z.number() })).mutation(async ({ input }) => {
+    customerGuide: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      history: z.array(z.object({ question: z.string().min(3).max(1600), answer: z.string().min(1).max(6000) })).max(12).optional(),
+    })).mutation(async ({ input }) => {
+      const history = (input.history || []).map(turn => ({ question: turn.question.trim(), answer: turn.answer.trim() }));
       const { client, contacts, meetings, signals, readiness } = await loadCustomerReadiness(input.clientId);
       const meddpicc = await getMeddpiccByClientId(input.clientId);
-      const snapshot = buildCustomerGuidanceSnapshot({ client, contacts, meetings, signals, readiness, meddpicc });
-      return generateAIGuidance("customer", snapshot, contacts);
+      const snapshot = buildCustomerGuidanceSnapshot({ client, contacts, meetings, signals, readiness, meddpicc, history });
+      return generateAIGuidance("customer", snapshot, contacts, history);
     }),
     opportunityGuide: protectedProcedure.input(z.object({
       clientId: z.number(), opportunityId: z.number(),

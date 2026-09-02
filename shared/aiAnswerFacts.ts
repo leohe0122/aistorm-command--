@@ -139,22 +139,30 @@ export function getTransientStageGateCoverage(history: GuidanceHistoryTurn[]) {
     const answer = String(turn.answer || "").trim();
     if (!question || !answer) continue;
     const askedDim = topicMeddpiccDimension(inferGuidanceTopic(question));
+    const turnText = `${question}\n${answer}`;
+    // 客户经营（Account Map）与商机阶段（Deal Map）分别消费这些覆盖标记。
+    // 此处仅记录本轮“已经回答过”的题目，绝不把回答视为已写入的客户事实。
+    const askedExpansionOpportunity = /(未来.{0,18}(?:12个?月|一年|安全)?(?:还有)?(?:安全)?(?:预算|项目)|(?:预算|项目).{0,18}(?:规划|未来|明年|下一个项目)|明年.*(?:预算|项目)|下一个项目)/i.test(question);
+    const askedDeliveryFeedback = /(?:第(?:一个|1)项目|首个项目).{0,24}(?:完成|交付|上线|验收).{0,24}(?:反馈|评价)|(?:交付|上线|验收)后.{0,24}(?:反馈|评价)/i.test(question);
+    const deliveryFeedbackNotAvailable = /(还没|尚未|未).{0,18}(?:评审|反馈|评价|验收|上线|完成)|(?:报告|评审).{0,12}(?:还没|尚未|未).{0,18}(?:提交|反馈|结果|结论)|正在.{0,12}评审/i.test(answer);
     if (isGuidanceTopicExhaustionAnswer(answer)) {
       // 仅在本轮对话中暂时跳过已明确“不知道”的门控，避免原题循环。
       // 这绝不改变数据库事实或实际阶段就绪状态；刷新后仍会显示该真实缺口。
       if (askedDim) covered.add(askedDim);
-      const exhaustedTurnText = `${question}\n${answer}`;
-    if (/(到期|不续签|renew|renewal|截止|deadline|时间节点|触发)/i.test(exhaustedTurnText)) covered.add("gate_trigger");
-    if (inferGuidanceTopic(question) === "project_participants") covered.add("gate_participants");
+      if (/(到期|不续签|renew|renewal|截止|deadline|时间节点|触发)/i.test(turnText)) covered.add("gate_trigger");
+      if (askedExpansionOpportunity) covered.add("expansionOpportunity");
+      if (askedDeliveryFeedback && deliveryFeedbackNotAvailable) covered.add("deliveryFeedback");
+      if (inferGuidanceTopic(question) === "project_participants") covered.add("gate_participants");
       continue;
     }
     const answerFact = classifyExplicitOpportunityFact(answer);
     if (answerFact?.dim) covered.add(answerFact.dim);
     if (askedDim) covered.add(askedDim);
-    const turnText = `${question}\n${answer}`;
     if (/(竞品|竞争|crowdstrike|奇安信|深信服|sentinelone|替换|其他厂商)/i.test(turnText)) covered.add("gate8CompDefensible");
     if (/(到期|不续签|renew|renewal|截止|deadline|时间节点|触发)/i.test(turnText)) covered.add("gate_trigger");
     if (/(技术.*签字|签字.*技术|poc.*谁|谁.*poc|评估.*谁|谁.*评估)/i.test(turnText)) covered.add("gate_tech_owner");
+    if (askedExpansionOpportunity) covered.add("expansionOpportunity");
+    if (askedDeliveryFeedback && deliveryFeedbackNotAvailable) covered.add("deliveryFeedback");
     if (inferGuidanceTopic(question) === "project_participants") covered.add("gate_participants");
   }
   return covered;

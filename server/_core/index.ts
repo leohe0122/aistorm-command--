@@ -12,7 +12,7 @@ import { visitReminderHandler } from "../scheduled/visitReminder";
 import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
 
-const BUILD_MARKER = "20260828-ai-guidance-participants-auto-record-v10";
+const BUILD_MARKER = "20260902-ai-guidance-account-deal-isolation-v11";
 
 async function startServer() {
   console.log(`[STARTUP] PORT=${process.env.PORT ?? "undefined"} NODE_ENV=${process.env.NODE_ENV ?? "undefined"}`);
@@ -28,8 +28,8 @@ async function startServer() {
     res.status(200).json({
       build: BUILD_MARKER,
       aiReviewRoute: "review-one-to-n-v3-nonempty-guard",
-      aiGuidanceRoute: "contextual-guidance-participants-auto-record-v10",
-      serviceWorker: "20260828-ai-guidance-participants-auto-record-v10",
+      aiGuidanceRoute: "contextual-guidance-account-deal-isolation-v11",
+      serviceWorker: "20260902-ai-guidance-account-deal-isolation-v11",
       ts: Date.now(),
     });
   });

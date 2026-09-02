@@ -125,6 +125,28 @@ describe("AI 主动引导明确商机事实分类", () => {
     expect(covered.has("M")).toBe(false);
   });
 
+  it("将已回答的客户未来预算规划暂时覆盖为扩张机会，避免同一问题换词重复", () => {
+    const covered = getTransientStageGateCoverage([
+      {
+        question: "谁在近期提到未来 12 个月内存在安全预算或项目规划？",
+        answer: "Marcos 提到过。",
+      },
+    ]);
+    expect(covered.has("expansionOpportunity")).toBe(true);
+    expect(covered.has("deliveryFeedback")).toBe(false);
+  });
+
+  it("将尚未产生的交付反馈仅在本轮暂时收束，避免追问未来评审或报告结果", () => {
+    const covered = getTransientStageGateCoverage([
+      {
+        question: "Felix 在第一个项目完成后有没有给出反馈？",
+        answer: "项目还在评审，报告尚未提交，暂时还没有反馈。",
+      },
+    ]);
+    expect(covered.has("deliveryFeedback")).toBe(true);
+    expect(covered.has("E")).toBe(false);
+  });
+
   it("阻止同一关键人被重复询问同一立场主题，但允许改问尚未覆盖的人", () => {
     const people = ["Ronald TK Lau", "Marcos Chow", "Felix"];
     const history = [
