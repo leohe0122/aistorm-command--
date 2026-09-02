@@ -60,9 +60,13 @@ export function inferGuidanceTopic(value: string): GuidanceTopic {
 export function isGuidanceTopicExhaustionAnswer(answer: string) {
   const original = answer.trim();
   const text = original.replace(/[\s，。！!；;、]/g, "").toLowerCase();
-  // 超过此长度的回答应优先保留给事实提取，避免把带有实质补充的描述误判为“不知道”。
-  if (original.length > 30) return false;
-  if (/^(没有了|没了|没有更多|没有更多了|暂无更多|暂时没有|暂时还没有|尚未涉及|还没有涉及|这些当前都还没有涉及|当前都还没有涉及|不清楚|不知道|目前不清楚|暂时不清楚|还没了解到|还没了解|不太清楚|不确定|没有掌握|尚不清楚|暂无信息|没有表达|未表达|没有不同意见|没有明确态度|大家一致|意见一致)$/.test(text)) return true;
+  const sentences = original.split(/[。！？.!?]+/).map(sentence => sentence.trim()).filter(Boolean);
+  const lastSentence = sentences[sentences.length - 1] || original;
+  const normalizedLastSentence = lastSentence.replace(/[\s，。！!；;、]/g, "").toLowerCase();
+  const exhaustionPattern = /(没有了|没了|没有更多|没有更多了|暂无更多|暂时没有|暂时还没有|尚未涉及|还没有涉及|这些当前都还没有涉及|当前都还没有涉及|不清楚|不知道|目前不清楚|暂时不清楚|还没了解到|还没了解|不太清楚|不确定|没有掌握|尚不清楚|暂无信息|还没开始|尚未开始|没有开始|还没结果|暂无结果|还没反馈|暂无反馈|没有表达|未表达|没有不同意见|没有明确态度|大家一致|意见一致)/;
+  // 短回答直接收束；长回答仅考察结尾，以免中途出现“不清楚”时吞掉后续明确事实。
+  if (original.length <= 30 && exhaustionPattern.test(text)) return true;
+  if (original.length > 30 && exhaustionPattern.test(normalizedLastSentence) && !/(但是|不过|可是|但)/.test(lastSentence)) return true;
   if (/^(?:目前|这次|客户|他们|各方)?(?:都|均)?(?:没有|未)(?:明确)?(?:表达|表态|反馈|意见|不同意见|态度)(?:过|任何)?(?:.*)?$/.test(original)) return true;
   if (/^(?:目前|这次|客户|他们|各方)?(?:意见|态度)?(?:一致|没有分歧)(?:.*)?$/.test(original)) return true;
   if (/(下周|下月|下季度|下次).{0,24}(开会|评审|汇报|报告|会议).{0,24}(还没|尚未|未).{0,16}(发生|开始|举行|完成|结果|结论|反馈)/.test(original)) return true;
@@ -213,6 +217,9 @@ export function nextUncoveredMeddpiccQuestion(
 
 export function classifyExplicitOpportunityFact(answer: string, uncovered: MeddpiccDimCode[] = []) {
   const text = answer.trim();
+  // “评审尚未开始”“暂无结果/反馈”等表达说明该事项尚未发生，不能被“测试/评审”等词误写为事实候选。
+  const unavailableOutcome = /(?:正式|技术|测试|验收|内部)?(?:评审|测试|验收|反馈|结果|报告).{0,12}(?:还没|尚未|未|没有).{0,10}(?:开始|完成|结果|结论|反馈|提交)|(?:还没|尚未|暂未|没有|暂无).{0,12}(?:开始|结果|结论|反馈|评审|提交)|(?:目前|暂时).{0,6}(?:还)?不清楚/i.test(text);
+  if (unavailableOutcome) return null;
   const budgetEvidence = /(预算|金额|投入|报价|费用|年费|合同额)|\d[\d,.]*\s*(万|亿|千|百万|元|人民币|美元|港币|usd|hkd|rmb)/i.test(text);
   const competitionEvidence = /(替换|美资|国产|倾向我方|倾向我们|竞争|竞品|替代方案|其他厂商|奇安信|深信服|安天|绿盟|启明星辰|360安全|crowdstrike|sentinelone|mcafee|symantec|碳黑|carbonblack|paloalto|趋势科技|trendmicro|cylance|defender)/i.test(text);
   const paperProcessEvidence = /(合同.{0,12}(审批|法务|采购|流程|签署)|法务.{0,12}(审批|合同|采购|审核)|采购.{0,12}(审批|合同|部门|关注点|中心|流程|委员会)|采购中心|走流程|流程由|招标|邀标|询价|比价|单一来源|框架协议|年度合同|采购周期|付款条件|合同期限|签约|盖章)/i.test(text);

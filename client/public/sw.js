@@ -1,5 +1,5 @@
 // AIStorm Command Service Worker
-const CACHE_NAME = 'aistorm-command-v20260902-ai-guidance-fact-boundary-v12';
+const CACHE_NAME = 'aistorm-command-v20260902-ai-guidance-negation-guard-v13';
 
 // Install: skip waiting so new SW activates immediately
 self.addEventListener('install', (event) => {

@@ -167,6 +167,12 @@ describe("AI 主动引导明确商机事实分类", () => {
     expect(isGuidanceTopicExhaustionAnswer("我不知道最终签字人，但 Marcos 明确说预算已经通过并交采购中心走流程了")).toBe(false);
   });
 
+  it("将长回答的末句未知信号收束，且不把尚未开始的评审识别为正向事实", () => {
+    const answer = "测试报告刚到他的团队，正式评审还没有开始。所以目前还不清楚。";
+    expect(isGuidanceTopicExhaustionAnswer(answer)).toBe(true);
+    expect(classifyExplicitOpportunityFact(answer, ["D1", "D2"])).toBeNull();
+  });
+
   it("阻止同一关键人被重复询问同一立场主题，但允许改问尚未覆盖的人", () => {
     const people = ["Ronald TK Lau", "Marcos Chow", "Felix"];
     const history = [
