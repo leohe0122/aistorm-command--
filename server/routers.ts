@@ -3640,7 +3640,7 @@ ${knowledgeNote}`;
       } catch (err: any) {
         clearTimeout(extractionTimeout);
         const isTimeout = err?.name === "AbortError" || err?.message?.includes("aborted");
-        throw new TRPCError({ code: "BAD_GATEWAY", message: isTimeout ? "AI 信号提取超时（15 秒），请稍后重试。本次拜访未保存。" : `AI 信号提取失败：${JSON.stringify({ message: err?.message, name: err?.name, apiUrl: process.env.BUILT_IN_FORGE_API_URL, hasKey: Boolean(process.env.BUILT_IN_FORGE_API_KEY) })}。本次拜访未保存。` });
+        throw new TRPCError({ code: "BAD_GATEWAY", message: isTimeout ? "AI 信号提取超时（15 秒），请稍后重试。本次拜访未保存。" : `AI 信号提取失败：${err?.message || "未知错误"}。本次拜访未保存。` });
       } finally {
         clearTimeout(extractionTimeout);
       }
@@ -6111,44 +6111,18 @@ ${docContext ? `参考产品文档：\n${docContext}` : "未选择参考文档�
     testConnection: adminProcedure.input(z.object({
       provider: z.enum(["openai", "claude", "glm", "custom"]),
     })).mutation(async ({ input }) => {
-      const apiKey = await getSystemConfig(`llm_${input.provider}_key`);
-      if (!apiKey) throw new Error(`未配置 ${input.provider} API Key`);
-
-      const providerConfig: Record<string, { url: string; model: string; headers?: Record<string, string>; body?: object }> = {
-        openai: { url: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
-        claude: { url: "https://api.anthropic.com/v1/messages", model: "claude-3-haiku-20240307",
-          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-          body: { model: "claude-3-haiku-20240307", max_tokens: 5, messages: [{ role: "user", content: "hi" }] }
-        },
-        glm: { url: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4-flash" },
-        custom: { url: (await getSystemConfig("llm_custom_url")) || "", model: "gpt-4o-mini" },
-      };
-
-      const cfg = providerConfig[input.provider];
-      if (!cfg.url) throw new Error("请先填写自定义 API 端点");
-
+      // 走与业务调用完全相同的路由（地址、模型换算、参数适配），测通即代表业务可用。
       try {
-        let resp: Response;
-        if (input.provider === "claude") {
-          resp = await fetch(cfg.url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...cfg.headers },
-            body: JSON.stringify(cfg.body),
-          });
-        } else {
-          resp = await fetch(cfg.url, {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: cfg.model, messages: [{ role: "user", content: "hi" }], max_tokens: 5 }),
-          });
-        }
-        if (!resp.ok) {
-          const err = await resp.text();
-          throw new Error(`HTTP ${resp.status}: ${err.slice(0, 100)}`);
-        }
-        return { ok: true, message: "连接成功" };
+        const result = await invokeLLM({
+          provider: input.provider,
+          tier: "fast",
+          messages: [{ role: "user", content: "Reply with OK." }],
+          maxTokens: 16,
+          maxRetries: 0,
+        });
+        return { ok: true, message: `连接成功（模型：${result.model || "未知"}）` };
       } catch (e: any) {
-        throw new Error(`连接失败: ${e.message}`);
+        throw new Error(`连接失败: ${String(e?.message || e).slice(0, 200)}`);
       }
     }),
     // Remove a provider's key

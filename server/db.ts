@@ -662,39 +662,61 @@ export async function deleteArsenalPricing(id: number): Promise<void> {
 }
 
 // ── LLM Dynamic Config ────────────────────────────────────────────────────────
-export async function getLLMProviderConfig(tier: "primary" | "fast"): Promise<{ apiUrl: string; apiKey: string; provider: string } | null> {
-  // Tier mapping: primary = high-quality tasks, fast = extraction/summarization
-  const providerPref = await getSystemConfig(tier === "primary" ? "llm_primary_provider" : "llm_fast_provider");
+export type LLMProviderConfig = {
+  provider: import("./_core/modelRouting").ProviderId;
+  apiKey: string;
+  chatUrl: string;
+  /** 管理员为该提供方配置的档位模型覆盖值 */
+  modelOverrides: Partial<Record<import("./_core/modelRouting").ModelTier, string>>;
+};
 
-  const PROVIDER_URLS: Record<string, string> = {
-    openai: "https://api.openai.com",
-    claude: "https://api.anthropic.com",
-    glm: "https://open.bigmodel.cn/api/paas",
-    custom: (await getSystemConfig("llm_custom_url")) || "",
-  };
+/**
+ * 选择本次调用使用的模型提供方。
+ * tier=fast 读取 llm_fast_provider，其他读取 llm_primary_provider；
+ * forceProvider 用于“测试连接”等必须命中指定提供方的场景。
+ * 只有数据库中未配置任何提供方 Key 时，才回退到环境变量（OPENAI_API_KEY 或托管平台内置通道）。
+ */
+export async function getLLMProviderConfig(
+  tier: import("./_core/modelRouting").ModelTier,
+  forceProvider?: import("./_core/modelRouting").ProviderId,
+): Promise<LLMProviderConfig | null> {
+  const { PROVIDERS, MODEL_TIERS, chatCompletionsUrl, modelOverrideKey } = await import("./_core/modelRouting");
+  type ProviderId = (typeof PROVIDERS)[number];
 
-  // Build priority list
-  const candidates: string[] = [];
-  if (providerPref && providerPref !== "auto") candidates.push(providerPref);
-  // Fallback order
-  for (const p of ["openai", "glm", "claude", "custom"]) {
-    if (!candidates.includes(p)) candidates.push(p);
-  }
-
-  for (const provider of candidates) {
-    const key = await getSystemConfig(`llm_${provider}_key`);
-    if (key && key.trim()) {
-      const url = PROVIDER_URLS[provider] || "";
-      if (!url) continue;
-      return { apiUrl: url, apiKey: key, provider };
+  const candidates: ProviderId[] = [];
+  if (forceProvider) {
+    candidates.push(forceProvider);
+  } else {
+    const preference = await getSystemConfig(tier === "fast" ? "llm_fast_provider" : "llm_primary_provider");
+    if (preference && preference !== "auto" && (PROVIDERS as string[]).includes(preference)) candidates.push(preference as ProviderId);
+    for (const provider of ["openai", "claude", "glm", "custom"] as ProviderId[]) {
+      if (!candidates.includes(provider)) candidates.push(provider);
     }
   }
 
-  // Final fallback: env vars
-  const envKey = process.env.OPENAI_API_KEY || process.env.BUILT_IN_FORGE_API_KEY || "";
-  const envUrl = process.env.OPENAI_API_KEY ? "https://api.openai.com" : (process.env.BUILT_IN_FORGE_API_URL || "");
-  if (envKey) return { apiUrl: envUrl, apiKey: envKey, provider: "env" };
+  for (const provider of candidates) {
+    const apiKey = (await getSystemConfig(`llm_${provider}_key`))?.trim();
+    if (!apiKey) continue;
+    const chatUrl = chatCompletionsUrl(provider, provider === "custom" ? await getSystemConfig("llm_custom_url") : null);
+    if (!chatUrl) continue;
+    const modelOverrides: LLMProviderConfig["modelOverrides"] = {};
+    for (const modelTier of MODEL_TIERS) {
+      const value = (await getSystemConfig(modelOverrideKey(provider, modelTier)))?.trim();
+      if (value) modelOverrides[modelTier] = value;
+    }
+    return { provider, apiKey, chatUrl, modelOverrides };
+  }
+  if (forceProvider) return null;
 
+  // 环境变量兜底：OPENAI_API_KEY 视为 openai；否则使用托管平台注入的内置 OpenAI 兼容通道。
+  if (process.env.OPENAI_API_KEY) {
+    return { provider: "openai", apiKey: process.env.OPENAI_API_KEY, chatUrl: chatCompletionsUrl("openai"), modelOverrides: {} };
+  }
+  const builtinUrl = process.env.BUILT_IN_FORGE_API_URL?.trim();
+  const builtinKey = process.env.BUILT_IN_FORGE_API_KEY?.trim();
+  if (builtinUrl && builtinKey) {
+    return { provider: "custom", apiKey: builtinKey, chatUrl: chatCompletionsUrl("custom", builtinUrl), modelOverrides: {} };
+  }
   return null;
 }
 

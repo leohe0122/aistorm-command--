@@ -1,4 +1,4 @@
-import { ENV } from "./env";
+import { adaptPayloadForProvider, resolveModel, type ModelTier, type ProviderId } from "./modelRouting";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -68,8 +68,13 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /** 历史写法：具体模型名。切换提供方时会按其档位换算，新代码请改用 tier。 */
   model?: string;
-  /** 跳过数据库中的外部 Provider，直接使用项目内置 Forge 通道。 */
+  /** 需要的模型档位：reasoning 复杂推理 / standard 常规生成 / fast 抽取与短文本。 */
+  tier?: ModelTier;
+  /** 强制使用指定提供方（仅用于“测试连接”等场景）。 */
+  provider?: ProviderId;
+  /** @deprecated 曾用于绕过外部 Provider 走托管平台通道；现统一按系统设置的提供方路由，此参数被忽略。 */
   useBuiltin?: boolean;
   /** 允许上层为有用户等待窗口的交互请求主动中止网络调用。 */
   signal?: AbortSignal;
@@ -231,51 +236,24 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+type ResolvedProvider = { provider: ProviderId; chatUrl: string; apiKey: string; model: string | undefined };
 
-// `ENV.forgeApiUrl` intentionally prefers a user-configured OpenAI key for
-// ordinary traffic. The `useBuiltin` escape hatch must not inherit that
-// preference: it is specifically for health-critical flows that need the
-// Manus Forge proxy even when an external Provider is configured or degraded.
-const resolveBuiltinForgeApiUrl = () => {
-  const baseUrl = process.env.BUILT_IN_FORGE_API_URL?.trim() || "https://forge.manus.im";
-  return `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
-};
-
-const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+/** 按档位选择提供方与模型。未配置任何提供方时给出可操作的报错。 */
+async function resolveProviderConfig(params: { model?: string; tier?: ModelTier; provider?: ProviderId }): Promise<ResolvedProvider> {
+  const { inferTier } = await import("./modelRouting");
+  const tier = params.tier ?? inferTier(params.model);
+  const { getLLMProviderConfig } = await import("../db.js");
+  const cfg = await getLLMProviderConfig(tier, params.provider);
+  if (!cfg) {
+    throw new Error(params.provider
+      ? `未配置 ${params.provider} 的 API Key`
+      : "未配置 AI 模型提供方。请在 系统设置 → AI 模型配置 中填写 API Key。");
   }
-};
-
-// Resolve API URL and key dynamically from DB config, fallback to ENV
-async function resolveProviderConfig(model?: string, useBuiltin = false): Promise<{ apiUrl: string; apiKey: string }> {
-  if (useBuiltin) {
-    return {
-      apiUrl: resolveBuiltinForgeApiUrl(),
-      apiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
-    };
-  }
-  try {
-    const { getLLMProviderConfig } = await import('../db.js');
-    // Determine tier based on model name hint
-    const isFastModel = model && (model.includes('mini') || model.includes('flash') || model.includes('haiku') || model.includes('4-flash'));
-    const tier = isFastModel ? 'fast' : 'primary';
-    const cfg = await getLLMProviderConfig(tier);
-    if (cfg) {
-      const apiUrl = `${cfg.apiUrl.replace(/\/$/, '')}/v1/chat/completions`;
-      return { apiUrl, apiKey: cfg.apiKey };
-    }
-  } catch {
-    // DB not available, fall through to ENV
-  }
-  // Fallback to ENV
   return {
-    apiUrl: resolveApiUrl(),
-    apiKey: ENV.forgeApiKey,
+    provider: cfg.provider,
+    chatUrl: cfg.chatUrl,
+    apiKey: cfg.apiKey,
+    model: resolveModel({ provider: cfg.provider, requestedModel: params.model, tier, override: cfg.modelOverrides[tier] }),
   };
 }
 
@@ -410,7 +388,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     responseFormat,
     response_format,
     model,
-    useBuiltin,
+    tier,
+    provider: forcedProvider,
     signal,
     maxRetries,
     thinking,
@@ -421,13 +400,16 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     max_completion_tokens,
   } = params;
 
-  const payload: Record<string, unknown> = {
+  const resolved = await resolveProviderConfig({ model, tier, provider: forcedProvider });
+
+  const basePayload: Record<string, unknown> = {
     messages: messages.map(normalizeMessage),
   };
 
-  if (model) {
-    payload.model = model;
+  if (resolved.model) {
+    basePayload.model = resolved.model;
   }
+  const payload = basePayload;
 
   if (tools && tools.length > 0) {
     payload.tools = tools;
@@ -469,16 +451,13 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const { apiUrl, apiKey } = await resolveProviderConfig(model, useBuiltin);
-  if (!apiKey) throw new Error("LLM API Key not configured. Please set up a provider in System Settings → AI 模型配置.");
-
-  const send = (requestPayload: Record<string, unknown>) => fetchWithBackoff(apiUrl, {
+  const send = (requestPayload: Record<string, unknown>) => fetchWithBackoff(resolved.chatUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
+      authorization: `Bearer ${resolved.apiKey}`,
     },
-    body: JSON.stringify(requestPayload),
+    body: JSON.stringify(adaptPayloadForProvider(resolved.provider, requestPayload)),
     signal,
   }, maxRetries);
 
@@ -505,37 +484,4 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   return (await response.json()) as InvokeResult;
-}
-
-export type ModelInfo = {
-  id: string;
-  object: string;
-  created: number;
-  owned_by: string;
-};
-
-export type ModelsResponse = {
-  object: string;
-  data: ModelInfo[];
-};
-
-export async function listLLMModels(): Promise<ModelsResponse> {
-  assertApiKey();
-
-  const url = ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/models`
-    : "https://forge.manus.im/v1/models";
-
-  const response = await fetchWithBackoff(url, {
-    headers: { authorization: `Bearer ${ENV.forgeApiKey}` },
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `List LLM models failed: ${response.status} ${response.statusText} – ${errorText}`
-    );
-  }
-
-  return (await response.json()) as ModelsResponse;
 }

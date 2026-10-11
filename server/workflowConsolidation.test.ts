@@ -524,11 +524,12 @@ describe("作战工作流入口收敛", () => {
     expect(clientEntry).toContain("刷新登录会话后重试");
   });
 
-  it("让 useBuiltin 直接使用 BUILT_IN_FORGE 配置，不继承 OpenAI 环境变量优先级", () => {
+  it("托管平台内置服务不再被 OPENAI_API_KEY 劫持，AI 调用统一走模型路由", () => {
+    const env = projectFile("server/_core/env.ts");
+    expect(env).toContain('forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? ""');
+    expect(env).not.toContain('"https://api.openai.com"');
     const llmCore = projectFile("server/_core/llm.ts");
-    expect(llmCore).toContain("resolveBuiltinForgeApiUrl");
-    expect(llmCore).toContain("process.env.BUILT_IN_FORGE_API_URL");
-    expect(llmCore).toContain("process.env.BUILT_IN_FORGE_API_KEY");
-    expect(llmCore).toContain("apiUrl: resolveBuiltinForgeApiUrl()");
+    expect(llmCore).toContain("adaptPayloadForProvider");
+    expect(llmCore).not.toContain("forge.manus.im");
   });
 });
