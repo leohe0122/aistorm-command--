@@ -55,3 +55,16 @@ describe("purchase signal → evidence", () => {
     expect(draft.topics).toContain("E");
   });
 });
+
+describe("placeholder evidence guard", () => {
+  it("drops items whose evidence is a placeholder", async () => {
+    const { dropPlaceholderEvidence } = await import("./ai/meetingSignals");
+    const out = dropPlaceholderEvidence({
+      ...signals,
+      meddpiccUpdates: [...signals.meddpiccUpdates, { dim: "C1", suggestedScore: 0, evidence: "数据不足，暂不判断。", confidence: "low" }, { dim: "C2", suggestedScore: 0, evidence: "记录未提及任何竞争对手。", confidence: "low" }],
+      contactDiscoveries: [...signals.contactDiscoveries, { name: "Daniel Tan", title: null, buyingRole: "未知", attitude: "未知", evidence: "未提供" }],
+    });
+    expect(out.meddpiccUpdates.map(item => item.dim)).toEqual(["E"]);
+    expect(out.contactDiscoveries.map(item => item.name)).toEqual(["刘明", "马超"]);
+  });
+});
