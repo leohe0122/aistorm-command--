@@ -29,7 +29,9 @@ async function runCase(testCase: MeetingSignalsCase, tier: ModelTier): Promise<C
   const started = Date.now();
   try {
     const output = await extractMeetingSignals(testCase.input, { tier, timeoutMs: 120_000 });
-    const checks = gradeMeetingSignals(output, meetingSourceText(testCase.input), testCase.expect);
+    // 参会人名单也在提示词里，属于可引用的原文
+    const source = [testCase.input.attendees ?? "", meetingSourceText(testCase.input)].join("\n");
+    const checks = gradeMeetingSignals(output, source, testCase.expect);
     return { id: testCase.id, description: testCase.description, ms: Date.now() - started, pass: checks.every(check => check.pass), checks, output };
   } catch (err: any) {
     return { id: testCase.id, description: testCase.description, ms: Date.now() - started, pass: false, checks: [], error: String(err?.message || err) };
