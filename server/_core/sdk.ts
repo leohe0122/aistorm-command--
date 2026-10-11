@@ -300,13 +300,14 @@ class SDKServer {
               if (emailUserRows.length > 0 && emailUserRows[0].isActive) {
                 const emailUser = emailUserRows[0];
                 const openId = `email_${emailUser.id}`;
-                // 每次认证都以 email_users 为准同步角色，避免管理员降级后仍保留旧权限。
+                // 每次认证都以 email_users 为准同步系统角色与 POD 角色，避免调整后仍保留旧权限。
                 await db.upsertUser({
                   openId,
                   name: emailUser.name,
                   email: emailUser.email,
                   loginMethod: 'email',
                   role: emailUser.role as 'admin' | 'user',
+                  podRole: emailUser.podRole,
                   lastSignedIn: new Date(),
                 });
                 const user = await db.getUserByOpenId(openId);

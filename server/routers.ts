@@ -5,7 +5,8 @@ import { COOKIE_NAME } from "@shared/const";
 import { getProductLinePrompt, PRODUCT_LINE_VALUES } from "@shared/productLines";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure as authenticatedProcedure, router } from "./_core/trpc";
+import { enforceClientScope } from "./accessGuard";
 import { TRPCError } from "@trpc/server";
 import { getLLMTextContent, invokeLLM } from "./_core/llm";
 import { buildDailyBriefingPrompt, getComplianceRssDigest } from "./dailyBriefingRss";
@@ -17,6 +18,11 @@ import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasVali
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
 import { ACCOUNT_REQUIREMENTS, AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildAccountGuidancePromptSuffix, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 import { calculateWinFactors } from "../shared/winFactors";
+// 已登录 + 客户数据可见范围（AD/管理员全部可见；SAM/RSM/SA 仅可见自己负责的客户），见 shared/accessScope.ts
+const protectedProcedure = authenticatedProcedure.use(({ ctx, path, getRawInput, next }) =>
+  enforceClientScope({ user: ctx.user, cacheKey: ctx.req, path, getRawInput, next })
+);
+
 // Admin-only procedure: requires login + admin role
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: '需要管理员权限' });
@@ -818,33 +824,8 @@ export const appRouter = router({
 
   // ── Clients ──────────────────────────────────────────────────────────────
   clients: router({
-    list: protectedProcedure.query(async ({ ctx }) => {
-      // Resolve current email session user for role-based filtering
-      const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
-      const allClients = await getAllClientsWithVisitStats();
-      if (!token) return allClients; // unauthenticated: return all (fallback)
-      try {
-        const db = await getDb();
-        if (!db) return allClients;
-        const { emailUsers, emailSessions } = await import('../drizzle/schema');
-        const { eq, and, gt } = await import('drizzle-orm');
-        const sessions = await db.select().from(emailSessions).where(
-          and(eq(emailSessions.token, token), gt(emailSessions.expiresAt, new Date()))
-        ).limit(1);
-        if (sessions.length === 0) return allClients;
-        const userRows = await db.select().from(emailUsers).where(eq(emailUsers.id, sessions[0].userId)).limit(1);
-        if (userRows.length === 0) return allClients;
-        const u = userRows[0];
-        // AD and SA see all clients
-        if (u.podRole === 'AD' || u.podRole === 'SA') return allClients;
-        // SAM and RSM see only clients where they are assigned as SAM or RSM
-        return allClients.filter(c =>
-          (c as any).assignedSamId === u.id || (c as any).assignedRsmId === u.id
-        );
-      } catch {
-        return allClients;
-      }
-    }),
+    // 可见范围由 protectedProcedure 的客户范围中间件统一过滤（见 shared/accessScope.ts）
+    list: protectedProcedure.query(() => getAllClientsWithVisitStats()),
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
       const result = await getClientById(input.id);
       return result ?? null;
@@ -4753,6 +4734,21 @@ ${contactList}
     }),
 
     // 更新 Blue Sheet 字段
+    // 分配负责 SA（技术定标）。仅 AD/管理员可调用，见 AD_ONLY_PATHS。
+    // SA 只能看到自己被分配的商机所属客户，因此这是 SA 获得数据访问的唯一入口。
+    assignSa: protectedProcedure.input(z.object({
+      opportunityId: z.number(),
+      saId: z.number().nullable(),
+      saName: z.string().max(100).nullable(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库不可用" });
+      const { opportunities: opportunitiesTable } = await import('../drizzle/schema');
+      await db.update(opportunitiesTable)
+        .set({ assignedSaId: input.saId, assignedSaName: input.saId === null ? null : input.saName })
+        .where(eq(opportunitiesTable.id, input.opportunityId));
+      return { ok: true };
+    }),
     updateBlueSheet: protectedProcedure.input(z.object({
       id: z.number(),
       bizObjective: z.string().optional(),
@@ -8214,6 +8210,9 @@ ${input.extractedText.slice(0, 4000)}
   roleWorkbench: router({
     getMyDashboard: protectedProcedure.query(async ({ ctx }) => {
       const role = ctx.user.podRole;
+      // 分配字段存的是 email_users.id，需从 openId 还原，不能直接用 users.id
+      const { emailUserIdFromOpenId } = await import("../shared/accessScope");
+      const myAssigneeId = emailUserIdFromOpenId(ctx.user.openId) ?? ctx.user.id;
       if (role !== "SA" && role !== "RSM") {
         throw new TRPCError({ code: "FORBIDDEN", message: "该工作台仅向 SA 或 RSM 提供" });
       }
@@ -8230,12 +8229,12 @@ ${input.extractedText.slice(0, 4000)}
       ]);
 
       const ownedClients = role === "RSM"
-        ? allClients.filter(client => client.assignedRsmId === ctx.user.id)
+        ? allClients.filter(client => client.assignedRsmId === myAssigneeId)
         : allClients;
       const ownedClientIds = new Set(ownedClients.map(client => client.id));
       const activeOpportunities = allOpportunities.filter(opportunity => opportunity.status === "活跃");
       const assignedOpportunities = role === "SA"
-        ? activeOpportunities.filter(opportunity => opportunity.assignedSaId === ctx.user.id)
+        ? activeOpportunities.filter(opportunity => opportunity.assignedSaId === myAssigneeId)
         : activeOpportunities.filter(opportunity => ownedClientIds.has(opportunity.clientId));
       const assignedOpportunityIds = new Set(assignedOpportunities.map(opportunity => opportunity.id));
       const clientById = new Map(allClients.map(client => [client.id, client]));
