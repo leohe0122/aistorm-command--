@@ -62,7 +62,12 @@ describe("placeholder evidence guard", () => {
     const out = dropPlaceholderEvidence({
       ...signals,
       meddpiccUpdates: [...signals.meddpiccUpdates, { dim: "C1", suggestedScore: 0, evidence: "数据不足，暂不判断。", confidence: "low" }, { dim: "C2", suggestedScore: 0, evidence: "记录未提及任何竞争对手。", confidence: "low" }],
-      contactDiscoveries: [...signals.contactDiscoveries, { name: "Daniel Tan", title: null, buyingRole: "未知", attitude: "未知", evidence: "未提供" }],
+      contactDiscoveries: [
+        ...signals.contactDiscoveries,
+        { name: "Daniel Tan", title: null, buyingRole: "未知", attitude: "未知", evidence: "未提供" },
+        { name: "未知", title: null, buyingRole: "未知", attitude: "未知", evidence: "他不是拍板的人" },
+        { name: "IT 部门的几位同事", title: null, buyingRole: "未知", attitude: "未知", evidence: "和客户IT部门几位同事吃饭" },
+      ],
     });
     expect(out.meddpiccUpdates.map(item => item.dim)).toEqual(["E"]);
     expect(out.contactDiscoveries.map(item => item.name)).toEqual(["刘明", "马超"]);

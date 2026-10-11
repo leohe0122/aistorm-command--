@@ -57,11 +57,11 @@ ${accountContext}
 1. 只提取记录中明确出现或可逐字定位的客户事实；禁止猜测客户意图、预算、人物立场或竞争态势。
 2. 没有明确证据的数组返回空数组，字段无法确认则返回 null；不要为了填满字段而创作。
 3. evidence 必须是记录中的原话，或紧贴原文、可逐字对照的转述。严禁填写"未提供""数据不足""无"之类的占位文字；拿不出原文依据的条目整条不要输出。
-4. suggestedScore 只能是 0/25/50/75/100。meddpiccUpdates 只包含本次记录提供了新证据的维度；记录没有涉及的维度不要输出，不要用 0 分条目来说明"未提及"。
+4. suggestedScore 只能是 0/25/50/75/100。meddpiccUpdates 只包含本次记录提供了新证据的维度；记录没有涉及的维度不要输出，不要用 0 分条目来说明"未提及"。但记录一旦说明了谁拍板或签字（E）、采购或审批怎么走（P）、用什么标准选型（D1）、决策步骤与时间（D2）、量化的业务影响或预算（M），就必须输出对应维度。
 
 【关键人】
 5. 凡是记录中被提到、且与本项目的决策、评估、采购、审批、使用或阻碍有关的人，都要列入 contactDiscoveries，不论是否在场。例如"方案最后要财务总监张某拍板"中的张某、"技术细节由他手下的工程师李某把关"中的李某。参会人名单中的客户方人员同样要列入。
-6. 记录明确说与项目无关的人不要列入。
+6. 记录明确说与项目无关的人不要列入。name 必须指向一个具体的人：只知道职位不知道姓名时，用职位作为 name（如"CFO"）；不要填"未知"，也不要把一群人（如"几位同事""IT 团队"）当成一个关键人。
 7. 角色（buyingRole）只在记录说明其职责或行为时填写，否则为"未知"；态度（attitude）只在记录有明确表态时填写。
 
 【负面事实同样重要】
@@ -82,13 +82,15 @@ ${accountContext}
 
 const PLACEHOLDER_EVIDENCE = /^(未提供|数据不足|暂无|无|不详|未知|n\/?a|none|not provided|not mentioned)[。.!！]?$|^数据不足，?暂不判断[。.]?$|^(记录|原文|本次)(中)?(未|没有)(提及|提到|涉及)/i;
 
-/** 模型偶尔会用占位文字充当证据；这类条目没有可回溯依据，直接丢弃，避免进入待确认列表。 */
+const PLACEHOLDER_NAME = /^(未知|不详|无|unknown|n\/?a|none)$|几位|多位|若干|同事们|团队|部门的|一些/i;
+
+/** 模型偶尔会用占位文字充当证据或人名；这类条目没有可回溯依据，直接丢弃，避免进入待确认列表。 */
 export function dropPlaceholderEvidence(signals: FullMeetingSignals): FullMeetingSignals {
   const real = (text: string) => !PLACEHOLDER_EVIDENCE.test(text.trim());
   return {
     ...signals,
     meddpiccUpdates: signals.meddpiccUpdates.filter(item => real(item.evidence)),
-    contactDiscoveries: signals.contactDiscoveries.filter(item => real(item.evidence)),
+    contactDiscoveries: signals.contactDiscoveries.filter(item => real(item.evidence) && !PLACEHOLDER_NAME.test(item.name.trim())),
   };
 }
 
