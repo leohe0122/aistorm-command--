@@ -64,6 +64,17 @@ async function main() {
   const passRate = passed / results.length;
   console.log(`\n用例通过 ${passed}/${results.length}（${Math.round(passRate * 100)}%）· 检查项通过 ${passedChecks}/${totalChecks}`);
 
+  // 在 GitHub Actions 中以注解输出结果，便于在 PR 检查页直接查看
+  if (process.env.GITHUB_ACTIONS) {
+    const escape = (text: string) => text.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+    for (const result of results) {
+      const failed = result.error ? [`错误：${result.error}`] : result.checks.filter(check => !check.pass).map(check => `${check.name}${check.detail ? `：${check.detail}` : ""}`);
+      const level = result.pass ? "notice" : "warning";
+      console.log(`::${level} title=${result.pass ? "通过" : "未通过"} ${result.id}::${escape([result.description, ...failed].join("\n"))}`);
+    }
+    console.log(`::notice title=评测汇总::${escape(`档位 ${tier} · 用例 ${passed}/${results.length} · 检查项 ${passedChecks}/${totalChecks}`)}`);
+  }
+
   const outDir = resolve(here, "results");
   mkdirSync(outDir, { recursive: true });
   const file = resolve(outDir, `meeting-signals-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
