@@ -296,26 +296,21 @@ class SDKServer {
                 .from(schema.emailUsers)
                 .where(drizzle.eq(schema.emailUsers.id, sessions[0].userId))
                 .limit(1);
-              if (emailUserRows.length > 0) {
+              // 已停用账号的既有会话立即失效，不再返回用户身份。
+              if (emailUserRows.length > 0 && emailUserRows[0].isActive) {
                 const emailUser = emailUserRows[0];
-                // Find or create corresponding users table entry
                 const openId = `email_${emailUser.id}`;
-                let user = await db.getUserByOpenId(openId);
-                if (!user) {
-                  await db.upsertUser({
-                    openId,
-                    name: emailUser.name,
-                    email: emailUser.email,
-                    loginMethod: 'email',
-                    role: emailUser.role as 'admin' | 'user',
-                    lastSignedIn: new Date(),
-                  });
-                  user = await db.getUserByOpenId(openId);
-                }
-                if (user) {
-                  await db.upsertUser({ openId, lastSignedIn: new Date() });
-                  return user;
-                }
+                // 每次认证都以 email_users 为准同步角色，避免管理员降级后仍保留旧权限。
+                await db.upsertUser({
+                  openId,
+                  name: emailUser.name,
+                  email: emailUser.email,
+                  loginMethod: 'email',
+                  role: emailUser.role as 'admin' | 'user',
+                  lastSignedIn: new Date(),
+                });
+                const user = await db.getUserByOpenId(openId);
+                if (user) return user;
               }
             }
           }

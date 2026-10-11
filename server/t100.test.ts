@@ -59,9 +59,12 @@ vi.mock("./_core/llm", () => ({
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
-function createCtx(): TrpcContext {
+const SAM_USER = { id: 10, openId: "email_10", name: "测试 SAM", email: "sam@example.com", loginMethod: "email", role: "user" } as any;
+
+// 默认以已登录 SAM 身份调用；未登录场景显式传入 null。
+function createCtx(user: TrpcContext["user"] = SAM_USER): TrpcContext {
   return {
-    user: null,
+    user,
     req: { protocol: "https", headers: {} } as any,
     res: { clearCookie: vi.fn() } as any,
   };
@@ -146,7 +149,7 @@ describe("T100 POD Command - pod router", () => {
 
 describe("T100 POD Command - auth router", () => {
   it("returns null user when not authenticated", async () => {
-    const caller = appRouter.createCaller(createCtx());
+    const caller = appRouter.createCaller(createCtx(null));
     const result = await caller.auth.me();
     expect(result).toBeNull();
   });
@@ -157,4 +160,33 @@ describe("T100 POD Command - auth router", () => {
     const result = await caller.auth.logout();
     expect(result.success).toBe(true);
   });
+});
+
+describe("T100 POD Command - access control", () => {
+  it("rejects anonymous access to customer data", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(caller.clients.list()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.meddpicc.get({ clientId: 1 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.clients.delete({ id: 1 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("rejects anonymous access to system configuration", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(caller.systemConfig.getAll()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.systemConfig.get({ key: "llm_openai_key" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.llmConfig.setKey({ provider: "custom", apiKey: "x", customUrl: "https://attacker.example" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("forbids non-admin users from changing model routing or keys", async () => {
+    const caller = appRouter.createCaller(createCtx(SAM_USER));
+    await expect(caller.llmConfig.getAll()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.llmConfig.setKey({ provider: "openai", apiKey: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.llmConfig.setRouting({ primaryProvider: "custom", fastProvider: "custom" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("keeps login endpoints reachable without a session", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(caller.auth.me()).resolves.toBeNull();
+  });
+
 });
