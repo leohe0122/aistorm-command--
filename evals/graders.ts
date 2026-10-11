@@ -28,11 +28,11 @@ export type MeetingSignalsExpectation = {
 
 /** 去掉空白与标点并转小写，便于中英文混排比较。 */
 export function normalizeForMatch(text: string): string {
-  return text.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+  return text.toLowerCase().replace(/[\s.,;:!?'"()[\]{}<>\-—_/\\|@#$%^&*+=~`，。；：！？、“”‘’（）【】《》…·]+/g, "");
 }
 
 function bigrams(text: string): string[] {
-  const chars = [...normalizeForMatch(text)];
+  const chars = Array.from(normalizeForMatch(text));
   if (chars.length < 2) return chars.length ? [chars[0]] : [];
   const out: string[] = [];
   for (let i = 0; i < chars.length - 1; i++) out.push(chars[i] + chars[i + 1]);
@@ -72,7 +72,7 @@ export function gradeMeetingSignals(output: FullMeetingSignals, source: string, 
   ].filter(item => groundingRatio(item.evidence, source) < EVIDENCE_GROUNDING_THRESHOLD);
   add("证据可回溯到原文", weakEvidence.length === 0, weakEvidence.map(item => `${item.label}：「${item.evidence.slice(0, 40)}」`).join("；"));
 
-  add("摘要长度合规", [...output.meetingSummary].length <= SUMMARY_MAX_CHARS, `${[...output.meetingSummary].length} 字`);
+  add("摘要长度合规", Array.from(output.meetingSummary).length <= SUMMARY_MAX_CHARS, `${Array.from(output.meetingSummary).length} 字`);
   add("给出下一步验证动作", output.nextBestAction.trim().length > 0 && output.nextBestAction !== "数据不足，暂不判断");
 
   // ── 用例期望 ──
