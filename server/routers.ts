@@ -16,7 +16,7 @@ import { evaluateCustomerReadiness, type CustomerStage } from "../shared/custome
 import { classifyExecutiveMeetings } from "../shared/executiveMeetingEvidence";
 import { classifyExplicitOpportunityFact, getTransientStageGateCoverage, hasValidExtractedFactCandidate, inferGuidanceTopic, inferIrrelevantProjectParticipants, isGuidancePersonTopicAlreadyCovered, isGuidanceTopicExhaustionAnswer, isQuestionTopicAlreadyCovered, nextUncoveredMeddpiccQuestion, topicMeddpiccDimension, type GuidanceHistoryTurn, type MeddpiccDimCode } from "../shared/aiAnswerFacts";
 import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagnosticContext } from "./diagnosticContext";
-import { ACCOUNT_REQUIREMENTS, AI_NATIVE_GUIDANCE_VERSION, FULL_MEETING_SIGNALS_RESPONSE_SCHEMA, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildAccountGuidancePromptSuffix, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
+import { ACCOUNT_REQUIREMENTS, AI_NATIVE_GUIDANCE_VERSION, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildAccountGuidancePromptSuffix, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 import { calculateWinFactors } from "../shared/winFactors";
 // 已登录 + 客户数据可见范围（AD/管理员全部可见；SAM/RSM/SA 仅可见自己负责的客户），见 shared/accessScope.ts
 const protectedProcedure = authenticatedProcedure.use(({ ctx, path, getRawInput, next }) =>
@@ -3619,39 +3619,19 @@ ${knowledgeNote}`;
       contactType: z.enum(["formal_meeting", "dinner_meeting", "phone_call", "video_call", "instant_message", "event", "customer_initiated"]).optional(),
       initiatedBy: z.enum(["sam", "customer", "mutual"]).optional(),
     })).mutation(async ({ input }) => {
-      const sourceText = input.transcriptText
-        ? `【会议原文】\n${input.transcriptText}\n\n【SAM 补充】\n${input.keyPoints}`
-        : `【SAM 记录】\n${input.keyPoints}`;
+      const { extractMeetingSignals, MeetingSignalsError } = await import("./ai/meetingSignals");
       const accountContext = await getAccountDiagnosticContext(input.clientId);
-      const prompt = `你现在是 SAM 的拜访后作战引导助手。SAM 只负责如实记录发生了什么；你必须从以下记录中一次性提取可验证事实，供 SAM 确认。\n\n客户：${input.clientName}\n日期：${input.meetingDate}\n拜访类型：${input.visitType || "拜访"}\n参会人：${input.attendees || "数据不足"}\n接触方式：${input.contactType || "数据不足"}\n发起方：${input.initiatedBy || "数据不足"}\n\n${sourceText}\n\n${accountContext}\n\n【严格规则】\n1. 只提取记录中明确出现或可逐字定位的客户事实；禁止猜测客户意图、预算、人物立场或竞争态势。\n2. 没有明确证据的数组返回空数组，字段无法确认则返回 null；不要为了填满字段而创作。\n3. suggestedScore 只能是 0/25/50/75/100，且 evidence 必须包含原话或可回溯表述。\n4. 关键人角色只在记录明确说明其决策职责或行为时填写；否则为"未知"。\n5. nextBestAction 必须是 SAM 下一次要验证的一件事，不能是产品推销动作。\n6. meetingSummary 用不超过120字概括本次已确认事实与未确认边界。\n7. 按给定 JSON Schema 返回，JSON 外不得输出任何文字。`;
-      const extractionController = new AbortController();
-      const extractionTimeout = setTimeout(() => extractionController.abort(), 120_000);
-      let result: Awaited<ReturnType<typeof invokeLLM>>;
+      let signals: Awaited<ReturnType<typeof extractMeetingSignals>>;
       try {
-        result = await invokeLLM({
-          model: "gpt-5",
-          maxCompletionTokens: 4096,
-          useBuiltin: true,
-          maxRetries: 0,
-          signal: extractionController.signal,
-          messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
-          response_format: { type: "json_schema", json_schema: { name: "full_meeting_signals", strict: true, schema: FULL_MEETING_SIGNALS_RESPONSE_SCHEMA } },
-        });
+        signals = await extractMeetingSignals(input, { accountContext, tier: "reasoning", timeoutMs: 120_000 });
       } catch (err: any) {
-        clearTimeout(extractionTimeout);
-        const isTimeout = err?.name === "AbortError" || err?.message?.includes("aborted");
-        throw new TRPCError({ code: "BAD_GATEWAY", message: isTimeout ? "AI 信号提取超时（15 秒），请稍后重试。本次拜访未保存。" : `AI 信号提取失败：${JSON.stringify({ message: err?.message, name: err?.name, apiUrl: process.env.BUILT_IN_FORGE_API_URL, hasKey: Boolean(process.env.BUILT_IN_FORGE_API_KEY) })}。本次拜访未保存。` });
-      } finally {
-        clearTimeout(extractionTimeout);
+        const code = err instanceof MeetingSignalsError ? err.code : "provider";
+        const message = code === "timeout" ? "AI 信号提取超时，请稍后重试。本次拜访未保存。"
+          : code === "empty" ? "AI 未返回可确认的拜访信号。本次未保存，请稍后重试。"
+          : code === "invalid_json" ? "AI 返回格式无效。本次未保存，请稍后重试。"
+          : `${err?.message || "AI 信号提取失败"}。本次拜访未保存。`;
+        throw new TRPCError({ code: "BAD_GATEWAY", message });
       }
-      if (!result?.choices?.length || !result.choices[0]?.message) {
-        throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回有效响应。本次拜访未保存，请稍后重试。" });
-      }
-      const raw = getLLMTextContent(result.choices[0].message.content);
-      if (!raw) throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 未返回可确认的拜访信号。本次未保存，请稍后重试。" });
-      let parsed: unknown;
-      try { parsed = JSON.parse(extractJSON(raw)); } catch { throw new TRPCError({ code: "BAD_GATEWAY", message: "AI 返回格式无效。本次未保存，请稍后重试。" }); }
-      const signals = normalizeFullMeetingSignals(parsed);
       const aiMinutes = `## 拜访作战日志\n\n${signals.meetingSummary}\n\n### 下一步需验证\n${signals.nextBestAction}`;
       const id = await insertMeeting({
         clientId: input.clientId, meetingDate: new Date(input.meetingDate), visitType: input.visitType,
@@ -3776,29 +3756,10 @@ ${knowledgeNote}`;
           await db.update(meetingMinutes).set({ aiFullSignals: { status: "pending", startedAt: new Date().toISOString() } as any }).where(eq(meetingMinutes.id, id));
         }
         try {
-          const sourceText = input.transcriptText
-            ? `【会议原文】\n${input.transcriptText}\n\n【SAM 补充】\n${input.keyPoints}`
-            : `【SAM 记录】\n${input.keyPoints}`;
           let accountContext = "";
           try { accountContext = await getAccountDiagnosticContext(input.clientId); } catch (ctxErr: any) { console.error("[extractFullSignals] accountContext failed:", ctxErr?.message); }
-          const prompt = `你现在是 SAM 的拜访后作战引导助手。SAM 只负责如实记录发生了什么；你必须从以下记录中一次性提取可验证事实，供 SAM 确认。\n\n客户：${input.clientName}\n日期：${input.meetingDate}\n拜访类型：${input.visitType || "拜访"}\n参会人：${input.attendees || "数据不足"}\n接触方式：${input.contactType || "数据不足"}\n发起方：${input.initiatedBy || "数据不足"}\n\n${sourceText}\n\n${accountContext}\n\n【严格规则】\n1. 只提取记录中明确出现或可逐字定位的客户事实；禁止猜测客户意图、预算、人物立场或竞争态势。\n2. 没有明确证据的数组返回空数组，字段无法确认则返回 null；不要为了填满字段而创作。\n3. suggestedScore 只能是 0/25/50/75/100，且 evidence 必须包含原话或可回溯表述。\n4. 关键人角色只在记录明确说明其决策职责或行为时填写；否则为"未知"。\n5. nextBestAction 必须是 SAM 下一次要验证的一件事，不能是产品推销动作。\n6. meetingSummary 用不超过120字概括本次已确认事实与未确认边界。\n7. 按给定 JSON Schema 返回，JSON 外不得输出任何文字。`;
-          const extractionController = new AbortController();
-          const extractionTimeout = setTimeout(() => extractionController.abort(), 90_000);
-         const result = await invokeLLM({
-            model: "gpt-4o-mini",
-            maxCompletionTokens: 4096,
-            maxRetries: 0,
-            signal: extractionController.signal,
-            messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }],
-            response_format: { type: "json_schema", json_schema: { name: "full_meeting_signals", strict: true, schema: FULL_MEETING_SIGNALS_RESPONSE_SCHEMA } },
-          });
-          clearTimeout(extractionTimeout);
-          if (!result?.choices?.length || !result.choices[0]?.message) throw new Error("AI 未返回有效响应");
-          const raw = getLLMTextContent(result.choices[0].message.content);
-          if (!raw) throw new Error("AI 未返回可确认的拜访信号");
-          let parsed: unknown;
-          try { parsed = JSON.parse(extractJSON(raw)); } catch { throw new Error("AI 返回格式无效"); }
-          const signals = normalizeFullMeetingSignals(parsed);
+          const { extractMeetingSignals } = await import("./ai/meetingSignals");
+          const signals = await extractMeetingSignals(input, { accountContext, tier: "fast", timeoutMs: 90_000 });
           const aiMinutes = `## 拜访作战日志\n\n${signals.meetingSummary}\n\n### 下一步需验证\n${signals.nextBestAction}`;
           if (db && id) {
             const { meetingMinutes } = await import("../drizzle/schema");
@@ -6111,44 +6072,18 @@ ${docContext ? `参考产品文档：\n${docContext}` : "未选择参考文档�
     testConnection: adminProcedure.input(z.object({
       provider: z.enum(["openai", "claude", "glm", "custom"]),
     })).mutation(async ({ input }) => {
-      const apiKey = await getSystemConfig(`llm_${input.provider}_key`);
-      if (!apiKey) throw new Error(`未配置 ${input.provider} API Key`);
-
-      const providerConfig: Record<string, { url: string; model: string; headers?: Record<string, string>; body?: object }> = {
-        openai: { url: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
-        claude: { url: "https://api.anthropic.com/v1/messages", model: "claude-3-haiku-20240307",
-          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-          body: { model: "claude-3-haiku-20240307", max_tokens: 5, messages: [{ role: "user", content: "hi" }] }
-        },
-        glm: { url: "https://open.bigmodel.cn/api/paas/v4/chat/completions", model: "glm-4-flash" },
-        custom: { url: (await getSystemConfig("llm_custom_url")) || "", model: "gpt-4o-mini" },
-      };
-
-      const cfg = providerConfig[input.provider];
-      if (!cfg.url) throw new Error("请先填写自定义 API 端点");
-
+      // 走与业务调用完全相同的路由（地址、模型换算、参数适配），测通即代表业务可用。
       try {
-        let resp: Response;
-        if (input.provider === "claude") {
-          resp = await fetch(cfg.url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...cfg.headers },
-            body: JSON.stringify(cfg.body),
-          });
-        } else {
-          resp = await fetch(cfg.url, {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: cfg.model, messages: [{ role: "user", content: "hi" }], max_tokens: 5 }),
-          });
-        }
-        if (!resp.ok) {
-          const err = await resp.text();
-          throw new Error(`HTTP ${resp.status}: ${err.slice(0, 100)}`);
-        }
-        return { ok: true, message: "连接成功" };
+        const result = await invokeLLM({
+          provider: input.provider,
+          tier: "fast",
+          messages: [{ role: "user", content: "Reply with OK." }],
+          maxTokens: 16,
+          maxRetries: 0,
+        });
+        return { ok: true, message: `连接成功（模型：${result.model || "未知"}）` };
       } catch (e: any) {
-        throw new Error(`连接失败: ${e.message}`);
+        throw new Error(`连接失败: ${String(e?.message || e).slice(0, 200)}`);
       }
     }),
     // Remove a provider's key

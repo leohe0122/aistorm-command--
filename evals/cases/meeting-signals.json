@@ -1,0 +1,112 @@
+[
+  {
+    "id": "formal-budget-deadline-competitor",
+    "description": "正式会议：预算、截止时间、竞品与决策链都有明确原话",
+    "input": {
+      "clientName": "示例金融集团",
+      "meetingDate": "2026-10-08",
+      "visitType": "正式会议",
+      "attendees": "客户：信息安全部总监 王建国、采购经理 李娜；我方：SAM 陈晨",
+      "contactType": "formal_meeting",
+      "initiatedBy": "sam",
+      "keyPoints": "王建国说现有终端防护明年3月31日合同到期，不打算续签，今年第四季度要完成选型。他明确表示最终由CIO刘明签字，他负责技术评估并会把评估结论报给刘明。李娜说采购需要走三家比价，预算已经批了大约200万人民币。王建国提到奇安信上周来做过演示，他们觉得界面不错但误报太多。王建国说希望我们11月中旬前在测试环境做一次POC。"
+    },
+    "expect": {
+      "contactsInclude": ["王建国", "李娜", "刘明"],
+      "competitorsInclude": ["奇安信"],
+      "timeSignalTypesInclude": ["deadline"],
+      "meddpiccMin": { "E": 25, "P": 25 }
+    }
+  },
+  {
+    "id": "dinner-no-facts",
+    "description": "晚宴寒暄：没有业务事实，不应编造任何评分或关键人立场",
+    "input": {
+      "clientName": "示例零售集团",
+      "meetingDate": "2026-10-09",
+      "visitType": "晚宴",
+      "attendees": "客户：IT 部门几位同事；我方：SAM 陈晨",
+      "contactType": "dinner_meeting",
+      "initiatedBy": "mutual",
+      "keyPoints": "和客户IT部门几位同事吃饭，主要聊了国庆出游和孩子上学的事情，气氛不错。没有谈到具体项目，也没有提到预算或者采购计划。约了下个月再见面。"
+    },
+    "expect": {
+      "expectEmpty": ["meddpiccUpdates", "competitorMentions"],
+      "whyNull": ["whyChange", "whyNow", "whyUs"],
+      "meddpiccMax": { "M": 0, "E": 0 }
+    }
+  },
+  {
+    "id": "budget-not-approved",
+    "description": "电话：预算尚未批准、评审未开始，不能把计划当成事实",
+    "input": {
+      "clientName": "示例物流公司",
+      "meetingDate": "2026-10-10",
+      "visitType": "电话",
+      "attendees": "客户：安全经理 赵磊",
+      "contactType": "phone_call",
+      "initiatedBy": "sam",
+      "keyPoints": "赵磊说明年的安全预算还在编制，要等12月董事会审批，现在说不出金额。之前提交的方案还没有进入正式评审，评审什么时候开始他也不确定。他个人觉得我们的方案方向是对的，但他不是拍板的人。"
+    },
+    "expect": {
+      "contactsInclude": ["赵磊"],
+      "timeSignalTypesInclude": ["budget_cycle"],
+      "meddpiccMax": { "M": 25, "P": 25 },
+      "expectEmpty": ["competitorMentions"]
+    }
+  },
+  {
+    "id": "english-sea-meeting",
+    "description": "英文会议纪要：东南亚客户，英文姓名与海外竞品",
+    "input": {
+      "clientName": "Example Logistics Pte Ltd",
+      "meetingDate": "2026-10-07",
+      "visitType": "Video call",
+      "attendees": "Customer: Daniel Tan (Head of IT Security), Priya Nair (SOC Lead); Us: SAM Chen",
+      "contactType": "video_call",
+      "initiatedBy": "customer",
+      "keyPoints": "Daniel said they had a ransomware incident in August and the board now requires an EDR rollout across 1,200 endpoints before the end of Q1 2027. Priya said they are also evaluating CrowdStrike, which is the current front-runner on detection quality, but the price is too high for their budget. Daniel will present the shortlist to the CFO, who approves anything above SGD 300k. Daniel asked us to send pricing for 1,200 endpoints by next Friday."
+    },
+    "expect": {
+      "contactsInclude": ["Daniel Tan", "Priya Nair"],
+      "competitorsInclude": ["CrowdStrike"],
+      "timeSignalTypesInclude": ["trigger_event", "deadline"]
+    }
+  },
+  {
+    "id": "third-party-mentioned",
+    "description": "提到不在场的第三方与无关人员：只收录与项目有关的人",
+    "input": {
+      "clientName": "示例制造集团",
+      "meetingDate": "2026-10-06",
+      "visitType": "正式会议",
+      "attendees": "客户：IT 总监 孙伟；我方：SAM 陈晨、SA 吴工",
+      "contactType": "formal_meeting",
+      "initiatedBy": "sam",
+      "keyPoints": "孙伟说这个项目的技术方案由下属的架构师周涛负责把关，周涛下周会单独约我们讨论部署架构。孙伟顺便提到他的前同事钱磊现在在别的公司做销售，跟这个项目没有关系。孙伟说集团今年要求所有工厂网络做安全隔离，这是总部的硬性要求。"
+    },
+    "expect": {
+      "contactsInclude": ["孙伟", "周涛"],
+      "contactsExclude": ["钱磊"],
+      "expectEmpty": ["competitorMentions"]
+    }
+  },
+  {
+    "id": "objection-and-negative-stance",
+    "description": "客户明确反对：如实记录反对立场，不美化",
+    "input": {
+      "clientName": "示例能源公司",
+      "meetingDate": "2026-10-05",
+      "visitType": "正式会议",
+      "attendees": "客户：网络安全处处长 何静、运维主管 马超",
+      "contactType": "formal_meeting",
+      "initiatedBy": "sam",
+      "keyPoints": "何静直接说他们和深信服合作了五年，没有换厂商的计划，除非我们能证明在工控场景有成功案例。马超说上次我们的测试版本把一台生产服务器的CPU打满了，他对我们的产品稳定性有很大顾虑，不支持再测。何静说如果年底前能拿出同行业的案例，可以再谈。"
+    },
+    "expect": {
+      "contactsInclude": ["何静", "马超"],
+      "competitorsInclude": ["深信服"],
+      "meddpiccMax": { "M": 25 }
+    }
+  }
+]

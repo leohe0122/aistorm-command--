@@ -5,11 +5,10 @@ export const ENV = {
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
-  // Prefer user-supplied OPENAI_API_KEY over built-in forge key
-  forgeApiUrl: process.env.OPENAI_API_KEY
-    ? "https://api.openai.com"
-    : (process.env.BUILT_IN_FORGE_API_URL ?? ""),
-  forgeApiKey: process.env.OPENAI_API_KEY ?? process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // 托管平台内置服务（文件存储、通知、语音转写等）。只指向平台通道，
+  // 不再被 OPENAI_API_KEY 劫持；AI 模型调用走 server/_core/modelRouting.ts 的提供方配置。
+  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
+  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   // 飞书机器人
   feishuAppId: process.env.FEISHU_APP_ID ?? "",
   feishuAppSecret: process.env.FEISHU_APP_SECRET ?? "",

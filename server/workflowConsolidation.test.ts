@@ -315,9 +315,12 @@ describe("作战工作流入口收敛", () => {
     const confirmationCard = projectFile("client/src/components/FullSignalConfirmationCard.tsx");
     expect(routers).toContain("extractFullSignals: protectedProcedure");
     expect(routers).toContain("confirmFullSignals: protectedProcedure");
-    expect(routers).toContain('name: "full_meeting_signals"');
-    expect(routers).toContain("FULL_MEETING_SIGNALS_RESPONSE_SCHEMA");
-    expect(routers).toContain("normalizeFullMeetingSignals");
+    // 提示词、严格 Schema 与解析已抽到 server/ai/meetingSignals.ts，供接口与 AI 评测共用
+    const extraction = projectFile("server/ai/meetingSignals.ts");
+    expect(routers).toContain('import("./ai/meetingSignals")');
+    expect(extraction).toContain('name: "full_meeting_signals"');
+    expect(extraction).toContain("FULL_MEETING_SIGNALS_RESPONSE_SCHEMA");
+    expect(extraction).toContain("normalizeFullMeetingSignals");
     expect(routers).toContain("aiFullSignalsConfirmedKeys");
     expect(schema).toContain('aiFullSignals: json("aiFullSignals")');
     expect(schema).toContain('aiFullSignalsConfirmedKeys: json("aiFullSignalsConfirmedKeys")');
@@ -524,11 +527,12 @@ describe("作战工作流入口收敛", () => {
     expect(clientEntry).toContain("刷新登录会话后重试");
   });
 
-  it("让 useBuiltin 直接使用 BUILT_IN_FORGE 配置，不继承 OpenAI 环境变量优先级", () => {
+  it("托管平台内置服务不再被 OPENAI_API_KEY 劫持，AI 调用统一走模型路由", () => {
+    const env = projectFile("server/_core/env.ts");
+    expect(env).toContain('forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? ""');
+    expect(env).not.toContain('"https://api.openai.com"');
     const llmCore = projectFile("server/_core/llm.ts");
-    expect(llmCore).toContain("resolveBuiltinForgeApiUrl");
-    expect(llmCore).toContain("process.env.BUILT_IN_FORGE_API_URL");
-    expect(llmCore).toContain("process.env.BUILT_IN_FORGE_API_KEY");
-    expect(llmCore).toContain("apiUrl: resolveBuiltinForgeApiUrl()");
+    expect(llmCore).toContain("adaptPayloadForProvider");
+    expect(llmCore).not.toContain("forge.manus.im");
   });
 });

@@ -1,0 +1,48 @@
+name: AI Eval
+
+# 调用真实模型、产生费用，因此只手动触发。
+# 需要在仓库 Settings → Secrets and variables → Actions 中配置 OPENAI_API_KEY。
+on:
+  # 功能分支上修改评测、AI 提示词或模型路由时自动跑一次（fast 档，6 个用例，费用很低）
+  push:
+    branches-ignore: [main]
+    paths:
+      - evals/**
+      - server/ai/**
+      - server/_core/modelRouting.ts
+      - .github/workflows/eval.yml
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "模型档位"
+        type: choice
+        options: [fast, standard, reasoning]
+        default: fast
+      min:
+        description: "最低用例通过率（0-1）"
+        default: "0.8"
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run AI eval
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: pnpm eval --tier "${{ inputs.tier || 'fast' }}" --min "${{ inputs.min || '0.8' }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: evals/results/
