@@ -10,6 +10,7 @@ import {
   boolean,
   tinyint,
   decimal,
+  index,
 } from "drizzle-orm/mysql-core";
 
 /**
@@ -1126,3 +1127,91 @@ export const products = mysqlTable("products", {
 });
 export type Product = typeof products.$inferSelect;
 export type InsertProduct = typeof products.$inferInsert;
+
+// ── 证据台账（AI 原生改造）────────────────────────────────────────────────
+// 设计见 docs/证据台账_设计方案.md：证据是唯一事实来源，评估由证据推导，AI 调用全部留痕。
+
+/** 证据：一条可回溯到原始来源的客户事实。AI 提取的先是候选，人确认后才是事实。 */
+export const evidence = mysqlTable("evidence", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull(),
+  opportunityId: int("opportunityId"),
+  kind: mysqlEnum("kind", ["statement", "observation", "document", "external"]).default("statement").notNull(),
+  /** 一句话事实陈述 */
+  claim: text("claim").notNull(),
+  /** 原话或原文片段 */
+  quote: text("quote"),
+  subjectName: varchar("subjectName", { length: 150 }),
+  contactId: int("contactId"),
+  /** 标签：MEDDPICC 维度（M/E/D1/D2/P/I/C1/C2）与 stakeholder、timeline、budget、why_change、why_now、why_us、competitor 等 */
+  topics: json("topics").$type<string[]>().notNull(),
+  polarity: mysqlEnum("polarity", ["positive", "negative", "neutral"]).default("neutral").notNull(),
+  occurredAt: timestamp("occurredAt"),
+  sourceType: mysqlEnum("sourceType", ["meeting", "email", "call", "document", "ai_guidance", "purchase_signal", "intelligence", "manual", "legacy"]).notNull(),
+  sourceId: int("sourceId"),
+  /** 同一来源内的条目标识，例如拜访信号的 meddpicc:E、contact:0 */
+  sourceKey: varchar("sourceKey", { length: 64 }),
+  sourceExcerpt: text("sourceExcerpt"),
+  status: mysqlEnum("status", ["candidate", "confirmed", "rejected", "superseded"]).default("candidate").notNull(),
+  supersedesId: int("supersedesId"),
+  confidence: mysqlEnum("confidence", ["high", "medium", "low"]),
+  /** 0-100：AI 提取时附带的强度建议（如 MEDDPICC 建议分），仅供评估参考 */
+  suggestedScore: int("suggestedScore"),
+  createdBy: varchar("createdBy", { length: 100 }).notNull(),
+  confirmedBy: varchar("confirmedBy", { length: 100 }),
+  confirmedAt: timestamp("confirmedAt"),
+  aiRunId: int("aiRunId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  index("evidence_client_idx").on(table.clientId, table.status),
+  index("evidence_opportunity_idx").on(table.opportunityId, table.status),
+  index("evidence_source_idx").on(table.sourceType, table.sourceId),
+]);
+export type Evidence = typeof evidence.$inferSelect;
+export type InsertEvidence = typeof evidence.$inferInsert;
+
+/** 评估：由证据推导出的判断（统一 0-100），每条都引用证据编号；人工覆盖须写理由。 */
+export const assessments = mysqlTable("assessments", {
+  id: int("id").autoincrement().primaryKey(),
+  scope: mysqlEnum("scope", ["client", "opportunity"]).notNull(),
+  targetId: int("targetId").notNull(),
+  clientId: int("clientId").notNull(),
+  framework: mysqlEnum("framework", ["meddpicc", "win", "three_why", "go_no_go", "coverage"]).notNull(),
+  dimension: varchar("dimension", { length: 32 }).notNull(),
+  score: int("score"),
+  rationale: text("rationale"),
+  evidenceIds: json("evidenceIds").$type<number[]>().notNull(),
+  computedBy: mysqlEnum("computedBy", ["rule", "ai"]).notNull(),
+  aiRunId: int("aiRunId"),
+  overrideScore: int("overrideScore"),
+  overrideReason: text("overrideReason"),
+  overrideBy: varchar("overrideBy", { length: 100 }),
+  stale: boolean("stale").default(false).notNull(),
+  computedAt: timestamp("computedAt").defaultNow().notNull(),
+}, table => [
+  index("assessments_target_idx").on(table.scope, table.targetId, table.framework),
+  index("assessments_client_idx").on(table.clientId),
+]);
+export type Assessment = typeof assessments.$inferSelect;
+export type InsertAssessment = typeof assessments.$inferInsert;
+
+/** AI 调用记录：每条 AI 结论的出处，也用于成本统计与评测对照。不存提示词与输出全文。 */
+export const aiRuns = mysqlTable("ai_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  feature: varchar("feature", { length: 64 }).notNull(),
+  provider: varchar("provider", { length: 32 }).notNull(),
+  model: varchar("model", { length: 100 }),
+  tier: varchar("tier", { length: 16 }),
+  promptVersion: varchar("promptVersion", { length: 64 }),
+  status: mysqlEnum("status", ["success", "error"]).notNull(),
+  latencyMs: int("latencyMs").notNull(),
+  promptTokens: int("promptTokens"),
+  completionTokens: int("completionTokens"),
+  error: varchar("error", { length: 500 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [
+  index("ai_runs_feature_idx").on(table.feature, table.createdAt),
+]);
+export type AiRun = typeof aiRuns.$inferSelect;
+export type InsertAiRun = typeof aiRuns.$inferInsert;

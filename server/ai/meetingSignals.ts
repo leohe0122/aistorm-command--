@@ -16,6 +16,9 @@ export type MeetingSignalsInput = {
   initiatedBy?: string;
 };
 
+/** 修改提示词或规则时递增，ai_runs 与评测结果据此对照。 */
+export const MEETING_SIGNALS_PROMPT_VERSION = "meeting-signals-v1";
+
 export type MeetingSignalsErrorCode = "timeout" | "provider" | "empty" | "invalid_json";
 
 export class MeetingSignalsError extends Error {
@@ -64,13 +67,16 @@ function extractJSON(raw: string): string {
 export async function extractMeetingSignals(
   input: MeetingSignalsInput,
   options: { accountContext?: string; tier?: InvokeParams["tier"]; timeoutMs?: number } = {},
-): Promise<FullMeetingSignals> {
+): Promise<{ signals: FullMeetingSignals; aiRunId?: number }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 90_000);
   let raw = "";
+  let aiRunId: number | undefined;
   try {
     const result = await invokeLLM({
       tier: options.tier ?? "fast",
+      feature: "meeting_signals",
+      promptVersion: MEETING_SIGNALS_PROMPT_VERSION,
       maxCompletionTokens: 4096,
       maxRetries: 0,
       signal: controller.signal,
@@ -81,6 +87,7 @@ export async function extractMeetingSignals(
       response_format: { type: "json_schema", json_schema: { name: "full_meeting_signals", strict: true, schema: FULL_MEETING_SIGNALS_RESPONSE_SCHEMA } },
     });
     raw = getLLMTextContent(result?.choices?.[0]?.message?.content);
+    aiRunId = result?.aiRunId;
   } catch (err: any) {
     const aborted = err?.name === "AbortError" || String(err?.message || "").includes("aborted");
     throw new MeetingSignalsError(aborted ? "timeout" : "provider", aborted ? "AI 信号提取超时" : `AI 信号提取失败：${err?.message || "未知错误"}`);
@@ -89,7 +96,7 @@ export async function extractMeetingSignals(
   }
   if (!raw) throw new MeetingSignalsError("empty", "AI 未返回可确认的拜访信号");
   try {
-    return normalizeFullMeetingSignals(JSON.parse(extractJSON(raw)));
+    return { signals: normalizeFullMeetingSignals(JSON.parse(extractJSON(raw))), aiRunId };
   } catch {
     throw new MeetingSignalsError("invalid_json", "AI 返回格式无效");
   }

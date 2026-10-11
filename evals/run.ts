@@ -28,7 +28,7 @@ function argValue(name: string): string | undefined {
 async function runCase(testCase: MeetingSignalsCase, tier: ModelTier): Promise<CaseResult> {
   const started = Date.now();
   try {
-    const output = await extractMeetingSignals(testCase.input, { tier, timeoutMs: 120_000 });
+    const { signals: output } = await extractMeetingSignals(testCase.input, { tier, timeoutMs: 120_000 });
     const checks = gradeMeetingSignals(output, meetingSourceText(testCase.input), testCase.expect);
     return { id: testCase.id, description: testCase.description, ms: Date.now() - started, pass: checks.every(check => check.pass), checks, output };
   } catch (err: any) {
