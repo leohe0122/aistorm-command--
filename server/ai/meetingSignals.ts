@@ -82,7 +82,7 @@ ${accountContext}
 
 const PLACEHOLDER_EVIDENCE = /^(未提供|数据不足|暂无|无|不详|未知|n\/?a|none|not provided|not mentioned)[。.!！]?$|^数据不足，?暂不判断[。.]?$|^(记录|原文|本次)(中)?(未|没有)(提及|提到|涉及)/i;
 
-const PLACEHOLDER_NAME = /^(未知|不详|无|unknown|n\/?a|none)$|几位|多位|若干|同事们|团队|部门的|一些/i;
+const PLACEHOLDER_NAME = /^(未知|不详|无|unknown|n\/?a|none)$|(同事们?|团队|人员|们)$|几位|多位|若干|一些|colleagues|team$/i;
 
 /** 模型偶尔会用占位文字充当证据或人名；这类条目没有可回溯依据，直接丢弃，避免进入待确认列表。 */
 export function dropPlaceholderEvidence(signals: FullMeetingSignals): FullMeetingSignals {

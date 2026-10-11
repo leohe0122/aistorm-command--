@@ -67,9 +67,12 @@ describe("placeholder evidence guard", () => {
         { name: "Daniel Tan", title: null, buyingRole: "未知", attitude: "未知", evidence: "未提供" },
         { name: "未知", title: null, buyingRole: "未知", attitude: "未知", evidence: "他不是拍板的人" },
         { name: "IT 部门的几位同事", title: null, buyingRole: "未知", attitude: "未知", evidence: "和客户IT部门几位同事吃饭" },
+        { name: "IT部门同事", title: null, buyingRole: "未知", attitude: "未知", evidence: "和客户IT部门几位同事吃饭" },
       ],
     });
     expect(out.meddpiccUpdates.map(item => item.dim)).toEqual(["E"]);
     expect(out.contactDiscoveries.map(item => item.name)).toEqual(["刘明", "马超"]);
+    const kept = dropPlaceholderEvidence({ ...signals, contactDiscoveries: [{ name: "信息部门负责人", title: null, buyingRole: "未知", attitude: "未知", evidence: "由信息部门负责人牵头评估" }] });
+    expect(kept.contactDiscoveries).toHaveLength(1);
   });
 });
