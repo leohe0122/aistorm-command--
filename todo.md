@@ -1341,5 +1341,5 @@
 - [x] 飞书 Webhook 强制校验 Verification Token（未配置时拒绝），修复 ESM 下 require("crypto") 运行时异常
 - [x] 文档上传接口须登录，并限制单文件 50MB
 - [ ] 在可安装依赖的环境完成类型检查、完整测试与构建
-- [ ] 生产部署前配置 FEISHU_VERIFICATION_TOKEN，并在飞书开放平台核对回调 Token
+- [ ] 飞书暂不接入、代码保留；后续接入时配置 FEISHU_VERIFICATION_TOKEN 并在飞书开放平台核对回调 Token
 - [ ] 轮换此前存入系统配置的全部 LLM API Key 与飞书 App Secret
