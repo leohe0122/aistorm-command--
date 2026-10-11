@@ -59,6 +59,7 @@ ${text}
 
   try {
     const result = await invokeLLM({
+      feature: "feishu.parseMessage",
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
@@ -632,6 +633,7 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
         let parsedImg: any = null;
         try {
           const visionResult = await invokeLLM({
+      feature: "feishu.visionExtract",
             model: "gpt-4o",
             messages: [{
               role: "user",

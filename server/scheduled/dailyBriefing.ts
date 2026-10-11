@@ -92,6 +92,7 @@ export async function dailyBriefingHandler(req: Request, res: Response) {
     const prompt = buildDailyBriefingPrompt({ today, clientSummaries, rssDigest });
 
     const llmResult = await invokeLLM({
+      feature: "scheduled.dailyBriefing",
       messages: [{ role: "user", content: prompt }],
     });
     const briefing = typeof llmResult.choices[0]?.message?.content === "string"

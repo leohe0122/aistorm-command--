@@ -186,6 +186,7 @@ export async function runNativeAdAnalysis(snapshot: AdBattlefieldSnapshot): Prom
   if (!snapshot.clients.length) return null;
   try {
     const response = await invokeLLM({
+      feature: "ad.nativeAnalysis",
       model: "gpt-5-mini",
       messages: [
         { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },
