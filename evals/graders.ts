@@ -54,6 +54,12 @@ export function appearsIn(name: string, source: string): boolean {
 
 export const EVIDENCE_GROUNDING_THRESHOLD = 0.5;
 export const SUMMARY_MAX_CHARS = 150; // 提示词要求不超过 120 字，留 25% 容差
+/** 英文摘要按字符计会天然偏长：以 CJK 字符为主时按字计，否则按约 4 个字母折 1 字。 */
+export function summaryLength(text: string): number {
+  const chars = Array.from(text);
+  const cjk = chars.filter(char => /[\u3400-\u9fff]/.test(char)).length;
+  return cjk >= chars.length / 3 ? chars.length : Math.ceil(chars.length / 4);
+}
 
 export function gradeMeetingSignals(output: FullMeetingSignals, source: string, expect: MeetingSignalsExpectation): Check[] {
   const checks: Check[] = [];
@@ -72,7 +78,7 @@ export function gradeMeetingSignals(output: FullMeetingSignals, source: string, 
   ].filter(item => groundingRatio(item.evidence, source) < EVIDENCE_GROUNDING_THRESHOLD);
   add("证据可回溯到原文", weakEvidence.length === 0, weakEvidence.map(item => `${item.label}：「${item.evidence.slice(0, 40)}」`).join("；"));
 
-  add("摘要长度合规", Array.from(output.meetingSummary).length <= SUMMARY_MAX_CHARS, `${Array.from(output.meetingSummary).length} 字`);
+  add("摘要长度合规", summaryLength(output.meetingSummary) <= SUMMARY_MAX_CHARS, `约 ${summaryLength(output.meetingSummary)} 字`);
   add("给出下一步验证动作", output.nextBestAction.trim().length > 0 && output.nextBestAction !== "数据不足，暂不判断");
 
   // ── 用例期望 ──

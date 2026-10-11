@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appearsIn, gradeMeetingSignals, groundingRatio } from "../evals/graders";
+import { appearsIn, gradeMeetingSignals, groundingRatio, summaryLength } from "../evals/graders";
 import type { FullMeetingSignals } from "./aiNativeGuidance";
 
 const source = "【SAM 记录】\n王建国说现有终端防护明年3月31日合同到期，不打算续签。奇安信上周来做过演示。最终由CIO刘明签字。";
@@ -20,6 +20,8 @@ describe("eval graders", () => {
     expect(groundingRatio("最终由CIO刘明签字", source)).toBe(1);
     expect(groundingRatio("客户预算充足且非常满意", source)).toBeLessThan(0.5);
     expect(appearsIn("Daniel Tan", "Customer: daniel tan (Head of IT)")).toBe(true);
+    expect(summaryLength("终端防护明年到期")).toBe(8);
+    expect(summaryLength("a".repeat(400))).toBe(100);
   });
 
   it("passes a faithful extraction", () => {
