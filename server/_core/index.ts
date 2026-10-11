@@ -11,6 +11,7 @@ import { dailyBriefingHandler } from "../scheduled/dailyBriefing";
 import { visitReminderHandler } from "../scheduled/visitReminder";
 import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
+import { sdk } from "./sdk";
 
 const BUILD_MARKER = "20260902-ai-guidance-negation-guard-v13";
 
@@ -40,8 +41,17 @@ async function startServer() {
   registerOAuthRoutes(app);
 
   // ── Multipart file upload endpoint (bypasses tRPC JSON 32MB limit) ──
-  const upload = multer({ storage: multer.memoryStorage() });
-  app.post("/api/upload-doc", upload.single("file"), async (req, res) => {
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+  // 先认证再接收文件，避免未登录请求占用内存或写入对象存储。
+  const requireAuthenticatedUpload: express.RequestHandler = async (req, res, next) => {
+    try {
+      await sdk.authenticateRequest(req);
+      next();
+    } catch {
+      res.status(401).json({ error: "unauthorized" });
+    }
+  };
+  app.post("/api/upload-doc", requireAuthenticatedUpload, upload.single("file"), async (req, res) => {
     try {
       if (!req.file) { res.status(400).json({ error: "No file provided" }); return; }
       const { storagePut } = await import("../storage");

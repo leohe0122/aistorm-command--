@@ -5,7 +5,6 @@ import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
-import { startLogin } from "./const";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -18,7 +17,16 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
 
   if (!isUnauthorized) return;
 
-  startLogin();
+  // 会话失效时回到首页，由 AuthGate 呈现邮箱登录页；不再跳转 Manus OAuth。
+  // 30 秒内只跳一次，防止登录态判断不一致时反复刷新。
+  try {
+    const last = Number(sessionStorage.getItem("command-unauth-redirect") || 0);
+    if (Date.now() - last < 30_000) return;
+    sessionStorage.setItem("command-unauth-redirect", String(Date.now()));
+  } catch {
+    // sessionStorage 不可用时仍执行一次跳转
+  }
+  window.location.assign("/");
 };
 
 queryClient.getQueryCache().subscribe(event => {

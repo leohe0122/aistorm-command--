@@ -36,7 +36,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
   const registerMut = trpc.emailAuth.register.useMutation({
     onSuccess: () => {
       setLoading(false);
-      toast.success("注册成功！请使用邮箱和密码登录");
+      toast.success("注册申请已提交，管理员启用账号后即可登录");
       setTab("login");
     },
     onError: (e) => {

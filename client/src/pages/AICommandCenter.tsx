@@ -143,10 +143,12 @@ export function AICommandCenter() {
   });
 
   useEffect(() => {
-    if (!didRefresh && !refresh.isPending && !dashboardLoading) refresh.mutate();
+    // 全局研判刷新仅限 AD/管理员（服务端同样限制）；身份未加载完成前不触发。
+    const canRefresh = !!me && ((me as any).podRole === "AD" || (me as any).role === "admin");
+    if (canRefresh && !didRefresh && !refresh.isPending && !dashboardLoading) refresh.mutate();
   // 仅在页面打开后后台刷新一次；已经持久化的建议仍会立即展示。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashboardLoading, didRefresh]);
+  }, [dashboardLoading, didRefresh, me]);
 
   const recommendations = (recommendationsQuery.data ?? []) as CommandRecommendation[];
   const pending = recommendations.filter(item => item.status === "pending");

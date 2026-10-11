@@ -2,13 +2,15 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // Mock the db module
 vi.mock("./db", () => ({
+  // 访问范围中间件在无数据库时视为“无可见客户”，便于校验拒绝路径
+  getDb: vi.fn().mockResolvedValue(null),
   getAllClients: vi.fn().mockResolvedValue([
     { id: 1, name: "美的集团", industry: "智能制造", stage: "进门", priority: "P0", keywords: ["AI", "数字化"], notes: null, createdAt: new Date(), updatedAt: new Date() },
     { id: 2, name: "大疆创新", industry: "无人机/消费电子", stage: "建图", priority: "P0", keywords: ["合规", "数据安全"], notes: null, createdAt: new Date(), updatedAt: new Date() },
   ]),
   getAllClientsWithVisitStats: vi.fn().mockResolvedValue([
-    { id: 1, name: "美的集团", industry: "智能制造", stage: "进门", priority: "P0", keywords: ["AI", "数字化"], notes: null, createdAt: new Date(), updatedAt: new Date(), visitCount: 0, contactCount: 0, lastVisitDate: null, daysSinceLastVisit: null },
-    { id: 2, name: "大疆创新", industry: "无人机/消费电子", stage: "建图", priority: "P0", keywords: ["合规", "数据安全"], notes: null, createdAt: new Date(), updatedAt: new Date(), visitCount: 0, contactCount: 0, lastVisitDate: null, daysSinceLastVisit: null },
+    { id: 1, name: "美的集团", industry: "智能制造", stage: "进门", priority: "P0", keywords: ["AI", "数字化"], notes: null, createdAt: new Date(), updatedAt: new Date(), visitCount: 0, contactCount: 0, lastVisitDate: null, daysSinceLastVisit: null, assignedSamId: null, assignedRsmId: null },
+    { id: 2, name: "大疆创新", industry: "无人机/消费电子", stage: "建图", priority: "P0", keywords: ["合规", "数据安全"], notes: null, createdAt: new Date(), updatedAt: new Date(), visitCount: 0, contactCount: 0, lastVisitDate: null, daysSinceLastVisit: null, assignedSamId: null, assignedRsmId: null },
   ]),
   getClientById: vi.fn().mockResolvedValue({ id: 1, name: "美的集团", industry: "智能制造", stage: "进门", priority: "P0", keywords: ["AI"], notes: null, createdAt: new Date(), updatedAt: new Date() }),
   updateClient: vi.fn().mockResolvedValue(undefined),
@@ -59,9 +61,13 @@ vi.mock("./_core/llm", () => ({
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
-function createCtx(): TrpcContext {
+const AD_USER = { id: 9, openId: "oauth_ad", name: "测试 AD", email: "ad@example.com", loginMethod: "oauth", role: "user", podRole: "AD" } as any;
+const SAM_USER = { id: 10, openId: "oauth_sam", name: "测试 SAM", email: "sam@example.com", loginMethod: "oauth", role: "user", podRole: "SAM" } as any;
+
+// 默认以已登录 AD 身份调用（可见全部客户）；未登录场景显式传入 null。
+function createCtx(user: TrpcContext["user"] = AD_USER): TrpcContext {
   return {
-    user: null,
+    user,
     req: { protocol: "https", headers: {} } as any,
     res: { clearCookie: vi.fn() } as any,
   };
@@ -146,7 +152,7 @@ describe("T100 POD Command - pod router", () => {
 
 describe("T100 POD Command - auth router", () => {
   it("returns null user when not authenticated", async () => {
-    const caller = appRouter.createCaller(createCtx());
+    const caller = appRouter.createCaller(createCtx(null));
     const result = await caller.auth.me();
     expect(result).toBeNull();
   });
@@ -157,4 +163,46 @@ describe("T100 POD Command - auth router", () => {
     const result = await caller.auth.logout();
     expect(result.success).toBe(true);
   });
+});
+
+describe("T100 POD Command - access control", () => {
+  it("rejects anonymous access to customer data", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(caller.clients.list()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.meddpicc.get({ clientId: 1 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.clients.delete({ id: 1 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("rejects anonymous access to system configuration", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(caller.systemConfig.getAll()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.systemConfig.get({ key: "llm_openai_key" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.llmConfig.setKey({ provider: "custom", apiKey: "x", customUrl: "https://attacker.example" })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("forbids non-admin users from changing model routing or keys", async () => {
+    const caller = appRouter.createCaller(createCtx(SAM_USER));
+    await expect(caller.llmConfig.getAll()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.llmConfig.setKey({ provider: "openai", apiKey: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.llmConfig.setRouting({ primaryProvider: "custom", fastProvider: "custom" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("hides other customers from a SAM with no assigned clients", async () => {
+    const caller = appRouter.createCaller(createCtx(SAM_USER));
+    await expect(caller.clients.get({ id: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.meddpicc.get({ clientId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.clients.list()).resolves.toEqual([]);
+  });
+
+  it("restricts AD-only operations", async () => {
+    const caller = appRouter.createCaller(createCtx(SAM_USER));
+    await expect(caller.clients.delete({ id: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.pod.clearByRole({ role: "SAM" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("keeps login endpoints reachable without a session", async () => {
+    const caller = appRouter.createCaller(createCtx(null));
+    await expect(caller.auth.me()).resolves.toBeNull();
+  });
+
 });

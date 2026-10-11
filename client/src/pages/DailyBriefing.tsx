@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { useCanManageAll } from "@/lib/permissions";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -12,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function DailyBriefing() {
+  const canManageAll = useCanManageAll();
   const [webhook, setWebhook] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -242,7 +244,8 @@ export default function DailyBriefing() {
               </div>
               <Button
                 onClick={handleTrigger}
-                disabled={triggering}
+                disabled={triggering || !canManageAll}
+                title={canManageAll ? undefined : "仅 AD 或管理员可生成全局简报"}
                 className="gap-2 shrink-0"
               >
                 {triggering ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Bell className="w-3.5 h-3.5" />}

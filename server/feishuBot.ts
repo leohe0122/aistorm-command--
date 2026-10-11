@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import crypto from "crypto";
 import { ENV } from "./_core/env";
+import { verifyFeishuWebhook } from "./feishuWebhookAuth";
 
 import { invokeLLM } from "./_core/llm";
 import { getAllClients, insertMeeting, getDb } from "./db";
@@ -377,24 +378,18 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
   try {
     const body = req.body;
 
-    // 1. 飞书验证挑战（首次配置 Webhook 时）
-    if (body.challenge || body.type === "url_verification") {
-      res.json({ challenge: body.challenge });
+    // 1. 来源校验：所有飞书回调（含 URL 校验挑战与卡片回调）都必须携带正确的 Verification Token
+    const auth = verifyFeishuWebhook(body, ENV.feishuVerificationToken);
+    if (!auth.ok) {
+      console.warn("[feishu-webhook] rejected:", auth.reason);
+      res.status(auth.status).json({ error: "unauthorized" });
       return;
     }
 
-    // 2. 验证签名（如果配置了 Verification Token）
-    // 飞书会在 header 中发送 X-Lark-Request-Timestamp 和 X-Lark-Signature
-    const timestamp = req.headers["x-lark-request-timestamp"] as string;
-    const nonce = req.headers["x-lark-request-nonce"] as string;
-    const signature = req.headers["x-lark-signature"] as string;
-    if (timestamp && signature && ENV.feishuAppSecret) {
-      const toSign = timestamp + nonce + ENV.feishuAppSecret + JSON.stringify(body);
-      const expectedSig = crypto.createHash("sha256").update(toSign).digest("hex");
-      if (expectedSig !== signature) {
-        // 签名不匹配时只记录日志，不拒绝（避免误拒合法请求）
-        console.log("[feishu-webhook] signature mismatch, continuing anyway");
-      }
+    // 2. 飞书验证挑战（首次配置 Webhook 时）
+    if (body.challenge || body.type === "url_verification") {
+      res.json({ challenge: body.challenge });
+      return;
     }
 
     const event = body.event;
@@ -712,7 +707,7 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
           res.json({}); return;
         }
 
-        const pendingIdImg = require("crypto").randomBytes(8).toString("hex");
+        const pendingIdImg = crypto.randomBytes(8).toString("hex");
         await savePendingRecord(pendingIdImg, {
           clientId: matchedClientImg.id, clientName: matchedClientImg.name,
           contactType: parsedImg.contactType || "instant_message",
@@ -769,7 +764,7 @@ ${fileText}`, clientNamesF);
         }
         const matchedClientF = clientsF.find((c: any) => c.name === parsedF.clientName || c.name.includes(parsedF.clientName!) || parsedF.clientName!.includes(c.name));
         if (!matchedClientF) { res.json({}); return; }
-        const pendingIdF = require("crypto").randomBytes(8).toString("hex");
+        const pendingIdF = crypto.randomBytes(8).toString("hex");
         await savePendingRecord(pendingIdF, {
           clientId: matchedClientF.id, clientName: matchedClientF.name,
           contactType: parsedF.contactType || "formal_meeting", initiatedBy: parsedF.initiatedBy || "sam",

@@ -13,4 +13,6 @@ export const ENV = {
   // 飞书机器人
   feishuAppId: process.env.FEISHU_APP_ID ?? "",
   feishuAppSecret: process.env.FEISHU_APP_SECRET ?? "",
+  // 飞书开放平台「事件与回调」页的 Verification Token，用于校验 Webhook 请求来源
+  feishuVerificationToken: process.env.FEISHU_VERIFICATION_TOKEN ?? "",
 };

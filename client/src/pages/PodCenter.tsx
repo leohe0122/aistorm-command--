@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useCanManageAll } from "@/lib/permissions";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Users, Plus, CheckCircle2, Circle, MessageSquare, Clock, Zap, TrendingUp, AlertTriangle, ChevronRight, X, Trash2, LayoutGrid, List, Network, Target, BookOpen, RefreshCw } from "lucide-react";
@@ -169,6 +170,7 @@ function KanbanColumn({ id, label, color, tasks, clients, onDelete }: {
 }
 
 function RoleView({ viewRole, filterOppId }: { viewRole: PodRole; filterOppId?: number }) {
+  const canManageAll = useCanManageAll();
   const [, navigate] = useLocation();
   const [showAddForm, setShowAddForm] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
@@ -281,7 +283,7 @@ function RoleView({ viewRole, filterOppId }: { viewRole: PodRole; filterOppId?: 
                 title="看板视图"
               ><LayoutGrid className="w-3 h-3" /></button>
             </div>
-            {completedTasks.length > 0 && (
+            {canManageAll && completedTasks.length > 0 && (
               <button
                 onClick={() => clearCompleted.mutate()}
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-400 transition-colors"
@@ -290,7 +292,7 @@ function RoleView({ viewRole, filterOppId }: { viewRole: PodRole; filterOppId?: 
                 <Trash2 className="w-3 h-3" />清空已完成
               </button>
             )}
-            {(pendingTasks.length > 0 || completedTasks.length > 0) && (
+            {canManageAll && (pendingTasks.length > 0 || completedTasks.length > 0) && (
               <button
                 onClick={() => {
                   if (confirm(`确定清空 ${viewRole} 角色的所有任务（含待完成）？`)) {
@@ -519,6 +521,7 @@ function DealReviewSection() {
 }
 
 export default function PodCenter() {
+  const canManageAll = useCanManageAll();
   const { role } = useRole();
   const [location] = useLocation();
 
@@ -584,7 +587,7 @@ export default function PodCenter() {
 
       {/* Weekly Battle Report */}
       <div className="mt-5">
-        <WeeklyReportSection />
+        {canManageAll && <WeeklyReportSection />}
       </div>
 
       {/* SAM 待办辅导建议 */}
