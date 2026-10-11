@@ -57,6 +57,7 @@ export async function generateGlobalBattleReview(candidates: GlobalCandidateFact
   if (!candidates.length) return null;
   try {
     const response = await invokeLLM({
+      feature: "ad.globalReview",
       model: "gpt-5-mini",
       messages: [
         { role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT },

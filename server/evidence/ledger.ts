@@ -5,6 +5,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { evidence } from "../../drizzle/schema";
 import { getDb } from "../db";
 import type { EvidenceDraft } from "./mapping";
+import { recomputeClientAssessments } from "./assessmentStore";
 
 async function safely(label: string, task: () => Promise<void>): Promise<void> {
   try {
@@ -62,6 +63,8 @@ export async function confirmFromSource(
         confirmedAt: now,
       })));
     }
+    const clientId = drafts[0]?.clientId;
+    if (clientId) await recomputeClientAssessments(clientId);
   });
 }
 
@@ -71,6 +74,7 @@ export async function recordConfirmed(draft: EvidenceDraft, confirmedBy: string)
     const db = await getDb();
     if (!db) return;
     await db.insert(evidence).values({ ...draft, status: "confirmed", confirmedBy, confirmedAt: new Date() });
+    await recomputeClientAssessments(draft.clientId);
   });
 }
 
@@ -79,6 +83,8 @@ export async function rejectBySource(source: { sourceType: EvidenceDraft["source
   await safely("rejectBySource", async () => {
     const db = await getDb();
     if (!db) return;
+    const affected = await db.select({ clientId: evidence.clientId }).from(evidence).where(and(eq(evidence.sourceType, source.sourceType), eq(evidence.sourceId, source.sourceId)));
     await db.update(evidence).set({ status: "rejected" }).where(and(eq(evidence.sourceType, source.sourceType), eq(evidence.sourceId, source.sourceId)));
+    for (const clientId of Array.from(new Set(affected.map(row => row.clientId)))) await recomputeClientAssessments(clientId);
   });
 }

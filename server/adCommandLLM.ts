@@ -73,6 +73,7 @@ export async function enrichAdCommandRecommendation(
 ): Promise<GeneratedCommandRecommendation> {
   try {
     const response = await invokeLLM({
+      feature: "adCommand.recommendation",
       // 复用系统 AI 模型配置中已验证的快速模型，避免特定供应商不支持目录模型而返回 400。
       model: "gpt-5-mini",
       messages: [

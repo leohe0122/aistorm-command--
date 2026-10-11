@@ -1,4 +1,5 @@
 import { adaptPayloadForProvider, resolveModel, type ModelTier, type ProviderId } from "./modelRouting";
+import { currentAiFeature } from "./aiContext";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -488,7 +489,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const startedAt = Date.now();
   const { inferTier } = await import("./modelRouting");
   const runMeta = {
-    feature: feature ?? "unlabeled",
+    feature: feature ?? currentAiFeature() ?? "unlabeled",
     provider: resolved.provider,
     model: resolved.model,
     tier: tier ?? inferTier(model),

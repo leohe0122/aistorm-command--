@@ -7,6 +7,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure as authenticatedProcedure, router } from "./_core/trpc";
 import { enforceClientScope } from "./accessGuard";
+import { runWithAiFeature } from "./_core/aiContext";
 import { TRPCError } from "@trpc/server";
 import { getLLMTextContent, invokeLLM } from "./_core/llm";
 import { buildDailyBriefingPrompt, getComplianceRssDigest } from "./dailyBriefingRss";
@@ -19,8 +20,9 @@ import { getAccountDiagnosticContext, getArsenalOpportunityContext, getDealDiagn
 import { ACCOUNT_REQUIREMENTS, AI_NATIVE_GUIDANCE_VERSION, MEDDPICC_FIELD_MAP, STAGE_REQUIREMENTS, buildAccountGuidancePromptSuffix, buildStageAwareGuidancePromptSuffix, normalizeFullMeetingSignals } from "./aiNativeGuidance";
 import { calculateWinFactors } from "../shared/winFactors";
 // 已登录 + 客户数据可见范围（AD/管理员全部可见；SAM/RSM/SA 仅可见自己负责的客户），见 shared/accessScope.ts
+// 同时以接口路径作为 AI 调用记录的默认功能名（见 server/_core/aiContext.ts）。
 const protectedProcedure = authenticatedProcedure.use(({ ctx, path, getRawInput, next }) =>
-  enforceClientScope({ user: ctx.user, cacheKey: ctx.req, path, getRawInput, next })
+  runWithAiFeature(path, () => enforceClientScope({ user: ctx.user, cacheKey: ctx.req, path, getRawInput, next }))
 );
 
 // Admin-only procedure: requires login + admin role
@@ -8164,6 +8166,64 @@ ${input.extractedText.slice(0, 4000)}
         ],
       });
       return { content: String(res.choices?.[0]?.message?.content || "数据不足，暂不判断") };
+    }),
+  }),
+
+  // ── 证据台账：评估及其依据（只读）────────────────────────────────────────
+  ledger: router({
+    forTarget: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number().optional(),
+    })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { assessments: [], evidence: [], candidateCount: 0 };
+      const { evidence: evidenceTable, assessments: assessmentsTable } = await import("../drizzle/schema");
+      const { and, desc, eq: eqFn } = await import("drizzle-orm");
+      const scope = input.opportunityId ? "opportunity" as const : "client" as const;
+      const targetId = input.opportunityId ?? input.clientId;
+      const loadAssessments = () => db.select().from(assessmentsTable).where(and(
+        eqFn(assessmentsTable.clientId, input.clientId),
+        eqFn(assessmentsTable.scope, scope),
+        eqFn(assessmentsTable.targetId, targetId),
+      ));
+      const evidenceFilter = input.opportunityId
+        ? and(eqFn(evidenceTable.clientId, input.clientId), eqFn(evidenceTable.opportunityId, input.opportunityId))
+        : eqFn(evidenceTable.clientId, input.clientId);
+      const rows = await db.select().from(evidenceTable).where(evidenceFilter).orderBy(desc(evidenceTable.createdAt)).limit(200);
+      const confirmed = rows.filter(row => row.status === "confirmed");
+      let assessmentRows = await loadAssessments();
+      // 台账上线前已确认的证据尚无评估：首次查看时补算
+      if (assessmentRows.length === 0 && confirmed.length > 0) {
+        const { recomputeClientAssessments } = await import("./evidence/assessmentStore");
+        await recomputeClientAssessments(input.clientId);
+        assessmentRows = await loadAssessments();
+      }
+      return {
+        assessments: assessmentRows.map(row => ({
+          dimension: row.dimension,
+          score: row.overrideScore ?? row.score,
+          computedScore: row.score,
+          overridden: row.overrideScore !== null,
+          overrideReason: row.overrideReason,
+          rationale: row.rationale,
+          evidenceIds: row.evidenceIds,
+          computedAt: row.computedAt,
+        })),
+        evidence: confirmed.map(row => ({
+          id: row.id,
+          claim: row.claim,
+          quote: row.quote,
+          subjectName: row.subjectName,
+          topics: row.topics,
+          polarity: row.polarity,
+          occurredAt: row.occurredAt,
+          sourceType: row.sourceType,
+          sourceId: row.sourceId,
+          confirmedBy: row.confirmedBy,
+          confirmedAt: row.confirmedAt,
+        })),
+        candidateCount: rows.filter(row => row.status === "candidate").length,
+      };
     }),
   }),
 
