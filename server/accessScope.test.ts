@@ -7,6 +7,7 @@ import {
   computeClientScope,
   emailUserIdFromOpenId,
   filterByScope,
+  recomputeDashboardAggregates,
   scopeAllows,
 } from "../shared/accessScope";
 
@@ -110,5 +111,25 @@ describe("response filtering", () => {
   it("returns data untouched for full access", () => {
     const data = [{ id: 2, clientId: 2 }];
     expect(filterByScope(data, { all: true })).toBe(data);
+  });
+});
+
+describe("dashboard aggregates", () => {
+  it("recounts totals from the visible clients only", () => {
+    const scope = { all: false as const, clientIds: new Set([1, 3]) };
+    const summary = {
+      clientCount: 3,
+      stageDistribution: { 建图: 2, 进门: 1 },
+      visitedThisWeekCount: 2,
+      clients: [
+        { id: 1, stage: "建图", assignedSamId: 101, visitedThisWeek: true },
+        { id: 2, stage: "建图", assignedSamId: 102, visitedThisWeek: true },
+        { id: 3, stage: "进门", assignedSamId: 101, visitedThisWeek: false },
+      ],
+    };
+    const out = recomputeDashboardAggregates(filterByScope(summary, scope));
+    expect(out.clientCount).toBe(2);
+    expect(out.stageDistribution).toEqual({ 建图: 1, 进门: 1 });
+    expect(out.visitedThisWeekCount).toBe(1);
   });
 });

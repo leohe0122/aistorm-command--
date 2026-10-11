@@ -202,3 +202,23 @@ export function filterByScope<T>(data: T, scope: ClientScope, hideNullClient = f
   };
   return visit(data) as T;
 }
+
+/**
+ * dashboard.summary 的汇总数字在服务端按全量客户计算；
+ * 非 AD 用户过滤掉客户后，按其可见客户重算，避免泄露团队整体规模与分布。
+ */
+export function recomputeDashboardAggregates<T>(data: T): T {
+  if (!isPlainObject(data) || !Array.isArray(data.clients)) return data;
+  const clients = data.clients as Array<Record<string, unknown>>;
+  const stageDistribution: Record<string, number> = {};
+  for (const client of clients) {
+    const stage = typeof client.stage === "string" ? client.stage : "未知";
+    stageDistribution[stage] = (stageDistribution[stage] ?? 0) + 1;
+  }
+  return {
+    ...data,
+    clientCount: clients.length,
+    stageDistribution,
+    visitedThisWeekCount: clients.filter(client => client.visitedThisWeek === true).length,
+  } as T;
+}

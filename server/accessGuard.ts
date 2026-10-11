@@ -11,6 +11,7 @@ import {
   emailUserIdFromOpenId,
   filterByScope,
   hasFullAccess,
+  recomputeDashboardAggregates,
   scopeAllows,
   type ClientScope,
   type PodRole,
@@ -110,7 +111,8 @@ export async function enforceClientScope<T>(opts: {
 
   const result: any = await opts.next();
   if (result && result.ok && "data" in result) {
-    return { ...result, data: filterByScope(result.data, scope, HIDE_NULL_CLIENT_PATHS.has(opts.path)) };
+    const filtered = filterByScope(result.data, scope, HIDE_NULL_CLIENT_PATHS.has(opts.path));
+    return { ...result, data: opts.path === "dashboard.summary" ? recomputeDashboardAggregates(filtered) : filtered };
   }
   return result;
 }

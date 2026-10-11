@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
+import { useCanManageAll } from "@/lib/permissions";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useLocation } from "wouter";
@@ -1515,8 +1516,8 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
 
   const utils = trpc.useUtils();
   const { data: meddpicc } = trpc.meddpicc.get.useQuery({ clientId: client.id });
-  const { data: currentUserCard } = trpc.emailAuth.me.useQuery();
-  const isAD = !currentUserCard || currentUserCard.podRole === 'AD';
+  // 与服务端 AD_ONLY_PATHS 一致：仅 AD/管理员可分配与下发；身份未加载时按无权限处理
+  const isAD = useCanManageAll();
   // When no DB record exists yet, fall back to all-zero defaults so the panel is always interactive
   const DEFAULT_MEDDPICC = {
     metricsScore: 0, economicBuyerScore: 0, decisionCriteriaScore: 0,
@@ -3304,7 +3305,7 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
                     )}
                     {coachingSummaryLoading && <div className="w-3 h-3 border border-green-400 border-t-transparent rounded-full animate-spin" />}
                   </div>
-                  {coachingSummary && (client as any).assignedSamId && (
+                  {isAD && coachingSummary && (client as any).assignedSamId && (
                     <button type="button"
                       onClick={handleDispatchToSam}
                       disabled={dispatchingToSam}
@@ -3606,8 +3607,7 @@ function WinStrategyExtras({ clientId, aiSuggestion, enabled, stage }: { clientI
 export default function BattleMap() {
   const utils = trpc.useUtils();
   const { data: clients = [], isLoading } = trpc.clients.list.useQuery();
-  const { data: currentUser } = trpc.emailAuth.me.useQuery();
-  const isAD = !currentUser || currentUser.podRole === 'AD';
+  const isAD = useCanManageAll();
 
   const [showCreate, setShowCreate] = useState(false);
 
@@ -3931,13 +3931,13 @@ export default function BattleMap() {
                 >
                   <Edit2 className="w-3 h-3 text-muted-foreground" />
                 </button>
-                <button
+                {isAD && <button
                   onClick={() => setDeleteTarget(client)}
                   className="w-6 h-6 rounded bg-background/90 border border-border flex items-center justify-center hover:bg-red-500/20 hover:border-red-500/40 transition-colors"
                   title="删除客户"
                 >
                   <Trash2 className="w-3 h-3 text-muted-foreground" />
-                </button>
+                </button>}
               </div>
             </div>
           ))}
