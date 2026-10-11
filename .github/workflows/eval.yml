@@ -3,7 +3,7 @@ name: AI Eval
 # 调用真实模型、产生费用，因此只手动触发。
 # 需要在仓库 Settings → Secrets and variables → Actions 中配置 OPENAI_API_KEY。
 on:
-  # 功能分支上修改评测、AI 提示词或模型路由时自动跑一次（fast 档，6 个用例，费用很低）
+  # 功能分支上修改评测、AI 提示词或模型路由时自动跑一次（standard 档，与线上一致；6 个用例，费用很低）
   push:
     branches-ignore: [main]
     paths:
@@ -17,7 +17,7 @@ on:
         description: "模型档位"
         type: choice
         options: [fast, standard, reasoning]
-        default: fast
+        default: standard
       min:
         description: "最低用例通过率（0-1）"
         default: "0.8"
@@ -40,7 +40,7 @@ jobs:
       - name: Run AI eval
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: pnpm eval --tier "${{ inputs.tier || 'fast' }}" --min "${{ inputs.min || '0.8' }}"
+        run: pnpm eval --tier "${{ inputs.tier || 'standard' }}" --min "${{ inputs.min || '0.8' }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
