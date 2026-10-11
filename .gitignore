@@ -113,3 +113,6 @@ temp/
 client/public/__manus__/version.json
 .project-config.json
 client/public/screenshots/raw/
+
+# AI 评测结果（本地与 CI 产物）
+evals/results/

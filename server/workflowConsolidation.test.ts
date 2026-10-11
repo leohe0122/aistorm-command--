@@ -315,9 +315,12 @@ describe("作战工作流入口收敛", () => {
     const confirmationCard = projectFile("client/src/components/FullSignalConfirmationCard.tsx");
     expect(routers).toContain("extractFullSignals: protectedProcedure");
     expect(routers).toContain("confirmFullSignals: protectedProcedure");
-    expect(routers).toContain('name: "full_meeting_signals"');
-    expect(routers).toContain("FULL_MEETING_SIGNALS_RESPONSE_SCHEMA");
-    expect(routers).toContain("normalizeFullMeetingSignals");
+    // 提示词、严格 Schema 与解析已抽到 server/ai/meetingSignals.ts，供接口与 AI 评测共用
+    const extraction = projectFile("server/ai/meetingSignals.ts");
+    expect(routers).toContain('import("./ai/meetingSignals")');
+    expect(extraction).toContain('name: "full_meeting_signals"');
+    expect(extraction).toContain("FULL_MEETING_SIGNALS_RESPONSE_SCHEMA");
+    expect(extraction).toContain("normalizeFullMeetingSignals");
     expect(routers).toContain("aiFullSignalsConfirmedKeys");
     expect(schema).toContain('aiFullSignals: json("aiFullSignals")');
     expect(schema).toContain('aiFullSignalsConfirmedKeys: json("aiFullSignalsConfirmedKeys")');
