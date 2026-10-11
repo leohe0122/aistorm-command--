@@ -1,0 +1,44 @@
+name: DB migrations
+
+# 修改 drizzle/schema.ts 后，在功能分支上自动生成迁移文件并提交回该分支；
+# main 上只校验迁移与 schema 一致。drizzle-kit generate 不连接数据库，这里用占位连接串。
+on:
+  push:
+    paths:
+      - drizzle/schema.ts
+      - .github/workflows/db-migrations.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: mysql://placeholder:placeholder@127.0.0.1:3306/placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Generate migrations
+        run: pnpm drizzle-kit generate
+      - name: Commit generated migrations (feature branches)
+        if: github.ref != 'refs/heads/main'
+        run: |
+          if [ -n "$(git status --porcelain drizzle)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add drizzle
+            git commit -m "chore(db): generate migrations for schema changes"
+            git push
+          else
+            echo "Migrations already in sync."
+          fi
+      - name: Fail if migrations are missing (main)
+        if: github.ref == 'refs/heads/main'
+        run: git diff --exit-code -- drizzle

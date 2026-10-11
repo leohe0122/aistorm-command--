@@ -1245,12 +1245,19 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
         }
         subjectName = contact.name;
       }
+      const createdBy = ctx.user.name || ctx.user.email || "已登录用户";
       const [result] = await db.insert(customerPurchaseSignals).values({
         ...input,
         subjectName,
         occurredAt: new Date(input.occurredAt),
-        createdBy: ctx.user.name || ctx.user.email || "已登录用户",
+        createdBy,
       });
+      const signalId = (result as any).insertId as number | undefined;
+      if (signalId) {
+        const { purchaseSignalToEvidence } = await import("./evidence/mapping");
+        const { recordConfirmed } = await import("./evidence/ledger");
+        await recordConfirmed(purchaseSignalToEvidence({ ...input, id: signalId, subjectName, occurredAt: new Date(input.occurredAt), createdBy }), createdBy);
+      }
       // Event-driven: non-blocking refresh after new purchase signal
       setImmediate(() => triggerSingleClientRefresh(input.clientId));
       return { id: (result as any).insertId };
@@ -1261,6 +1268,8 @@ ${hasUnverifiedCases ? '⚠️ 注意：部分案例数据标注了「⚠️数�
       const { customerPurchaseSignals } = await import("../drizzle/schema.js");
       const { eq } = await import("drizzle-orm");
       await db.delete(customerPurchaseSignals).where(eq(customerPurchaseSignals.id, input.id));
+      const { rejectBySource } = await import("./evidence/ledger");
+      await rejectBySource({ sourceType: "purchase_signal", sourceId: input.id });
       return { ok: true };
     }),
   }),
@@ -3621,9 +3630,10 @@ ${knowledgeNote}`;
     })).mutation(async ({ input }) => {
       const { extractMeetingSignals, MeetingSignalsError } = await import("./ai/meetingSignals");
       const accountContext = await getAccountDiagnosticContext(input.clientId);
-      let signals: Awaited<ReturnType<typeof extractMeetingSignals>>;
+      let signals: Awaited<ReturnType<typeof extractMeetingSignals>>["signals"];
+      let aiRunId: number | undefined;
       try {
-        signals = await extractMeetingSignals(input, { accountContext, tier: "reasoning", timeoutMs: 120_000 });
+        ({ signals, aiRunId } = await extractMeetingSignals(input, { accountContext, tier: "reasoning", timeoutMs: 120_000 }));
       } catch (err: any) {
         const code = err instanceof MeetingSignalsError ? err.code : "provider";
         const message = code === "timeout" ? "AI 信号提取超时，请稍后重试。本次拜访未保存。"
@@ -3643,13 +3653,18 @@ ${knowledgeNote}`;
         const { meetingMinutes } = await import("../drizzle/schema");
         await db.update(meetingMinutes).set({ aiFullSignals: { version: AI_NATIVE_GUIDANCE_VERSION, generatedAt: new Date().toISOString(), ...signals }, aiFullSignalsConfirmedKeys: [] }).where(eq(meetingMinutes.id, id));
       }
+      if (id) {
+        const { meetingSignalsToEvidence } = await import("./evidence/mapping");
+        const { replaceCandidates } = await import("./evidence/ledger");
+        await replaceCandidates({ sourceType: "meeting", sourceId: id }, meetingSignalsToEvidence(signals, { clientId: input.clientId, meetingId: id, occurredAt: new Date(input.meetingDate) }), aiRunId);
+      }
       setImmediate(() => triggerSingleClientRefresh(input.clientId));
       return { id, signals };
     }),
     /** 人工确认后才将选择的信号沉淀到对应事实表；未确认项目只保留在原拜访记录中。 */
     confirmFullSignals: protectedProcedure.input(z.object({
       meetingId: z.number(), clientId: z.number(), opportunityId: z.number().optional(), confirmedKeys: z.array(z.string()).min(1),
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
       const { meetingMinutes, keyContacts, opportunityMeddpicc, threeWhy, competitionMap, intelligenceSignals } = await import("../drizzle/schema");
@@ -3723,6 +3738,12 @@ ${knowledgeNote}`;
       }
       const nextKeys = Array.from(new Set<string>((Array.from(confirmedBefore) as string[]).concat(applied)));
       await db.update(meetingMinutes).set({ aiFullSignalsConfirmedKeys: nextKeys }).where(eq(meetingMinutes.id, input.meetingId));
+      {
+        const { meetingSignalsToEvidence } = await import("./evidence/mapping");
+        const { confirmFromSource } = await import("./evidence/ledger");
+        const drafts = meetingSignalsToEvidence(signals, { clientId: input.clientId, meetingId: input.meetingId, occurredAt: new Date(meeting.meetingDate) });
+        await confirmFromSource({ sourceType: "meeting", sourceId: input.meetingId }, applied, drafts, ctx.user.name || ctx.user.email || "已登录用户", input.opportunityId ?? null);
+      }
       setImmediate(() => triggerSingleClientRefresh(input.clientId));
       return { applied, confirmedKeys: nextKeys };
     }),
@@ -3759,11 +3780,16 @@ ${knowledgeNote}`;
           let accountContext = "";
           try { accountContext = await getAccountDiagnosticContext(input.clientId); } catch (ctxErr: any) { console.error("[extractFullSignals] accountContext failed:", ctxErr?.message); }
           const { extractMeetingSignals } = await import("./ai/meetingSignals");
-          const signals = await extractMeetingSignals(input, { accountContext, tier: "fast", timeoutMs: 90_000 });
+          const { signals, aiRunId } = await extractMeetingSignals(input, { accountContext, tier: "fast", timeoutMs: 90_000 });
           const aiMinutes = `## 拜访作战日志\n\n${signals.meetingSummary}\n\n### 下一步需验证\n${signals.nextBestAction}`;
           if (db && id) {
             const { meetingMinutes } = await import("../drizzle/schema");
             await db.update(meetingMinutes).set({ aiMinutes, aiFullSignals: { status: "done", version: AI_NATIVE_GUIDANCE_VERSION, generatedAt: new Date().toISOString(), ...signals } as any, aiFullSignalsConfirmedKeys: [] }).where(eq(meetingMinutes.id, id));
+          }
+          if (id) {
+            const { meetingSignalsToEvidence } = await import("./evidence/mapping");
+            const { replaceCandidates } = await import("./evidence/ledger");
+            await replaceCandidates({ sourceType: "meeting", sourceId: id }, meetingSignalsToEvidence(signals, { clientId: input.clientId, meetingId: id, occurredAt: new Date(input.meetingDate) }), aiRunId);
           }
           setImmediate(() => triggerSingleClientRefresh(input.clientId));
         } catch (err: any) {

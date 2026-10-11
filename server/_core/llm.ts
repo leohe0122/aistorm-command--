@@ -74,6 +74,10 @@ export type InvokeParams = {
   tier?: ModelTier;
   /** 强制使用指定提供方（仅用于“测试连接”等场景）。 */
   provider?: ProviderId;
+  /** 功能名，写入 ai_runs 调用记录，例如 "meeting_signals"。未提供时记为 "unlabeled"。 */
+  feature?: string;
+  /** 提示词版本，写入 ai_runs，便于对照评测结果。 */
+  promptVersion?: string;
   /** @deprecated 曾用于绕过外部 Provider 走托管平台通道；现统一按系统设置的提供方路由，此参数被忽略。 */
   useBuiltin?: boolean;
   /** 允许上层为有用户等待窗口的交互请求主动中止网络调用。 */
@@ -111,7 +115,35 @@ export type InvokeResult = {
     completion_tokens: number;
     total_tokens: number;
   };
+  /** 本次调用在 ai_runs 中的记录编号（无数据库时为 undefined）。 */
+  aiRunId?: number;
 };
+
+/** 记录一次 AI 调用；失败不影响业务调用本身。 */
+async function recordAiRun(entry: {
+  feature: string; provider: string; model?: string; tier?: string; promptVersion?: string;
+  status: "success" | "error"; latencyMs: number; promptTokens?: number; completionTokens?: number; error?: string;
+}): Promise<number | undefined> {
+  try {
+    const { getDb } = await import("../db.js");
+    const db = await getDb();
+    if (!db) return undefined;
+    const { aiRuns } = await import("../../drizzle/schema");
+    const [result] = await db.insert(aiRuns).values({
+      ...entry,
+      model: entry.model ?? null,
+      tier: entry.tier ?? null,
+      promptVersion: entry.promptVersion ?? null,
+      promptTokens: entry.promptTokens ?? null,
+      completionTokens: entry.completionTokens ?? null,
+      error: entry.error ? entry.error.slice(0, 500) : null,
+    });
+    return (result as any)?.insertId;
+  } catch (err: any) {
+    console.warn("[ai_runs] record failed:", err?.message);
+    return undefined;
+  }
+}
 
 /** 将 OpenAI 兼容接口的字符串或多模态文本分段统一为可持久化正文。 */
 export function getLLMTextContent(content: InvokeResult["choices"][number]["message"]["content"] | null | undefined): string {
@@ -390,6 +422,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     model,
     tier,
     provider: forcedProvider,
+    feature,
+    promptVersion,
     signal,
     maxRetries,
     thinking,
@@ -451,37 +485,60 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const send = (requestPayload: Record<string, unknown>) => fetchWithBackoff(resolved.chatUrl, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${resolved.apiKey}`,
-    },
-    body: JSON.stringify(adaptPayloadForProvider(resolved.provider, requestPayload)),
-    signal,
-  }, maxRetries);
+  const startedAt = Date.now();
+  const { inferTier } = await import("./modelRouting");
+  const runMeta = {
+    feature: feature ?? "unlabeled",
+    provider: resolved.provider,
+    model: resolved.model,
+    tier: tier ?? inferTier(model),
+    promptVersion,
+  };
+  try {
+    const send = (requestPayload: Record<string, unknown>) => fetchWithBackoff(resolved.chatUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${resolved.apiKey}`,
+      },
+      body: JSON.stringify(adaptPayloadForProvider(resolved.provider, requestPayload)),
+      signal,
+    }, maxRetries);
 
-  let response = await send(payload);
+    let response = await send(payload);
 
-  // 部分 OpenAI 兼容提供商不接受 reasoning 参数。保留调用方的意图，
-  // 但在收到明确的参数不兼容错误时仅降级一次，不牺牲 JSON Schema 约束。
-  if (!response.ok && "reasoning" in payload) {
-    const firstError = await response.text();
-    if (/unknown parameter[^\n]*reasoning|reasoning[^\n]*unknown parameter/i.test(firstError)) {
-      console.warn("[LLM] Provider rejected reasoning; retrying once without the optional parameter.");
-      delete payload.reasoning;
-      response = await send(payload);
-    } else {
-      throw new Error(`LLM invoke failed: ${response.status} ${response.statusText} – ${firstError}`);
+    // 部分 OpenAI 兼容提供商不接受 reasoning 参数。保留调用方的意图，
+    // 但在收到明确的参数不兼容错误时仅降级一次，不牺牲 JSON Schema 约束。
+    if (!response.ok && "reasoning" in payload) {
+      const firstError = await response.text();
+      if (/unknown parameter[^\n]*reasoning|reasoning[^\n]*unknown parameter/i.test(firstError)) {
+        console.warn("[LLM] Provider rejected reasoning; retrying once without the optional parameter.");
+        delete payload.reasoning;
+        response = await send(payload);
+      } else {
+        throw new Error(`LLM invoke failed: ${response.status} ${response.statusText} – ${firstError}`);
+      }
     }
-  }
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
-    );
-  }
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
+      );
+    }
 
-  return (await response.json()) as InvokeResult;
+    const json = (await response.json()) as InvokeResult;
+    json.aiRunId = await recordAiRun({
+      ...runMeta,
+      model: json.model || runMeta.model,
+      status: "success",
+      latencyMs: Date.now() - startedAt,
+      promptTokens: json.usage?.prompt_tokens,
+      completionTokens: json.usage?.completion_tokens,
+    });
+    return json;
+  } catch (err: any) {
+    await recordAiRun({ ...runMeta, status: "error", latencyMs: Date.now() - startedAt, error: String(err?.message || err) });
+    throw err;
+  }
 }

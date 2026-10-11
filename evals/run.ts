@@ -28,7 +28,7 @@ function argValue(name: string): string | undefined {
 async function runCase(testCase: MeetingSignalsCase, tier: ModelTier): Promise<CaseResult> {
   const started = Date.now();
   try {
-    const output = await extractMeetingSignals(testCase.input, { tier, timeoutMs: 120_000 });
+    const { signals: output } = await extractMeetingSignals(testCase.input, { tier, timeoutMs: 120_000 });
     // 参会人名单也在提示词里，属于可引用的原文
     const source = [testCase.input.attendees ?? "", meetingSourceText(testCase.input)].join("\n");
     const checks = gradeMeetingSignals(output, source, testCase.expect);
