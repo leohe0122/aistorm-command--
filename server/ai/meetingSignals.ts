@@ -16,7 +16,11 @@ export type MeetingSignalsInput = {
   initiatedBy?: string;
 };
 
-/** 修改提示词或规则时递增，ai_runs 与评测结果据此对照。 */
+/**
+ * 修改提示词或规则时递增，ai_runs 与评测结果据此对照。
+ * v2 评测（6 个用例，2026-10-11）：fast 4/6、standard 5/6、reasoning 5/6；v1 基线为 fast 2/6、reasoning 0/6。
+ * 两个提取接口均使用 standard：质量与 reasoning 相当，延迟和成本更低。
+ */
 export const MEETING_SIGNALS_PROMPT_VERSION = "meeting-signals-v2";
 
 export type MeetingSignalsErrorCode = "timeout" | "provider" | "empty" | "invalid_json";

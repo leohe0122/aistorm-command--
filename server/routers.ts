@@ -3633,7 +3633,7 @@ ${knowledgeNote}`;
       let signals: Awaited<ReturnType<typeof extractMeetingSignals>>["signals"];
       let aiRunId: number | undefined;
       try {
-        ({ signals, aiRunId } = await extractMeetingSignals(input, { accountContext, tier: "reasoning", timeoutMs: 120_000 }));
+        ({ signals, aiRunId } = await extractMeetingSignals(input, { accountContext, tier: "standard", timeoutMs: 120_000 }));
       } catch (err: any) {
         const code = err instanceof MeetingSignalsError ? err.code : "provider";
         const message = code === "timeout" ? "AI 信号提取超时，请稍后重试。本次拜访未保存。"
@@ -3780,7 +3780,7 @@ ${knowledgeNote}`;
           let accountContext = "";
           try { accountContext = await getAccountDiagnosticContext(input.clientId); } catch (ctxErr: any) { console.error("[extractFullSignals] accountContext failed:", ctxErr?.message); }
           const { extractMeetingSignals } = await import("./ai/meetingSignals");
-          const { signals, aiRunId } = await extractMeetingSignals(input, { accountContext, tier: "fast", timeoutMs: 90_000 });
+          const { signals, aiRunId } = await extractMeetingSignals(input, { accountContext, tier: "standard", timeoutMs: 90_000 });
           const aiMinutes = `## 拜访作战日志\n\n${signals.meetingSummary}\n\n### 下一步需验证\n${signals.nextBestAction}`;
           if (db && id) {
             const { meetingMinutes } = await import("../drizzle/schema");
