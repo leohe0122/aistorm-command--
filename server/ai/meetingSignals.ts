@@ -21,7 +21,7 @@ export type MeetingSignalsInput = {
  * v2 评测（6 个用例，2026-10-11）：fast 4/6、standard 5/6、reasoning 5/6；v1 基线为 fast 2/6、reasoning 0/6。
  * 两个提取接口均使用 standard：质量与 reasoning 相当，延迟和成本更低。
  */
-export const MEETING_SIGNALS_PROMPT_VERSION = "meeting-signals-v3";
+export const MEETING_SIGNALS_PROMPT_VERSION = "meeting-signals-v2";
 
 export type MeetingSignalsErrorCode = "timeout" | "provider" | "empty" | "invalid_json";
 
@@ -60,7 +60,7 @@ ${accountContext}
 4. suggestedScore 只能是 0/25/50/75/100。meddpiccUpdates 只包含本次记录提供了新证据的维度；记录没有涉及的维度不要输出，不要用 0 分条目来说明"未提及"。但记录一旦说明了谁拍板或签字（E）、采购或审批怎么走（P）、用什么标准选型（D1）、决策步骤与时间（D2）、量化的业务影响或预算（M），就必须输出对应维度。
 
 【关键人】
-5. 凡是记录中被提到、且与本项目的决策、评估、采购、审批、使用或阻碍有关的人，都要列入 contactDiscoveries，不论是否在场。例如"方案最后要财务总监张某拍板"中的张某、"技术细节由他手下的工程师李某把关"中的李某。参会人名单中的客户方人员同样要列入，其 evidence 逐字照抄参会人名单里写着此人的那一段原文（保持原文语言，不要翻译或补充职位），不要只写“参会人名单”。
+5. 凡是记录中被提到、且与本项目的决策、评估、采购、审批、使用或阻碍有关的人，都要列入 contactDiscoveries，不论是否在场。例如"方案最后要财务总监张某拍板"中的张某、"技术细节由他手下的工程师李某把关"中的李某。参会人名单中的客户方人员同样要列入。
 6. 记录明确说与项目无关的人不要列入。name 必须指向一个具体的人：只知道职位不知道姓名时，用职位作为 name（如"CFO"）；不要填"未知"，也不要把一群人（如"几位同事""IT 团队"）当成一个关键人。
 7. 角色（buyingRole）只在记录说明其职责或行为时填写，否则为"未知"；态度（attitude）只在记录有明确表态时填写。
 
