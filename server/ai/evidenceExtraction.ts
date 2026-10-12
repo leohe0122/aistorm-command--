@@ -5,7 +5,7 @@
 import { getLLMTextContent, invokeLLM, type InvokeParams } from "../_core/llm";
 import { SALES_METHODOLOGY_SYSTEM_PROMPT } from "../salesMethodology";
 
-export const EVIDENCE_EXTRACTION_PROMPT_VERSION = "evidence-extraction-v1";
+export const EVIDENCE_EXTRACTION_PROMPT_VERSION = "evidence-extraction-v2";
 
 export const EVIDENCE_TOPICS = [
   "M", "E", "D1", "D2", "P", "I", "C1", "C2",
@@ -83,7 +83,8 @@ ${input.text}
 1. 一条证据只表达一个事实。claim 用一句话陈述事实；quote 必须逐字摘自素材原文（可截取片段，不得改写、翻译或拼接不相邻的句子）。
 2. 只提取素材中明确出现的客户事实：客户方人员说了什么、做了什么、决定了什么、要求了什么。我方的推销话术、计划和猜测不是证据。
 3. 禁止编造：拿不出原文依据的内容不要输出；不要输出"未提及""数据不足"之类的占位条目；没有事实时 items 返回空数组。
-4. subjectName 填事实涉及的具体客户方人员姓名；只知道职位时填职位（如"CFO"）；涉及整个组织或无法对应到具体人时填 null，不要填"未知"或"几位同事"。
+4. subjectName 只填事实涉及的客户方人员的姓名本身，不带职位（写"郑伟"，不写"IT总监郑伟"或"IT总监"）；原文没有给出姓名、只有职位时才填职位（如"CFO"）；涉及整个组织或无法对应到具体人时填 JSON 的 null，不要填"未知""几位同事"或字符串"null"。
+   邮件中第一人称（"我""我们"）指发件人，以落款署名为准；聊天记录中以每行开头的说话人为准。
 5. 客户的反对、顾虑、拒绝、延期和对其他厂商的偏好同样是证据，polarity 填 negative。明确对我方有利的表态填 positive，其余填 neutral。
 
 【标签 topics（可多选）】
@@ -99,7 +100,7 @@ summary 用不超过 80 字概括素材中的关键事实；英文素材可用�
 }
 
 const PLACEHOLDER = /^(未提供|数据不足|暂无|无|不详|未知|n\/?a|none|not provided|not mentioned)[。.!！]?$|^数据不足，?暂不判断[。.]?$|^(记录|原文|本次|素材)(中)?(未|没有)(提及|提到|涉及)/i;
-const PLACEHOLDER_NAME = /^(未知|不详|无|unknown|n\/?a|none)$|(同事们?|团队|人员|们)$|几位|多位|若干|一些|colleagues|team$/i;
+const PLACEHOLDER_NAME = /^(未知|不详|无|unknown|n\/?a|none|null|undefined)$|(同事们?|团队|人员|们)$|几位|多位|若干|一些|colleagues|team$/i;
 
 /** 清洗模型输出：过滤非法标签与占位内容，非 MEDDPICC 证据不带建议分。 */
 export function normalizeExtractedEvidence(value: unknown): { summary: string; items: ExtractedEvidence[] } {

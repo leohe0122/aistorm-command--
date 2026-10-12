@@ -31,7 +31,7 @@ describe("extracted evidence normalisation", () => {
       summary: "s",
       items: [
         { claim: "周海峰最终签字", quote: "最终由他签字", subjectName: "周海峰", topics: ["E", "bogus"], polarity: "neutral", suggestedScore: 50, confidence: "high" },
-        { claim: "合同年底到期", quote: "合同 12 月 31 日到期", subjectName: "未知", topics: ["timeline"], polarity: "neutral", suggestedScore: 75, confidence: "medium" },
+        { claim: "合同年底到期", quote: "合同 12 月 31 日到期", subjectName: "null", topics: ["timeline"], polarity: "neutral", suggestedScore: 75, confidence: "medium" },
         { claim: "未提及预算", quote: "原文未提及预算", subjectName: null, topics: ["budget"], polarity: "neutral", suggestedScore: null, confidence: "low" },
       ],
     });
