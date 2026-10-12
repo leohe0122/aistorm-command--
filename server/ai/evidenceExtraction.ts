@@ -110,6 +110,8 @@ export function normalizeExtractedEvidence(value: unknown): { summary: string; i
     const quote = String(item?.quote ?? "").trim();
     if (!claim || !quote || PLACEHOLDER.test(quote) || PLACEHOLDER.test(claim)) continue;
     const topics = (Array.isArray(item.topics) ? item.topics : []).filter((topic: unknown): topic is EvidenceTopic => (EVIDENCE_TOPICS as readonly string[]).includes(String(topic)));
+    // C2 与 competitor 含义相同（竞争对手），统一成对出现，便于按任一标签检索
+    if (topics.includes("C2") || topics.includes("competitor")) topics.push("C2", "competitor");
     const uniqueTopics = Array.from(new Set(topics)) as EvidenceTopic[];
     const subject = typeof item.subjectName === "string" ? item.subjectName.trim() : "";
     const hasMeddpicc = uniqueTopics.some(topic => MEDDPICC.has(topic));

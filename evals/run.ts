@@ -100,10 +100,10 @@ async function runSuite(suite: Suite<any>, tier: ModelTier, only: string | undef
 
   // 在 GitHub Actions 中以注解输出结果，便于在 PR 检查页直接查看
   if (process.env.GITHUB_ACTIONS) {
-    for (const result of results) {
+    // GitHub 每个步骤最多显示 10 条注解：只为未通过的用例生成，通过的用例只计入汇总
+    for (const result of results.filter(item => !item.pass)) {
       const failed = result.error ? [`错误：${result.error}`] : result.checks.filter(check => !check.pass).map(check => `${check.name}${check.detail ? `：${check.detail}` : ""}`);
-      const level = result.pass ? "notice" : "warning";
-      console.log(`::${level} title=${result.pass ? "通过" : "未通过"} ${suite.name}/${result.id}::${escapeAnnotation([result.description, ...failed].join("\n"))}`);
+      console.log(`::warning title=未通过 ${suite.name}/${result.id}::${escapeAnnotation([result.description, ...failed].join("\n"))}`);
     }
     console.log(`::notice title=评测汇总 ${suite.label}::${escapeAnnotation(`档位 ${tier} · 用例 ${passed}/${results.length} · 检查项 ${passedChecks}/${totalChecks}`)}`);
   }
