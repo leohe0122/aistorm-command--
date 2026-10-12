@@ -8171,6 +8171,133 @@ ${input.extractedText.slice(0, 4000)}
 
   // ── 证据台账：评估及其依据（只读）────────────────────────────────────────
   ledger: router({
+    /** 投喂原始素材：立即保存并返回编号，AI 在后台提取候选证据（避免代理约 60 秒的硬超时）。 */
+    ingest: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number().optional(),
+      kind: z.enum(["email", "meeting_notes", "chat", "call_notes", "document", "other"]),
+      title: z.string().trim().max(200).optional(),
+      occurredAt: z.string().optional(),
+      text: z.string().trim().min(20, "内容太短，至少 20 个字").max(20000, "单次最多 20000 字，请分段投喂"),
+    })).mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { ingestions, clients: clientsTable, opportunities: opportunitiesTable, keyContacts } = await import("../drizzle/schema");
+      const [client] = await db.select({ id: clientsTable.id, name: clientsTable.name }).from(clientsTable).where(eq(clientsTable.id, input.clientId)).limit(1);
+      if (!client) throw new TRPCError({ code: "NOT_FOUND", message: "客户不存在" });
+      if (input.opportunityId) {
+        const [opp] = await db.select({ clientId: opportunitiesTable.clientId }).from(opportunitiesTable).where(eq(opportunitiesTable.id, input.opportunityId)).limit(1);
+        if (!opp || opp.clientId !== input.clientId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机不属于该客户" });
+      }
+      const occurredAt = input.occurredAt && !Number.isNaN(Date.parse(input.occurredAt)) ? new Date(input.occurredAt) : new Date();
+      const createdByName = ctx.user.name || ctx.user.email || "已登录用户";
+      const [result] = await db.insert(ingestions).values({
+        clientId: input.clientId,
+        opportunityId: input.opportunityId ?? null,
+        kind: input.kind,
+        title: input.title || null,
+        occurredAt,
+        rawText: input.text,
+        status: "pending",
+        createdByUserId: ctx.user.id,
+        createdByName,
+      });
+      const ingestionId = (result as any).insertId as number;
+
+      Promise.resolve().then(async () => {
+        try {
+          const contacts = await db.select({ name: keyContacts.name }).from(keyContacts).where(eq(keyContacts.clientId, input.clientId)).limit(50);
+          const { extractEvidence } = await import("./ai/evidenceExtraction");
+          const extracted = await extractEvidence({
+            clientName: client.name,
+            kind: input.kind,
+            title: input.title,
+            occurredAt: occurredAt.toISOString().slice(0, 10),
+            text: input.text,
+            knownContacts: contacts.map(contact => contact.name).filter(Boolean),
+          });
+          const { extractedToEvidence } = await import("./evidence/mapping");
+          const { replaceCandidates } = await import("./evidence/ledger");
+          await replaceCandidates(
+            { sourceType: "ingestion", sourceId: ingestionId },
+            extractedToEvidence(extracted.items, { clientId: input.clientId, opportunityId: input.opportunityId, ingestionId, kind: input.kind, occurredAt }),
+            extracted.aiRunId,
+          );
+          await db.update(ingestions).set({ status: "done", summary: extracted.summary || null, candidateCount: extracted.items.length, aiRunId: extracted.aiRunId ?? null }).where(eq(ingestions.id, ingestionId));
+        } catch (err: any) {
+          console.error("[ingest] extraction failed:", err?.message);
+          await db.update(ingestions).set({ status: "failed", error: String(err?.message || "未知错误").slice(0, 500) }).where(eq(ingestions.id, ingestionId));
+        }
+      });
+      return { ingestionId };
+    }),
+
+    ingestion: protectedProcedure.input(z.object({ ingestionId: z.number() })).query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const { ingestions } = await import("../drizzle/schema");
+      const [row] = await db.select({
+        id: ingestions.id, clientId: ingestions.clientId, status: ingestions.status, error: ingestions.error,
+        summary: ingestions.summary, candidateCount: ingestions.candidateCount,
+      }).from(ingestions).where(eq(ingestions.id, input.ingestionId)).limit(1);
+      return row ?? null;
+    }),
+
+    /** 待确认的候选证据，并标出当前用户能否确认每一条。 */
+    candidates: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number().optional(),
+    })).query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { evidence: evidenceTable, ingestions } = await import("../drizzle/schema");
+      const { and, desc, eq: eqFn, inArray } = await import("drizzle-orm");
+      const { canConfirmEvidence } = await import("../shared/evidencePermissions");
+      const filter = input.opportunityId
+        ? and(eqFn(evidenceTable.clientId, input.clientId), eqFn(evidenceTable.opportunityId, input.opportunityId), eqFn(evidenceTable.status, "candidate"), eqFn(evidenceTable.sourceType, "ingestion"))
+        : and(eqFn(evidenceTable.clientId, input.clientId), eqFn(evidenceTable.status, "candidate"), eqFn(evidenceTable.sourceType, "ingestion"));
+      const rows = await db.select().from(evidenceTable).where(filter).orderBy(desc(evidenceTable.createdAt)).limit(200);
+      const ingestionIds = Array.from(new Set(rows.map(row => row.sourceId).filter((id): id is number => typeof id === "number")));
+      const sources = ingestionIds.length
+        ? await db.select({ id: ingestions.id, kind: ingestions.kind, title: ingestions.title, createdByUserId: ingestions.createdByUserId, createdByName: ingestions.createdByName }).from(ingestions).where(inArray(ingestions.id, ingestionIds))
+        : [];
+      const sourceById = new Map(sources.map(source => [source.id, source]));
+      const reviewer = { userId: ctx.user.id, role: ctx.user.role, podRole: (ctx.user as any).podRole ?? null };
+      return rows.map(row => {
+        const source = row.sourceId ? sourceById.get(row.sourceId) : undefined;
+        const topics = Array.isArray(row.topics) ? row.topics : [];
+        return {
+          id: row.id,
+          claim: row.claim,
+          quote: row.quote,
+          subjectName: row.subjectName,
+          topics,
+          polarity: row.polarity,
+          suggestedScore: row.suggestedScore,
+          confidence: row.confidence,
+          occurredAt: row.occurredAt,
+          ingestionId: row.sourceId,
+          sourceKind: source?.kind ?? null,
+          sourceTitle: source?.title ?? null,
+          submittedBy: source?.createdByName ?? null,
+          canConfirm: canConfirmEvidence(reviewer, { topics, sourceType: row.sourceType, ingestionCreatorId: source?.createdByUserId ?? null }),
+        };
+      });
+    }),
+
+    review: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      confirmIds: z.array(z.number()).max(200).default([]),
+      rejectIds: z.array(z.number()).max(200).default([]),
+    })).mutation(async ({ input, ctx }) => {
+      const { reviewCandidates } = await import("./evidence/ledger");
+      return reviewCandidates({
+        confirmIds: input.confirmIds,
+        rejectIds: input.rejectIds,
+        reviewer: { userId: ctx.user.id, role: ctx.user.role, podRole: (ctx.user as any).podRole ?? null, name: ctx.user.name || ctx.user.email || "已登录用户" },
+      });
+    }),
+
     forTarget: protectedProcedure.input(z.object({
       clientId: z.number(),
       opportunityId: z.number().optional(),
