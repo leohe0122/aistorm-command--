@@ -142,6 +142,8 @@ export const ENTITY_ID_RULES: Record<string, EntityRule> = {
   "quotes.addItem": { table: "quotes", keys: ["quoteId"], allowNull: true },
   "quotes.updateItem": { table: "quotes", keys: ["quoteId"], allowNull: true },
   "quotes.deleteItem": { table: "quotes", keys: ["quoteId"], allowNull: true },
+  "ledger.ingestion": { table: "ingestions", keys: ["ingestionId"], allowNull: false },
+  "ledger.review": { table: "evidence", keys: ["confirmIds", "rejectIds"], allowNull: false },
 };
 
 export function collectEntityIds(rule: EntityRule, rawInput: unknown): number[] {

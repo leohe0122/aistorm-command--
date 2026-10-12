@@ -88,3 +88,48 @@ export async function rejectBySource(source: { sourceType: EvidenceDraft["source
     for (const clientId of Array.from(new Set(affected.map(row => row.clientId)))) await recomputeClientAssessments(clientId);
   });
 }
+
+/**
+ * 人工审核候选证据：逐条确认或驳回。只处理状态为 candidate 的记录；
+ * 无权确认的条目跳过并返回，不中断其余条目。
+ */
+export async function reviewCandidates(input: {
+  confirmIds: number[];
+  rejectIds: number[];
+  reviewer: { userId: number; role: "admin" | "user"; podRole: string | null; name: string };
+}): Promise<{ confirmed: number[]; rejected: number[]; denied: number[] }> {
+  const db = await getDb();
+  if (!db) throw new Error("数据库暂不可用");
+  const { ingestions } = await import("../../drizzle/schema");
+  const { canConfirmEvidence } = await import("../../shared/evidencePermissions");
+  const ids = Array.from(new Set([...input.confirmIds, ...input.rejectIds]));
+  if (ids.length === 0) return { confirmed: [], rejected: [], denied: [] };
+  const rows = await db.select().from(evidence).where(and(inArray(evidence.id, ids), eq(evidence.status, "candidate")));
+  const ingestionIds = Array.from(new Set(rows.filter(row => row.sourceType === "ingestion" && row.sourceId).map(row => row.sourceId as number)));
+  const creators = new Map<number, number>();
+  if (ingestionIds.length > 0) {
+    for (const row of await db.select({ id: ingestions.id, createdByUserId: ingestions.createdByUserId }).from(ingestions).where(inArray(ingestions.id, ingestionIds))) {
+      creators.set(row.id, row.createdByUserId);
+    }
+  }
+  const allowed = (row: (typeof rows)[number]) => canConfirmEvidence(input.reviewer, {
+    topics: Array.isArray(row.topics) ? row.topics : [],
+    sourceType: row.sourceType,
+    ingestionCreatorId: row.sourceId ? creators.get(row.sourceId) ?? null : null,
+  });
+  const confirmSet = new Set(input.confirmIds);
+  const confirmed: number[] = [];
+  const rejected: number[] = [];
+  const denied: number[] = [];
+  for (const row of rows) {
+    if (!allowed(row)) { denied.push(row.id); continue; }
+    (confirmSet.has(row.id) ? confirmed : rejected).push(row.id);
+  }
+  const now = new Date();
+  if (confirmed.length) await db.update(evidence).set({ status: "confirmed", confirmedBy: input.reviewer.name, confirmedAt: now }).where(inArray(evidence.id, confirmed));
+  if (rejected.length) await db.update(evidence).set({ status: "rejected", confirmedBy: input.reviewer.name, confirmedAt: now }).where(inArray(evidence.id, rejected));
+  for (const clientId of Array.from(new Set(rows.filter(row => confirmed.includes(row.id) || rejected.includes(row.id)).map(row => row.clientId)))) {
+    await recomputeClientAssessments(clientId);
+  }
+  return { confirmed, rejected, denied };
+}
