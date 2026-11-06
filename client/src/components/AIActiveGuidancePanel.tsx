@@ -22,7 +22,7 @@ type Candidate = {
   participants?: Array<{ name: string; role: "技术评估" | "使用方" | "决策人" | "评审人" | "签字人" | "阻力" | "无关" }>;
   silent?: boolean;
 };
-type PendingCandidate = Candidate & { id: string };
+type PendingCandidate = Candidate & { id: string; question?: string; answer?: string; answerFocus?: string };
 type GuidanceTurn = { question: string; answer: string };
 const MEDDPICC_FIELDS: Record<Exclude<Candidate["meddpiccDim"], "">, { score: string; notes: string }> = {
   M: { score: "metricsScore", notes: "metricsNotes" }, E: { score: "economicBuyerScore", notes: "economicBuyerNotes" }, D1: { score: "decisionCriteriaScore", notes: "decisionCriteriaNotes" }, D2: { score: "decisionProcessScore", notes: "decisionProcessNotes" }, P: { score: "paperProcessScore", notes: "paperProcessNotes" }, I: { score: "implicatePainScore", notes: "implicatePainNotes" }, C1: { score: "championScore", notes: "championNotes" }, C2: { score: "competitionScore", notes: "competitionNotes" },
@@ -98,6 +98,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
   const createSignal = trpc.purchaseSignals.create.useMutation();
   const updateMeddpicc = trpc.opportunities.upsertMeddpicc.useMutation();
   const recordParticipants = trpc.opportunities.recordParticipants.useMutation();
+  const recordGuidanceEvidence = trpc.ledger.recordGuidanceAnswer.useMutation();
   const pendingGuide = customerGuideMutation.isPending || opportunityGuideMutation.isPending;
   useEffect(() => {
     if (!pendingGuide) return;
@@ -175,7 +176,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
         setCandidate(data);
         setGuidanceHistory(nextHistory);
         if (data.candidateTarget !== "none") {
-          const autoCandidate = { ...data, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` };
+          const autoCandidate = { ...data, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, question: currentQuestion, answer, answerFocus: guide.answerFocus };
           setPendingCandidates(current => current.concat(autoCandidate));
           await confirmCandidate(autoCandidate);
         }
@@ -198,7 +199,7 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
         setCandidate(fallback);
         setGuidanceHistory(nextHistory);
         if (fallback.candidateTarget !== "none") {
-          const autoCandidate = { ...fallback, id: `${Date.now()}-${Math.random().toString(36).slice(2)}` };
+          const autoCandidate = { ...fallback, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, question: currentQuestion, answer, answerFocus: guide.answerFocus };
           setPendingCandidates(current => current.concat(autoCandidate));
           await confirmCandidate(autoCandidate);
         }
@@ -254,6 +255,27 @@ export function AIActiveGuidancePanel({ scope, clientId, opportunityId, powerCon
       await updateMeddpicc.mutateAsync({ opportunityId, clientId, [field.score]: pendingCandidate.suggestedScore / 25, [field.notes]: `[AI 主动引导问答 · SAM 原始回答自动沉淀] ${pendingCandidate.evidence}` } as any);
       toast.success("已记录商机证据，可随时补充修正");
       markRecorded();
+      // 证据台账双写：以 ai_guidance 来源写入一条候选证据，需回答人或 AD 确认后才参与“证据推导评分”。
+      // 写入失败不影响原有流程；服务端会再次拦截“不知道 / 尚未发生 / 无关”等非事实回答。
+      if (pendingCandidate.answer) {
+        try {
+          const ledgerResult = await recordGuidanceEvidence.mutateAsync({
+            clientId,
+            opportunityId,
+            dim: pendingCandidate.meddpiccDim,
+            claim: pendingCandidate.evidence,
+            question: pendingCandidate.question || "",
+            answer: pendingCandidate.answer,
+            subjectName: pendingCandidate.subjectName || undefined,
+            suggestedScore: pendingCandidate.suggestedScore,
+            confidence: pendingCandidate.confidence,
+            answerFocus: pendingCandidate.answerFocus,
+          });
+          if (ledgerResult.recorded) await utils.ledger.candidates.invalidate({ clientId, opportunityId });
+        } catch (error) {
+          console.warn("[ledger] guidance evidence not recorded:", error instanceof Error ? error.message : error);
+        }
+      }
       await Promise.all([utils.opportunities.getMeddpicc.invalidate({ opportunityId }), utils.command2.getDealMap.invalidate({ clientId, opportunityId }), utils.opportunities.getStageGuidance.invalidate({ clientId, opportunityId })]);
     } catch (error) {
       toast.error(`写入商机证据失败：${error instanceof Error ? error.message : "服务暂不可用"}`);

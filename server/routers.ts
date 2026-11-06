@@ -8254,17 +8254,20 @@ ${input.extractedText.slice(0, 4000)}
       const { and, desc, eq: eqFn, inArray } = await import("drizzle-orm");
       const { canConfirmEvidence } = await import("../shared/evidencePermissions");
       const filter = input.opportunityId
-        ? and(eqFn(evidenceTable.clientId, input.clientId), eqFn(evidenceTable.opportunityId, input.opportunityId), eqFn(evidenceTable.status, "candidate"), eqFn(evidenceTable.sourceType, "ingestion"))
+        // 商机作战室：投喂素材 + 本商机 AI 主动引导问答（Deal Map）；客户作战台只看投喂素材，不混入商机引导证据（Account Map 与 Deal Map 分离）。
+        ? and(eqFn(evidenceTable.clientId, input.clientId), eqFn(evidenceTable.opportunityId, input.opportunityId), eqFn(evidenceTable.status, "candidate"), inArray(evidenceTable.sourceType, ["ingestion", "ai_guidance"]))
         : and(eqFn(evidenceTable.clientId, input.clientId), eqFn(evidenceTable.status, "candidate"), eqFn(evidenceTable.sourceType, "ingestion"));
+      const { guidanceAnswererId } = await import("./evidence/mapping");
       const rows = await db.select().from(evidenceTable).where(filter).orderBy(desc(evidenceTable.createdAt)).limit(200);
-      const ingestionIds = Array.from(new Set(rows.map(row => row.sourceId).filter((id): id is number => typeof id === "number")));
+      const ingestionIds = Array.from(new Set(rows.filter(row => row.sourceType === "ingestion").map(row => row.sourceId).filter((id): id is number => typeof id === "number")));
       const sources = ingestionIds.length
         ? await db.select({ id: ingestions.id, kind: ingestions.kind, title: ingestions.title, createdByUserId: ingestions.createdByUserId, createdByName: ingestions.createdByName }).from(ingestions).where(inArray(ingestions.id, ingestionIds))
         : [];
       const sourceById = new Map(sources.map(source => [source.id, source]));
       const reviewer = { userId: ctx.user.id, role: ctx.user.role, podRole: (ctx.user as any).podRole ?? null };
       return rows.map(row => {
-        const source = row.sourceId ? sourceById.get(row.sourceId) : undefined;
+        const isGuidance = row.sourceType === "ai_guidance";
+        const source = !isGuidance && row.sourceId ? sourceById.get(row.sourceId) : undefined;
         const topics = Array.isArray(row.topics) ? row.topics : [];
         return {
           id: row.id,
@@ -8276,13 +8279,62 @@ ${input.extractedText.slice(0, 4000)}
           suggestedScore: row.suggestedScore,
           confidence: row.confidence,
           occurredAt: row.occurredAt,
-          ingestionId: row.sourceId,
+          ingestionId: isGuidance ? null : row.sourceId,
+          sourceType: row.sourceType,
           sourceKind: source?.kind ?? null,
-          sourceTitle: source?.title ?? null,
-          submittedBy: source?.createdByName ?? null,
-          canConfirm: canConfirmEvidence(reviewer, { topics, sourceType: row.sourceType, ingestionCreatorId: source?.createdByUserId ?? null }),
+          sourceTitle: isGuidance ? "AI 引导问答" : source?.title ?? null,
+          sourceExcerpt: isGuidance ? row.sourceExcerpt : null,
+          submittedBy: isGuidance ? row.createdBy : source?.createdByName ?? null,
+          canConfirm: canConfirmEvidence(reviewer, {
+            topics,
+            sourceType: row.sourceType,
+            ingestionCreatorId: source?.createdByUserId ?? null,
+            guidanceAnswererId: isGuidance ? guidanceAnswererId(row.sourceKey) : null,
+          }),
         };
       });
+    }),
+
+    /**
+     * AI 主动引导（商机场景）的一次回答写入证据台账，来源 ai_guidance，状态固定为候选。
+     * 原有 MEDDPICC 写入保持不变（第 1 阶段双写）；未知、没有、尚未发生、与项目无关、行动安排均不入账。
+     */
+    recordGuidanceAnswer: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number(),
+      dim: z.enum(["M", "E", "D1", "D2", "P", "I", "C1", "C2"]),
+      claim: z.string().trim().min(1).max(2000),
+      question: z.string().trim().max(2000),
+      answer: z.string().trim().min(1).max(5000),
+      subjectName: z.string().trim().max(150).optional(),
+      suggestedScore: z.number().min(0).max(100).optional(),
+      confidence: z.enum(["high", "medium", "low"]),
+      answerFocus: z.string().max(64).optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { opportunities: opportunitiesTable } = await import("../drizzle/schema");
+      const [opp] = await db.select({ clientId: opportunitiesTable.clientId }).from(opportunitiesTable).where(eq(opportunitiesTable.id, input.opportunityId)).limit(1);
+      if (!opp || opp.clientId !== input.clientId) throw new TRPCError({ code: "BAD_REQUEST", message: "商机不属于该客户" });
+      const { guidanceAnswerRejection, guidanceAnswerToEvidence } = await import("./evidence/mapping");
+      const rejection = guidanceAnswerRejection({ answer: input.answer, claim: input.claim, dim: input.dim, answerFocus: input.answerFocus, subjectName: input.subjectName });
+      if (rejection) return { recorded: false, evidenceId: null, reason: rejection };
+      const { recordGuidanceCandidate } = await import("./evidence/ledger");
+      const result = await recordGuidanceCandidate(guidanceAnswerToEvidence({
+        clientId: input.clientId,
+        opportunityId: input.opportunityId,
+        dim: input.dim,
+        claim: input.claim,
+        answer: input.answer,
+        question: input.question,
+        subjectName: input.subjectName,
+        suggestedScore: input.suggestedScore,
+        confidence: input.confidence,
+        answererUserId: ctx.user.id,
+        answererName: ctx.user.name || ctx.user.email || "已登录用户",
+        occurredAt: new Date(),
+      }));
+      return { ...result, reason: result.recorded ? null : "相同回答已在待确认列表中" };
     }),
 
     review: protectedProcedure.input(z.object({

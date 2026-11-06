@@ -4,7 +4,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { evidence } from "../../drizzle/schema";
 import { getDb } from "../db";
-import type { EvidenceDraft } from "./mapping";
+import { guidanceAnswererId, type EvidenceDraft } from "./mapping";
 import { recomputeClientAssessments } from "./assessmentStore";
 
 async function safely(label: string, task: () => Promise<void>): Promise<void> {
@@ -115,7 +115,8 @@ export async function reviewCandidates(input: {
   const allowed = (row: (typeof rows)[number]) => canConfirmEvidence(input.reviewer, {
     topics: Array.isArray(row.topics) ? row.topics : [],
     sourceType: row.sourceType,
-    ingestionCreatorId: row.sourceId ? creators.get(row.sourceId) ?? null : null,
+    ingestionCreatorId: row.sourceType === "ingestion" && row.sourceId ? creators.get(row.sourceId) ?? null : null,
+    guidanceAnswererId: row.sourceType === "ai_guidance" ? guidanceAnswererId(row.sourceKey) : null,
   });
   const confirmSet = new Set(input.confirmIds);
   const confirmed: number[] = [];
@@ -132,4 +133,24 @@ export async function reviewCandidates(input: {
     await recomputeClientAssessments(clientId);
   }
   return { confirmed, rejected, denied };
+}
+
+/**
+ * AI 主动引导问答写入一条候选证据（第 1 阶段双写：原有 MEDDPICC 写入不变）。
+ * 永远以 candidate 入账，需回答人本人或 AD 在“投喂素材 / 待确认”中确认后才参与评分。
+ * 同一商机、同一回答人、同一维度、同一原话的待确认候选不重复写入。
+ */
+export async function recordGuidanceCandidate(draft: EvidenceDraft): Promise<{ recorded: boolean; evidenceId: number | null }> {
+  const db = await getDb();
+  if (!db) throw new Error("数据库暂不可用");
+  const [existing] = await db.select({ id: evidence.id, quote: evidence.quote }).from(evidence).where(and(
+    eq(evidence.sourceType, "ai_guidance"),
+    eq(evidence.opportunityId, draft.opportunityId as number),
+    eq(evidence.sourceKey, draft.sourceKey),
+    eq(evidence.status, "candidate"),
+    eq(evidence.quote, draft.quote ?? ""),
+  )).limit(1);
+  if (existing) return { recorded: false, evidenceId: existing.id };
+  const [result] = await db.insert(evidence).values({ ...draft, status: "candidate" as const });
+  return { recorded: true, evidenceId: Number((result as any)?.insertId ?? 0) || null };
 }
