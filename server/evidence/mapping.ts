@@ -4,6 +4,7 @@
 
 import type { FullMeetingSignals } from "../aiNativeGuidance";
 import type { InsertEvidence } from "../../drizzle/schema";
+import { hasValidExtractedFactCandidate, inferIrrelevantProjectParticipants, isGuidanceTopicExhaustionAnswer } from "../../shared/aiAnswerFacts";
 
 export type EvidenceDraft = Omit<InsertEvidence, "id" | "createdAt" | "updatedAt" | "status" | "confirmedBy" | "confirmedAt"> & {
   sourceKey: string;
@@ -182,4 +183,78 @@ export function extractedToEvidence(
     suggestedScore: item.suggestedScore,
     createdBy: "ai",
   }));
+}
+
+// ── AI 主动引导问答 → 证据台账候选 ─────────────────────────────────────────
+// sourceId 指向商机；sourceKey 记录回答人与维度：guidance:u<用户编号>:<维度>，
+// 用于判断“回答人本人可确认”，无需新增字段。
+
+const GUIDANCE_KEY = /^guidance:u(\d+):/;
+
+export function guidanceSourceKey(answererUserId: number, dim: string): string {
+  return `guidance:u${answererUserId}:${dim}`;
+}
+
+export function guidanceAnswererId(sourceKey: string | null | undefined): number | null {
+  const match = sourceKey ? GUIDANCE_KEY.exec(sourceKey) : null;
+  return match ? Number(match[1]) : null;
+}
+
+export type GuidanceAnswerInput = {
+  clientId: number;
+  opportunityId: number;
+  dim: "M" | "E" | "D1" | "D2" | "P" | "I" | "C1" | "C2";
+  /** AI 对 SAM 回答的简洁转述（一句话事实） */
+  claim: string;
+  /** SAM 的原始回答（逐字） */
+  answer: string;
+  question: string;
+  subjectName?: string | null;
+  suggestedScore?: number | null;
+  confidence: "high" | "medium" | "low";
+  answererUserId: number;
+  answererName: string;
+  occurredAt: Date;
+};
+
+/** 商机场景的 AI 引导回答 → 一条候选证据（status 由写入方固定为 candidate）。 */
+export function guidanceAnswerToEvidence(input: GuidanceAnswerInput): EvidenceDraft {
+  const claim = input.claim.replace(/^SAM 待确认原文[:：]\s*/, "").trim().slice(0, 800);
+  const score = typeof input.suggestedScore === "number" && Number.isFinite(input.suggestedScore)
+    ? Math.max(0, Math.min(100, Math.round(input.suggestedScore / 25) * 25))
+    : null;
+  return {
+    clientId: input.clientId,
+    opportunityId: input.opportunityId,
+    kind: "observation",
+    claim,
+    quote: input.answer.trim().slice(0, 800),
+    subjectName: input.subjectName?.trim() || null,
+    topics: [input.dim],
+    polarity: "neutral",
+    occurredAt: input.occurredAt,
+    sourceType: "ai_guidance",
+    sourceId: input.opportunityId,
+    sourceKey: guidanceSourceKey(input.answererUserId, input.dim),
+    sourceExcerpt: `AI 问：${input.question.trim().slice(0, 300)}`,
+    confidence: input.confidence,
+    suggestedScore: score,
+    createdBy: input.answererName,
+  };
+}
+
+/**
+ * 服务端兜底：判断一次引导回答能否进入证据台账。返回 null 表示可以，否则返回原因。
+ * “不知道 / 没有 / 尚未发生 / 与项目无关”以及行动安排都不是客户事实，一律不入账。
+ */
+export function guidanceAnswerRejection(input: { answer: string; claim: string; dim: string; answerFocus?: string | null; subjectName?: string | null }): string | null {
+  const answer = input.answer.trim();
+  if (!answer) return "回答为空";
+  if (input.answerFocus === "action_plan") return "行动安排不是客户事实";
+  if (isGuidanceTopicExhaustionAnswer(answer)) return "回答表示未知、没有或尚未发生";
+  const irrelevant = inferIrrelevantProjectParticipants(answer).map(person => person.name);
+  const subject = input.subjectName?.trim();
+  if (irrelevant.length > 0 && (!subject || irrelevant.some(name => name.includes(subject) || subject.includes(name)))) return "回答表示与项目无关";
+  if (!hasValidExtractedFactCandidate({ candidateTarget: "meddpicc", meddpiccDim: input.dim, evidence: input.claim })) return "没有可识别的 MEDDPICC 维度或事实";
+  return null;
 }

@@ -167,6 +167,7 @@ export function EvidenceInbox({ clientId, opportunityId }: { clientId: number; o
                     <div className="min-w-0 flex-1">
                       <p className={cn("text-xs text-slate-100", item.polarity === "negative" && "text-rose-100")}>{item.claim}</p>
                       <p className="mt-0.5 text-[11px] italic text-slate-400">“{item.quote}”</p>
+                      {item.sourceExcerpt ? <p className="mt-0.5 text-[10px] text-slate-500">{item.sourceExcerpt}</p> : null}
                       <div className="mt-1 flex flex-wrap items-center gap-1">
                         {item.subjectName ? <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">{item.subjectName}</span> : null}
                         {item.topics.map(topic => <span key={topic} className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-400">{TOPIC_LABELS[topic] ?? topic}</span>)}
