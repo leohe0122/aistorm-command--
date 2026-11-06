@@ -120,3 +120,68 @@ export function gradeMeetingSignals(output: FullMeetingSignals, source: string, 
   }
   return checks;
 }
+
+// ── 通用证据提取（投喂即入库）──────────────────────────────────────────────
+
+export type ExtractedEvidenceLike = {
+  claim: string;
+  quote: string;
+  subjectName: string | null;
+  topics: string[];
+  polarity: string;
+  suggestedScore: number | null;
+};
+
+export type EvidenceExtractionExpectation = {
+  /** 必须有证据带上这些标签 */
+  topicsInclude?: string[];
+  /** 必须有证据涉及这些人 */
+  subjectsInclude?: string[];
+  /** 不应出现的人（与客户事实无关的人） */
+  subjectsExclude?: string[];
+  /** 必须有关于某人或某关键词的负面证据 */
+  negativeAbout?: string[];
+  /** 某维度建议分不得高于该值 */
+  scoreMax?: Record<string, number>;
+  /** 素材没有客户事实，必须一条都不提取 */
+  expectEmpty?: boolean;
+  minItems?: number;
+};
+
+/** quote 必须是原文片段：要求与原文高度重合（允许空白与标点差异）。 */
+export const QUOTE_GROUNDING_THRESHOLD = 0.85;
+
+export function gradeEvidenceExtraction(items: ExtractedEvidenceLike[], source: string, expect: EvidenceExtractionExpectation): Check[] {
+  const checks: Check[] = [];
+  const add = (name: string, pass: boolean, detail?: string) => checks.push({ name, pass, ...(detail && !pass ? { detail } : {}) });
+
+  const loose = items.filter(item => groundingRatio(item.quote, source) < QUOTE_GROUNDING_THRESHOLD);
+  add("引用均逐字出自原文", loose.length === 0, loose.map(item => `「${item.quote.slice(0, 40)}」`).join("；"));
+  const strangers = items.filter(item => item.subjectName && !appearsIn(item.subjectName, source)).map(item => item.subjectName!);
+  add("涉及人员均出自原文", strangers.length === 0, `原文中找不到：${strangers.join("、")}`);
+  const untagged = items.filter(item => item.topics.length === 0).length;
+  add("每条证据都有标签", untagged === 0, `${untagged} 条无标签`);
+
+  if (expect.expectEmpty) add("无客户事实时不提取", items.length === 0, `实际 ${items.length} 条：${items.map(item => item.claim).join("；").slice(0, 120)}`);
+  if (expect.minItems !== undefined) add(`至少 ${expect.minItems} 条证据`, items.length >= expect.minItems, `实际 ${items.length} 条`);
+
+  const allTopics = new Set(items.flatMap(item => item.topics));
+  for (const topic of expect.topicsInclude ?? []) add(`覆盖标签：${topic}`, allTopics.has(topic), `实际：${Array.from(allTopics).join("、") || "无"}`);
+
+  const subjects = items.map(item => item.subjectName).filter((name): name is string => Boolean(name));
+  for (const name of expect.subjectsInclude ?? []) {
+    add(`涉及人员：${name}`, subjects.some(found => appearsIn(name, found) || appearsIn(found, name)), `实际：${subjects.join("、") || "无"}`);
+  }
+  for (const name of expect.subjectsExclude ?? []) {
+    add(`不应涉及：${name}`, !subjects.some(found => appearsIn(name, found)) && !items.some(item => appearsIn(name, item.claim)), `实际：${subjects.join("、")}`);
+  }
+  for (const keyword of expect.negativeAbout ?? []) {
+    add(`识别不利信号：${keyword}`, items.some(item => item.polarity === "negative" && (appearsIn(keyword, item.claim) || (item.subjectName ? appearsIn(keyword, item.subjectName) : false))), "未找到对应的负面证据");
+  }
+  for (const [dimension, max] of Object.entries(expect.scoreMax ?? {})) {
+    const scores = items.filter(item => item.topics.includes(dimension) && item.suggestedScore !== null).map(item => item.suggestedScore!);
+    const top = scores.length ? Math.max(...scores) : null;
+    add(`${dimension} 建议分不高于 ${max}`, top === null || top <= max, `实际 ${top}`);
+  }
+  return checks;
+}

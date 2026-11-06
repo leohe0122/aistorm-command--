@@ -1147,7 +1147,7 @@ export const evidence = mysqlTable("evidence", {
   topics: json("topics").$type<string[]>().notNull(),
   polarity: mysqlEnum("polarity", ["positive", "negative", "neutral"]).default("neutral").notNull(),
   occurredAt: timestamp("occurredAt"),
-  sourceType: mysqlEnum("sourceType", ["meeting", "email", "call", "document", "ai_guidance", "purchase_signal", "intelligence", "manual", "legacy"]).notNull(),
+  sourceType: mysqlEnum("sourceType", ["meeting", "email", "call", "document", "ai_guidance", "purchase_signal", "intelligence", "manual", "legacy", "ingestion"]).notNull(),
   sourceId: int("sourceId"),
   /** 同一来源内的条目标识，例如拜访信号的 meddpicc:E、contact:0 */
   sourceKey: varchar("sourceKey", { length: 64 }),
@@ -1215,3 +1215,29 @@ export const aiRuns = mysqlTable("ai_runs", {
 ]);
 export type AiRun = typeof aiRuns.$inferSelect;
 export type InsertAiRun = typeof aiRuns.$inferInsert;
+
+/** 投喂记录：用户粘贴的原始素材（邮件、纪要、聊天、电话记录等），AI 从中提取候选证据。 */
+export const ingestions = mysqlTable("ingestions", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("clientId").notNull(),
+  opportunityId: int("opportunityId"),
+  kind: mysqlEnum("kind", ["email", "meeting_notes", "chat", "call_notes", "document", "other"]).notNull(),
+  title: varchar("title", { length: 200 }),
+  /** 素材发生日期（如邮件日期、会议日期），用作证据的 occurredAt */
+  occurredAt: timestamp("occurredAt"),
+  rawText: text("rawText").notNull(),
+  status: mysqlEnum("status", ["pending", "done", "failed"]).default("pending").notNull(),
+  error: varchar("error", { length: 500 }),
+  summary: text("summary"),
+  candidateCount: int("candidateCount").default(0).notNull(),
+  /** 录入人（users.id）；按已确认的规则，录入人本人与 AD 可确认其候选证据 */
+  createdByUserId: int("createdByUserId").notNull(),
+  createdByName: varchar("createdByName", { length: 100 }).notNull(),
+  aiRunId: int("aiRunId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  index("ingestions_client_idx").on(table.clientId, table.createdAt),
+]);
+export type Ingestion = typeof ingestions.$inferSelect;
+export type InsertIngestion = typeof ingestions.$inferInsert;

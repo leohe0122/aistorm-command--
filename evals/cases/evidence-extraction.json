@@ -1,0 +1,77 @@
+[
+  {
+    "id": "email-poc-and-signoff",
+    "description": "客户邮件：POC 要求、签字人与预算状态",
+    "input": {
+      "clientName": "示例保险集团",
+      "kind": "email",
+      "title": "回复：终端安全测试安排",
+      "occurredAt": "2026-10-09",
+      "text": "陈经理您好，\n\n感谢上周的方案介绍。我们内部讨论后，希望在 11 月 15 日前完成为期两周的 POC，测试范围是 200 台办公终端，重点验证勒索防护和误报率，误报率需要低于 1%。\n\nPOC 结论会由我汇总后提交给分管信息科技的副总裁周海峰，最终由他签字。今年的预算已经批了，但金额要等 POC 结果出来后才能最终确定。\n\n另外提醒一下，我们现有厂商的合同 12 月 31 日到期。\n\n信息安全部 经理\n林晓"
+    },
+    "expect": {
+      "topicsInclude": ["technical", "E", "budget", "timeline"],
+      "subjectsInclude": ["林晓", "周海峰"],
+      "minItems": 3
+    }
+  },
+  {
+    "id": "chat-negative-feedback",
+    "description": "聊天记录：客户对测试结果不满、倾向竞品",
+    "input": {
+      "clientName": "示例物流集团",
+      "kind": "chat",
+      "occurredAt": "2026-10-10",
+      "text": "[10:02] 黄志强：测试报告看了，扫描期间服务器 CPU 一直在 90% 以上，运维那边意见很大\n[10:03] 陈晨：明白，我们这边可以调整扫描策略，下周再测一轮？\n[10:05] 黄志强：再测可以，但老板已经说了，如果下轮还这样就直接用深信服的方案\n[10:06] 黄志强：深信服报价比你们低 20%\n[10:08] 陈晨：好的，我今天下午把调整方案发您"
+    },
+    "expect": {
+      "subjectsInclude": ["黄志强"],
+      "topicsInclude": ["competitor", "technical"],
+      "negativeAbout": ["深信服"],
+      "subjectsExclude": ["陈晨"]
+    }
+  },
+  {
+    "id": "logistics-no-customer-facts",
+    "description": "内部协调邮件：只有我方安排，没有客户事实",
+    "input": {
+      "clientName": "示例制造公司",
+      "kind": "email",
+      "title": "内部：下周拜访分工",
+      "occurredAt": "2026-10-08",
+      "text": "各位，下周二去客户现场，SA 吴工负责演示，我负责商务部分。演示环境周一晚上前准备好，资料我会提前打印。会后大家把纪要发我汇总。谢谢！"
+    },
+    "expect": {
+      "expectEmpty": true
+    }
+  },
+  {
+    "id": "english-meeting-notes",
+    "description": "英文会议纪要：评估标准、决策时间与预算上限",
+    "input": {
+      "clientName": "Example Bank Berhad",
+      "kind": "meeting_notes",
+      "occurredAt": "2026-10-07",
+      "text": "Attendees: Aisha Rahman (CISO), Kevin Lim (Procurement Manager)\n\n- Aisha confirmed the evaluation will be scored 40% detection efficacy, 30% total cost, 30% local support in Malaysia.\n- Kevin said any purchase above MYR 1 million needs board approval, and the next board meeting is on 4 December.\n- Aisha mentioned their regulator issued new guidance in September requiring 24x7 monitoring, which is why this project started.\n- Kevin asked for a reference customer in Malaysian banking before shortlisting."
+    },
+    "expect": {
+      "subjectsInclude": ["Aisha Rahman", "Kevin Lim"],
+      "topicsInclude": ["D1", "P", "trigger"],
+      "minItems": 3
+    }
+  },
+  {
+    "id": "plans-are-not-facts",
+    "description": "电话记录：客户只是在考虑，不能写成已决定",
+    "input": {
+      "clientName": "示例零售集团",
+      "kind": "call_notes",
+      "occurredAt": "2026-10-06",
+      "text": "和 IT 总监郑伟通了电话。他说明年可能会考虑升级终端安全，但具体要看集团预算，目前还没有立项，也没有确定负责人。他个人对我们印象还可以，不过没有做任何承诺。"
+    },
+    "expect": {
+      "subjectsInclude": ["郑伟"],
+      "scoreMax": { "M": 25, "E": 25, "P": 25 }
+    }
+  }
+]

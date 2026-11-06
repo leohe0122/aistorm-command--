@@ -151,3 +151,35 @@ export function purchaseSignalToEvidence(signal: {
     createdBy: signal.createdBy || "已登录用户",
   };
 }
+
+/** 投喂素材中提取的证据 → 证据台账候选。sourceKey 用 item:<序号>，对应提取结果中的位置。 */
+export function extractedToEvidence(
+  items: Array<{
+    claim: string;
+    quote: string;
+    subjectName: string | null;
+    topics: string[];
+    polarity: "positive" | "negative" | "neutral";
+    suggestedScore: number | null;
+    confidence: "high" | "medium" | "low";
+  }>,
+  ctx: { clientId: number; opportunityId?: number | null; ingestionId: number; kind: string; occurredAt: Date },
+): EvidenceDraft[] {
+  return items.map((item, index) => ({
+    clientId: ctx.clientId,
+    opportunityId: ctx.opportunityId ?? null,
+    kind: ctx.kind === "document" ? "document" as const : "statement" as const,
+    claim: item.claim,
+    quote: item.quote,
+    subjectName: item.subjectName,
+    topics: item.topics,
+    polarity: item.polarity,
+    occurredAt: ctx.occurredAt,
+    sourceType: "ingestion" as const,
+    sourceId: ctx.ingestionId,
+    sourceKey: `item:${index}`,
+    confidence: item.confidence,
+    suggestedScore: item.suggestedScore,
+    createdBy: "ai",
+  }));
+}
