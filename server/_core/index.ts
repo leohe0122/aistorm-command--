@@ -111,6 +111,11 @@ async function startServer() {
 
   server.listen(port, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${port}/`);
+    // 上次进程中断的投喂提取不会再继续，启动时把它们标记为失败，用户可在面板中重试。
+    import("../evidence/ingestionJobs")
+      .then(({ recoverStaleIngestions }) => recoverStaleIngestions())
+      .then(count => { if (count > 0) console.log(`[ingest] recovered ${count} interrupted ingestion(s)`); })
+      .catch(err => console.warn("[ingest] startup recovery skipped:", err?.message));
   });
 }
 

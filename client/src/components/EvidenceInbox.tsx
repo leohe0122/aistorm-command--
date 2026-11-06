@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Inbox, Loader2, X } from "lucide-react";
+import { Check, Inbox, Loader2, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -39,6 +39,7 @@ export function EvidenceInbox({ clientId, opportunityId }: { clientId: number; o
   const [decisions, setDecisions] = useState<Record<number, "confirm" | "reject">>({});
 
   const candidatesQuery = trpc.ledger.candidates.useQuery({ clientId, opportunityId });
+  const unfinishedQuery = trpc.ledger.unfinishedIngestions.useQuery({ clientId, opportunityId });
   const statusQuery = trpc.ledger.ingestion.useQuery(
     { ingestionId: pendingId ?? 0 },
     { enabled: pendingId !== null, refetchInterval: 3000, refetchIntervalInBackground: true },
@@ -51,10 +52,11 @@ export function EvidenceInbox({ clientId, opportunityId }: { clientId: number; o
       const count = statusQuery.data?.candidateCount ?? 0;
       toast.success(count > 0 ? `AI 已提取 ${count} 条候选证据，请逐条确认` : "素材中没有找到可入账的客户事实");
     } else {
-      toast.error(`提取失败：${statusQuery.data?.error || "未知错误"}。素材已保存，可稍后重新投喂。`);
+      toast.error(`提取失败：${statusQuery.data?.error || "未知错误"}。素材已保存，可在下方点击重试。`);
     }
     setPendingId(null);
     utils.ledger.candidates.invalidate({ clientId, opportunityId });
+    utils.ledger.unfinishedIngestions.invalidate({ clientId, opportunityId });
   }, [statusQuery.data, pendingId, clientId, opportunityId, utils]);
 
   const ingest = trpc.ledger.ingest.useMutation({
@@ -62,6 +64,14 @@ export function EvidenceInbox({ clientId, opportunityId }: { clientId: number; o
       setPendingId(ingestionId);
       setText("");
       setTitle("");
+    },
+    onError: error => toast.error(error.message),
+  });
+
+  const retry = trpc.ledger.retryIngestion.useMutation({
+    onSuccess: ({ ingestionId }) => {
+      setPendingId(ingestionId);
+      utils.ledger.unfinishedIngestions.invalidate({ clientId, opportunityId });
     },
     onError: error => toast.error(error.message),
   });
@@ -120,6 +130,24 @@ export function EvidenceInbox({ clientId, opportunityId }: { clientId: number; o
           {pendingId !== null || ingest.isPending ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />AI 提取中…</> : "提取证据"}
         </Button>
       </div>
+
+      {(unfinishedQuery.data ?? []).filter(item => item.id !== pendingId).length > 0 ? (
+        <div className="mt-3 space-y-1">
+          {(unfinishedQuery.data ?? []).filter(item => item.id !== pendingId).map(item => (
+            <div key={item.id} className="flex items-center justify-between gap-2 rounded border border-slate-800 bg-slate-900/40 px-2 py-1.5 text-[11px]">
+              <span className="min-w-0 truncate text-slate-400">
+                {item.title || KINDS.find(kindItem => kindItem.value === item.kind)?.label} · {item.createdByName} ·{" "}
+                {item.status === "failed" ? <span className="text-rose-300">{item.error || "提取失败"}</span> : <span className="text-amber-200">处理中</span>}
+              </span>
+              {item.canRetry ? (
+                <Button size="sm" variant="ghost" className="h-6 shrink-0 gap-1 text-[11px]" disabled={retry.isPending || pendingId !== null} onClick={() => retry.mutate({ ingestionId: item.id })}>
+                  <RotateCcw className="h-3 w-3" />重试
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {candidates.length > 0 ? (
         <div className="mt-4 border-t border-slate-800 pt-3">
