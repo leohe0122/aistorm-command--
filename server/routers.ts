@@ -8204,31 +8204,8 @@ ${input.extractedText.slice(0, 4000)}
       });
       const ingestionId = (result as any).insertId as number;
 
-      Promise.resolve().then(async () => {
-        try {
-          const contacts = await db.select({ name: keyContacts.name }).from(keyContacts).where(eq(keyContacts.clientId, input.clientId)).limit(50);
-          const { extractEvidence } = await import("./ai/evidenceExtraction");
-          const extracted = await extractEvidence({
-            clientName: client.name,
-            kind: input.kind,
-            title: input.title,
-            occurredAt: occurredAt.toISOString().slice(0, 10),
-            text: input.text,
-            knownContacts: contacts.map(contact => contact.name).filter(Boolean),
-          });
-          const { extractedToEvidence } = await import("./evidence/mapping");
-          const { replaceCandidates } = await import("./evidence/ledger");
-          await replaceCandidates(
-            { sourceType: "ingestion", sourceId: ingestionId },
-            extractedToEvidence(extracted.items, { clientId: input.clientId, opportunityId: input.opportunityId, ingestionId, kind: input.kind, occurredAt }),
-            extracted.aiRunId,
-          );
-          await db.update(ingestions).set({ status: "done", summary: extracted.summary || null, candidateCount: extracted.items.length, aiRunId: extracted.aiRunId ?? null }).where(eq(ingestions.id, ingestionId));
-        } catch (err: any) {
-          console.error("[ingest] extraction failed:", err?.message);
-          await db.update(ingestions).set({ status: "failed", error: String(err?.message || "未知错误").slice(0, 500) }).where(eq(ingestions.id, ingestionId));
-        }
-      });
+      const { startIngestionExtraction } = await import("./evidence/ingestionJobs");
+      startIngestionExtraction(ingestionId);
       return { ingestionId };
     }),
 
@@ -8236,11 +8213,66 @@ ${input.extractedText.slice(0, 4000)}
       const db = await getDb();
       if (!db) return null;
       const { ingestions } = await import("../drizzle/schema");
-      const [row] = await db.select({
-        id: ingestions.id, clientId: ingestions.clientId, status: ingestions.status, error: ingestions.error,
-        summary: ingestions.summary, candidateCount: ingestions.candidateCount,
-      }).from(ingestions).where(eq(ingestions.id, input.ingestionId)).limit(1);
-      return row ?? null;
+      const { isStaleIngestion, recoverStaleIngestions } = await import("./evidence/ingestionJobs");
+      const load = async () => {
+        const [row] = await db.select({
+          id: ingestions.id, clientId: ingestions.clientId, status: ingestions.status, error: ingestions.error,
+          summary: ingestions.summary, candidateCount: ingestions.candidateCount, updatedAt: ingestions.updatedAt,
+        }).from(ingestions).where(eq(ingestions.id, input.ingestionId)).limit(1);
+        return row ?? null;
+      };
+      let row = await load();
+      // 服务重启会让后台提取中断；超时仍为 pending 的记录在这里就地回收为 failed，前端不会无限等待。
+      if (row && isStaleIngestion(row)) {
+        await recoverStaleIngestions();
+        row = await load();
+      }
+      if (!row) return null;
+      const { updatedAt: _updatedAt, ...rest } = row;
+      return rest;
+    }),
+
+    /** 本客户（或商机）下未完成的投喂：失败或仍在处理，便于重试。 */
+    unfinishedIngestions: protectedProcedure.input(z.object({
+      clientId: z.number(),
+      opportunityId: z.number().optional(),
+    })).query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { ingestions } = await import("../drizzle/schema");
+      const { and, desc, eq: eqFn, inArray } = await import("drizzle-orm");
+      const { canManageIngestion, canRetryIngestion, recoverStaleIngestions } = await import("./evidence/ingestionJobs");
+      await recoverStaleIngestions();
+      const filter = input.opportunityId
+        ? and(eqFn(ingestions.clientId, input.clientId), eqFn(ingestions.opportunityId, input.opportunityId), inArray(ingestions.status, ["pending", "failed"]))
+        : and(eqFn(ingestions.clientId, input.clientId), inArray(ingestions.status, ["pending", "failed"]));
+      const rows = await db.select({
+        id: ingestions.id, kind: ingestions.kind, title: ingestions.title, status: ingestions.status, error: ingestions.error,
+        createdByUserId: ingestions.createdByUserId, createdByName: ingestions.createdByName, createdAt: ingestions.createdAt, updatedAt: ingestions.updatedAt,
+      }).from(ingestions).where(filter).orderBy(desc(ingestions.createdAt)).limit(20);
+      const user = { userId: ctx.user.id, role: ctx.user.role, podRole: (ctx.user as any).podRole ?? null };
+      return rows.map(({ updatedAt, createdByUserId, ...row }) => ({
+        ...row,
+        canRetry: canRetryIngestion({ status: row.status, updatedAt }) && canManageIngestion(user, createdByUserId),
+      }));
+    }),
+
+    /** 重新提取失败或中断的素材。录入人本人、AD 与管理员可操作。 */
+    retryIngestion: protectedProcedure.input(z.object({ ingestionId: z.number() })).mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "数据库暂不可用" });
+      const { ingestions } = await import("../drizzle/schema");
+      const { canManageIngestion, canRetryIngestion, startIngestionExtraction } = await import("./evidence/ingestionJobs");
+      const [row] = await db.select({ id: ingestions.id, status: ingestions.status, updatedAt: ingestions.updatedAt, createdByUserId: ingestions.createdByUserId })
+        .from(ingestions).where(eq(ingestions.id, input.ingestionId)).limit(1);
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "素材不存在" });
+      if (!canManageIngestion({ userId: ctx.user.id, role: ctx.user.role, podRole: (ctx.user as any).podRole ?? null }, row.createdByUserId)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "只有录入人或 AD 可以重试" });
+      }
+      if (!canRetryIngestion(row)) throw new TRPCError({ code: "BAD_REQUEST", message: row.status === "done" ? "该素材已提取完成" : "该素材正在处理中" });
+      await db.update(ingestions).set({ status: "pending", error: null }).where(eq(ingestions.id, input.ingestionId));
+      startIngestionExtraction(input.ingestionId);
+      return { ingestionId: input.ingestionId };
     }),
 
     /** 待确认的候选证据，并标出当前用户能否确认每一条。 */
