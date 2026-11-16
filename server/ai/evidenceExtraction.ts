@@ -5,7 +5,7 @@
 import { getLLMTextContent, invokeLLM, type InvokeParams } from "../_core/llm";
 import { SALES_METHODOLOGY_SYSTEM_PROMPT } from "../salesMethodology";
 
-export const EVIDENCE_EXTRACTION_PROMPT_VERSION = "evidence-extraction-v2";
+export const EVIDENCE_EXTRACTION_PROMPT_VERSION = "evidence-extraction-v3";
 
 export const EVIDENCE_TOPICS = [
   "M", "E", "D1", "D2", "P", "I", "C1", "C2",
@@ -88,7 +88,9 @@ ${input.text}
 5. 客户的反对、顾虑、拒绝、延期和对其他厂商的偏好同样是证据，polarity 填 negative。明确对我方有利的表态填 positive，其余填 neutral。
 
 【标签 topics（可多选）】
-- M 量化的业务影响或预算金额；E 谁拍板或签字；D1 选型标准；D2 决策步骤与时间；P 采购、审批、合同流程；I 痛点及其影响；C1 客户内部支持我方的人及其行动；C2 竞争对手相关
+- M 量化的业务影响或预算金额；E 谁拍板或签字；D1 选型标准；D2 决策步骤与时间；P 采购、审批、合同流程；C2 竞争对手相关
+- I 痛点及其影响：已经发生的安全事件、审计或监管发现、业务损失与风险，既标 trigger 也标 I
+- C1 客户内部支持我方的人及其行动。支持者的变化同样是 C1 事实：支持者离职、调岗、失去影响力，或接手的人不支持我方、倾向其他厂商，都要标 C1，polarity 为 negative，建议分 0；不要只标 stakeholder
 - stakeholder 涉及具体人员的角色或立场；relationship 与我方的关系变化；timeline 时间节点；budget 预算状态；trigger 已发生、迫使客户行动的事件
 - why_change 客户为什么要改变；why_now 为什么是现在；why_us 为什么选我方；competitor 提到其他厂商；technical 技术要求、架构、测试与 POC
 
