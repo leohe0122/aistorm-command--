@@ -39,6 +39,8 @@ describe("extracted evidence normalisation", () => {
     expect(items[0].topics).toEqual(["E"]);
     const competitor = normalizeExtractedEvidence({ summary: "", items: [{ claim: "倾向深信服", quote: "直接用深信服的方案", subjectName: null, topics: ["C2"], polarity: "negative", suggestedScore: 25, confidence: "high" }] });
     expect(competitor.items[0].topics).toEqual(["C2", "competitor"]);
+    const multi = normalizeExtractedEvidence({ summary: "", items: [{ claim: "支持者离职", quote: "已离职", subjectName: null, topics: ["C1", "E"], polarity: "negative", suggestedScore: 0, confidence: "high" }] });
+    expect(multi.items[0].suggestedScore).toBeNull();
     expect(items[0].suggestedScore).toBe(50);
     expect(items[1].subjectName).toBeNull();
     expect(items[1].suggestedScore).toBeNull();

@@ -5,7 +5,7 @@
 import { getLLMTextContent, invokeLLM, type InvokeParams } from "../_core/llm";
 import { SALES_METHODOLOGY_SYSTEM_PROMPT } from "../salesMethodology";
 
-export const EVIDENCE_EXTRACTION_PROMPT_VERSION = "evidence-extraction-v3";
+export const EVIDENCE_EXTRACTION_PROMPT_VERSION = "evidence-extraction-v4";
 
 export const EVIDENCE_TOPICS = [
   "M", "E", "D1", "D2", "P", "I", "C1", "C2",
@@ -96,6 +96,7 @@ ${input.text}
 
 【建议分 suggestedScore】
 只在证据带有 MEDDPICC 标签（M/E/D1/D2/P/I/C1/C2）时给出，表示这条证据把该维度推进到什么程度：25 有线索、50 已明确但未验证、75 已验证、100 已书面确认；0 表示明确的不利事实。其他证据填 null。
+一条带建议分的证据只能有一个 MEDDPICC 标签：同一事实同时影响多个维度时，拆成多条证据，每条只标一个维度并各自给分（例如“支持者离职”只标 C1，不要同时标 E）。
 
 【输出】
 summary 用不超过 80 字概括素材中的关键事实；英文素材可用英文。按给定 JSON Schema 输出，JSON 外不得有任何文字。最多 30 条证据。`;
@@ -117,7 +118,10 @@ export function normalizeExtractedEvidence(value: unknown): { summary: string; i
     if (topics.includes("C2") || topics.includes("competitor")) topics.push("C2", "competitor");
     const uniqueTopics = Array.from(new Set(topics)) as EvidenceTopic[];
     const subject = typeof item.subjectName === "string" ? item.subjectName.trim() : "";
-    const hasMeddpicc = uniqueTopics.some(topic => MEDDPICC.has(topic));
+    // 建议分只对单一维度有意义：一条证据带多个 MEDDPICC 标签时，无法判断分数针对哪一维，
+    // 若照样计分，针对 C1 的 0 分会把同一条上的 E 也清零。此时只保留标签、不保留分数（计分时按“有线索”处理）。
+    const meddpiccCount = uniqueTopics.filter(topic => MEDDPICC.has(topic)).length;
+    const hasMeddpicc = meddpiccCount === 1;
     const score = [0, 25, 50, 75, 100].includes(Number(item.suggestedScore)) && item.suggestedScore !== null ? Number(item.suggestedScore) as ExtractedEvidence["suggestedScore"] : null;
     items.push({
       claim,
