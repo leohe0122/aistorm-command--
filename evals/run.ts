@@ -3,6 +3,7 @@
 // 用法：
 //   OPENAI_API_KEY=sk-... pnpm eval                                   # 全部评测集
 //   OPENAI_API_KEY=sk-... pnpm eval --suite evidence-extraction
+//   OPENAI_API_KEY=sk-... pnpm eval --suite deal-scoring
 //   OPENAI_API_KEY=sk-... pnpm eval --case dinner-no-facts
 //   OPENAI_API_KEY=sk-... pnpm eval --tier reasoning --min 0.9
 //
@@ -15,10 +16,13 @@ import { fileURLToPath } from "node:url";
 import { extractEvidence, type EvidenceExtractionInput } from "../server/ai/evidenceExtraction";
 import { extractMeetingSignals, meetingSourceText, type MeetingSignalsInput } from "../server/ai/meetingSignals";
 import type { ModelTier } from "../server/_core/modelRouting";
+import { materialToExtractionInput, scoreStory, type DealStory } from "../server/evidence/dealStories";
 import {
+  gradeDealScoring,
   gradeEvidenceExtraction,
   gradeMeetingSignals,
   type Check,
+  type DealScoringExpectation,
   type EvidenceExtractionExpectation,
   type MeetingSignalsExpectation,
 } from "./graders";
@@ -55,7 +59,26 @@ const evidenceExtractionSuite: Suite<BaseCase & { input: EvidenceExtractionInput
   },
 };
 
-const SUITES = [meetingSignalsSuite, evidenceExtractionSuite] as Array<Suite<any>>;
+// 端到端：一个故事的多份素材依次提取 → 按自动确认规则入账 → 计分 → 与预期分数区间比对
+const dealScoringSuite: Suite<DealStory & { expect: DealScoringExpectation }> = {
+  name: "deal-scoring",
+  label: "故事化评分（端到端）",
+  file: "cases/deal-stories.json",
+  async run(story, tier) {
+    const extracted = [];
+    for (const material of story.materials) {
+      const result = await extractEvidence(materialToExtractionInput(story, material), { tier, timeoutMs: 120_000 });
+      extracted.push({ material, items: result.items });
+    }
+    const { scores } = scoreStory(1, extracted);
+    return {
+      checks: gradeDealScoring(scores, story.expect),
+      output: { scores, evidence: extracted.map(({ material, items }) => ({ material: material.title, items })) },
+    };
+  },
+};
+
+const SUITES = [meetingSignalsSuite, evidenceExtractionSuite, dealScoringSuite] as Array<Suite<any>>;
 
 const here = dirname(fileURLToPath(import.meta.url));
 

@@ -1,0 +1,105 @@
+[
+  {
+    "id": "securities-edr-progress",
+    "description": "证券公司 EDR：从安全事件触发到预算获批，评分应随新事实推进（P 从待批升为已批）",
+    "client": { "name": "【演示】示例证券", "industry": "证券" },
+    "materials": [
+      {
+        "kind": "meeting_notes",
+        "title": "首次交流纪要",
+        "occurredAt": "2026-09-02",
+        "text": "参会：客户信息安全部总监 梁文斌、安全运维主管 许嘉；我方 SAM。\n梁文斌介绍，8 月有一家营业部的终端被勒索软件加密，幸好备份及时，没有影响交易，但监管已经约谈过一次。他说现在的杀毒软件只能做特征查杀，发现不了这类攻击，希望明年一季度前给全公司约 3000 台终端上 EDR。\n许嘉提到，奇安信上个月也来做过交流。\n梁文斌说预算还没有申请，要先看产品效果。"
+      },
+      {
+        "kind": "email",
+        "title": "回复：EDR 评估安排",
+        "occurredAt": "2026-09-20",
+        "text": "您好，\n\n内部讨论后确定了评估方式：检测能力占 50%，对业务终端的性能影响占 30%，价格占 20%。10 月在 200 台终端上做为期三周的 POC。\n\nPOC 结束后由我写评估报告，最终由分管科技的 CTO 宋立新拍板。预算申请已经提交给公司预算委员会，还在等审批结果。\n\n梁文斌\n信息安全部"
+      },
+      {
+        "kind": "chat",
+        "title": "POC 结果沟通",
+        "occurredAt": "2026-10-25",
+        "text": "[15:10] 梁文斌：POC 报告看完了，检出率比我们预期的好，误报只有 0.3%，终端 CPU 占用也在可接受范围\n[15:12] 梁文斌：我会在评估报告里推荐你们，下周一向宋总汇报\n[15:13] 许嘉：不过奇安信的报价比你们低 15%，宋总肯定会问\n[15:15] 梁文斌：价格的事你们准备一下，最好能给出三年总成本的对比"
+      },
+      {
+        "kind": "email",
+        "title": "EDR 项目采购安排",
+        "occurredAt": "2026-11-10",
+        "text": "各供应商您好，\n\nEDR 项目预算已获预算委员会批准，金额 380 万元。宋立新总已同意进入采购程序。\n\n采购流程为：三家比价，比价结果经法务审核合同后签署，计划 12 月 20 日前完成签约。请于 11 月 25 日前提交正式报价。\n\n采购部 何雨\n"
+      }
+    ],
+    "expect": {
+      "dims": {
+        "E": { "min": 50 },
+        "P": { "min": 50 },
+        "D1": { "min": 50 },
+        "C1": { "min": 50 },
+        "C2": { "present": true },
+        "I": { "present": true }
+      }
+    }
+  },
+  {
+    "id": "healthcare-champion-lost",
+    "description": "医疗集团（英文）：支持我方的 IT 总监离职、接任者偏向现有厂商，C1 应随之降到 25 及以下",
+    "client": { "name": "[Demo] Example Healthcare Group", "industry": "Healthcare" },
+    "materials": [
+      {
+        "kind": "meeting_notes",
+        "title": "Discovery meeting",
+        "occurredAt": "2026-08-15",
+        "text": "Attendees: Ravi Menon (IT Director), Our SAM.\nRavi said the last internal audit flagged 400 unmanaged endpoints across their three clinics as a high-risk finding that must be closed before the next audit in March 2027.\nRavi said he has been pushing internally to replace their current endpoint vendor and would like us to be part of the evaluation. He offered to set up a meeting with the CFO, Grace Ong, who approves any purchase above SGD 500k."
+      },
+      {
+        "kind": "email",
+        "title": "RE: Endpoint evaluation next steps",
+        "occurredAt": "2026-09-30",
+        "text": "Hi,\n\nThanks for the session with Grace last week. We have shortlisted two vendors: your team and Trend Micro, who we use today.\n\nThe process is: technical evaluation in October, then the shortlist goes to the IT steering committee on 18 November, and Grace signs off after that.\n\nRegards,\nRavi Menon\nIT Director"
+      },
+      {
+        "kind": "call_notes",
+        "title": "Call with new IT lead",
+        "occurredAt": "2026-10-28",
+        "text": "Ravi Menon has resigned and leaves at the end of October. His replacement, Marcus Lee, joined from another hospital group.\nMarcus said he is not convinced a vendor change is worth the migration effort and would prefer to stay with Trend Micro unless we can show at least 30% lower three-year cost.\nMarcus said he will present his own recommendation to the steering committee; Ravi's previous evaluation notes will not be used."
+      }
+    ],
+    "expect": {
+      "dims": {
+        "C1": { "max": 25 },
+        "E": { "min": 50 },
+        "D2": { "present": true },
+        "C2": { "present": true },
+        "I": { "present": true }
+      }
+    }
+  },
+  {
+    "id": "pharmacy-early-thin",
+    "description": "医药连锁：只有初次来信和内部安排，事实很少，不应被打出高分",
+    "client": { "name": "【演示】示例医药连锁", "industry": "零售医药" },
+    "materials": [
+      {
+        "kind": "email",
+        "title": "咨询：终端安全产品资料",
+        "occurredAt": "2026-10-12",
+        "text": "您好，我是信息部的工程师田野。我们在网上看到贵司的终端安全产品，想了解一下产品资料和大概价格区间，方便的话请发一份介绍材料到这个邮箱。谢谢！\n\n田野"
+      },
+      {
+        "kind": "other",
+        "title": "内部备忘",
+        "occurredAt": "2026-10-13",
+        "text": "已把产品手册发给对方。下周打电话跟进，了解对方门店数量和现有防护情况。暂时不安排 SA。"
+      }
+    ],
+    "expect": {
+      "dims": {
+        "E": { "absent": true },
+        "P": { "absent": true },
+        "C1": { "absent": true }
+      },
+      "maxScore": 25,
+      "maxScoredDims": 2
+    }
+  }
+]
