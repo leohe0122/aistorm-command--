@@ -126,3 +126,25 @@ describe("自托管：定时任务、模型 Key、语音与通知", () => {
     }
   });
 });
+
+describe("自托管：启动配置检查", () => {
+  it("逐项列出缺失的必需配置，s3 驱动额外要求存储桶", async () => {
+    const { runtimeConfigChecks, reportRuntimeConfig } = await import("./_core/runtimeConfig");
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      expect(reportRuntimeConfig({} as NodeJS.ProcessEnv)).toEqual(["DATABASE_URL", "JWT_SECRET", "STORAGE_DRIVER"]);
+      expect(reportRuntimeConfig({ DATABASE_URL: "mysql://x", JWT_SECRET: "short", STORAGE_DRIVER: "local" } as NodeJS.ProcessEnv)).toEqual(["JWT_SECRET"]);
+      expect(reportRuntimeConfig({ DATABASE_URL: "mysql://x", JWT_SECRET: "a".repeat(32), STORAGE_DRIVER: "s3" } as NodeJS.ProcessEnv)).toEqual(["S3_BUCKET"]);
+      expect(runtimeConfigChecks({ DATABASE_URL: "mysql://x", JWT_SECRET: "a".repeat(32), STORAGE_DRIVER: "local" } as NodeJS.ProcessEnv).filter(c => c.required && !c.ok)).toEqual([]);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
+  it(".env.example 只列变量名，不含任何值", () => {
+    const lines = projectFile(".env.example").split("\n").filter(line => line && !line.startsWith("#"));
+    expect(lines.length).toBeGreaterThan(10);
+    for (const line of lines) expect(line).toMatch(/^[A-Z0-9_]+=$/);
+  });
+});

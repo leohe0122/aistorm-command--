@@ -12,10 +12,17 @@ import multer from "multer";
 import { feishuWebhookHandler } from "../feishuBot";
 import { sdk } from "./sdk";
 
-const BUILD_MARKER = "20260902-ai-guidance-negation-guard-v13";
+import { reportRuntimeConfig } from "./runtimeConfig";
+
+const BUILD_MARKER = "20261118-selfhost-v1";
 
 async function startServer() {
   console.log(`[STARTUP] PORT=${process.env.PORT ?? "undefined"} NODE_ENV=${process.env.NODE_ENV ?? "undefined"}`);
+  const missing = reportRuntimeConfig();
+  if (missing.length > 0 && process.env.NODE_ENV === "production") {
+    console.error(`[config] 生产环境缺少必需配置：${missing.join(", ")}。请参考 .env.example 与 docs/DEPLOY.md。`);
+    process.exit(1);
+  }
   const app = express();
   const server = createServer(app);
   // 不依赖数据库、认证或任何外部服务；用于托管平台最早期健康探针。
@@ -29,7 +36,7 @@ async function startServer() {
       build: BUILD_MARKER,
       aiReviewRoute: "review-one-to-n-v3-nonempty-guard",
       aiGuidanceRoute: "contextual-guidance-negation-guard-v13",
-      serviceWorker: "20260902-ai-guidance-negation-guard-v13",
+      serviceWorker: BUILD_MARKER,
       ts: Date.now(),
     });
   });

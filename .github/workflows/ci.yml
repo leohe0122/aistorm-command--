@@ -16,7 +16,23 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    services:
+      # 一次性的空库，只用于验证迁移能从零建起完整结构；与任何真实环境无关。
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-password
+          MYSQL_DATABASE: command_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-only-password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      CI_DATABASE_URL: mysql://root:ci-only-password@127.0.0.1:3306/command_ci
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,9 +41,58 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      - name: Migrate empty database (drizzle-kit migrate)
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm drizzle-kit migrate
+
+      - name: Verify every migration was applied
+        run: |
+          expected=$(node -e "console.log(require('./drizzle/meta/_journal.json').entries.length)")
+          applied=$(mysql -h 127.0.0.1 -uroot -pci-only-password -N -e "select count(*) from command_ci.__drizzle_migrations")
+          tables=$(mysql -h 127.0.0.1 -uroot -pci-only-password -N -e "select count(*) from information_schema.tables where table_schema='command_ci' and table_name <> '__drizzle_migrations'")
+          echo "journal=$expected applied=$applied tables=$tables"
+          test "$expected" = "$applied"
+
       - name: Type check
         run: pnpm check
-      - name: Tests
-        run: pnpm test
+
       - name: Build
         run: pnpm build
+
+      # 单元测试不连数据库（不设置 DATABASE_URL），全部使用桩函数，不调用任何模型。
+      - name: Tests
+        run: pnpm test
+
+      - name: Smoke test (production dependencies only, empty database)
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          # 管理员密码只在本次运行中使用，写入日志前先屏蔽
+          password=$(pnpm -s tsx scripts/create-admin.ts --email ci-admin@example.test --name "CI 管理员" | sed -n 's/^一次性登录密码：//p')
+          echo "::add-mask::$password"
+          test -n "$password"
+
+          smoke=$(mktemp -d)
+          cp -r dist package.json pnpm-lock.yaml patches "$smoke/"
+          (cd "$smoke" && pnpm install --prod --frozen-lockfile --ignore-scripts)
+          test ! -d "$smoke/node_modules/vite"
+
+          (cd "$smoke" && NODE_ENV=production PORT=3100 JWT_SECRET=$(openssl rand -hex 32) STORAGE_DRIVER=local STORAGE_LOCAL_DIR="$smoke/uploads" CRON_SECRET=ci-cron-secret node dist/index.js > "$smoke/server.log" 2>&1 &)
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:3100/__startup >/dev/null && break; sleep 1; done
+
+          curl -fs http://127.0.0.1:3100/ | grep -q '<div id="root">'
+          curl -fs -o /dev/null http://127.0.0.1:3100/icons/icon-192.png
+          login=$(curl -fs -D - -o /dev/null -H 'content-type: application/json' -H 'x-forwarded-proto: https' \
+            http://127.0.0.1:3100/api/trpc/emailAuth.login \
+            -d "{\"json\":{\"email\":\"ci-admin@example.test\",\"password\":\"$password\"}}")
+          token=$(printf '%s' "$login" | sed -n 's/.*email_session=\([^;]*\).*/\1/p')
+          echo "::add-mask::$token"
+          printf '%s' "$login" | grep -qi 'set-cookie: email_session=.*Secure'
+          curl -fs -H "cookie: email_session=$token" http://127.0.0.1:3100/api/trpc/auth.me | grep -q '"role":"admin"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3100/api/scheduled/visit-reminder)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Authorization: Bearer ci-cron-secret' http://127.0.0.1:3100/api/scheduled/visit-reminder)" = "200"
+          echo "smoke test passed"
+          cat "$smoke/server.log"

@@ -134,8 +134,8 @@ describe("作战工作流入口收敛", () => {
     const indexHtml = projectFile("client/index.html");
     const serviceWorker = projectFile("client/public/sw.js");
     const app = projectFile("client/src/App.tsx");
-    expect(indexHtml).toContain("/sw.js?v=20260902-ai-guidance-negation-guard-v13");
-    expect(serviceWorker).toContain("aistorm-command-v20260902-ai-guidance-negation-guard-v13");
+    expect(indexHtml).toContain("/sw.js?v=20261118-selfhost-v1");
+    expect(serviceWorker).toContain("aistorm-command-v20261118-selfhost-v1");
     expect(serviceWorker).toContain("event.request.mode === 'navigate'");
     expect(app).toContain("controllerchange");
   });
@@ -398,7 +398,7 @@ describe("作战工作流入口收敛", () => {
     expect(guidancePanel).toContain("requestGuidance(factHistory");
     expect(guidancePanel).toContain("}, 20_000)");
     expect(guidancePanel).toContain("已切换为基础引导");
-    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20260902-ai-guidance-negation-guard-v13");
+    expect(projectFile("client/public/sw.js")).toContain("aistorm-command-v20261118-selfhost-v1");
     expect(guidancePanel).toContain("const working = pendingGuide || interpretMutation.isPending");
     expect(guidancePanel).not.toContain("healthCheck.refetch()");
     expect(guidancePanel).not.toContain("health_timeout");
