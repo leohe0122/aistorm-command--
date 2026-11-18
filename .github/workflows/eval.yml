@@ -10,6 +10,8 @@ on:
       - evals/**
       - server/ai/**
       - server/_core/modelRouting.ts
+      - server/evidence/assess.ts
+      - server/evidence/dealStories.ts
       - .github/workflows/eval.yml
   workflow_dispatch:
     inputs:

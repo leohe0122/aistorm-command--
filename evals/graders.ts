@@ -185,3 +185,36 @@ export function gradeEvidenceExtraction(items: ExtractedEvidenceLike[], source: 
   }
   return checks;
 }
+
+// ── 端到端评分：素材 → 证据 → 评估 ─────────────────────────────────────────
+
+export type DimensionExpectation = { min?: number; max?: number; present?: boolean; absent?: boolean };
+export type DealScoringExpectation = {
+  dims: Record<string, DimensionExpectation>;
+  /** 任何维度都不得高于该分（事实很少时防止虚高） */
+  maxScore?: number;
+  /** 有分数的维度不得多于该数 */
+  maxScoredDims?: number;
+};
+
+export function gradeDealScoring(scores: Record<string, number>, expect: DealScoringExpectation): Check[] {
+  const checks: Check[] = [];
+  const add = (name: string, pass: boolean, detail?: string) => checks.push({ name, pass, ...(detail && !pass ? { detail } : {}) });
+  const show = (dim: string) => (dim in scores ? String(scores[dim]) : "无分数");
+  for (const [dim, rule] of Object.entries(expect.dims)) {
+    const has = dim in scores;
+    if (rule.absent) add(`${dim} 不应有分数`, !has, `实际 ${show(dim)}`);
+    if (rule.present) add(`${dim} 应有分数`, has, "实际无分数");
+    if (rule.min !== undefined) add(`${dim} 不低于 ${rule.min}`, has && scores[dim] >= rule.min, `实际 ${show(dim)}`);
+    if (rule.max !== undefined) add(`${dim} 不高于 ${rule.max}`, has && scores[dim] <= rule.max, `实际 ${show(dim)}`);
+  }
+  const entries = Object.entries(scores);
+  if (expect.maxScore !== undefined) {
+    const high = entries.filter(([, score]) => score > expect.maxScore!);
+    add(`所有维度不高于 ${expect.maxScore}`, high.length === 0, high.map(([dim, score]) => `${dim}=${score}`).join("、"));
+  }
+  if (expect.maxScoredDims !== undefined) {
+    add(`有分数的维度不多于 ${expect.maxScoredDims} 个`, entries.length <= expect.maxScoredDims, `实际 ${entries.length} 个：${entries.map(([dim, score]) => `${dim}=${score}`).join("、")}`);
+  }
+  return checks;
+}
