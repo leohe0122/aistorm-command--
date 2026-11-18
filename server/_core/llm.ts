@@ -1,3 +1,4 @@
+import { applyBrandTokens, DEFAULT_BRANDING, type Branding } from "@shared/branding";
 import { adaptPayloadForProvider, resolveModel, type ModelTier, type ProviderId } from "./modelRouting";
 import { currentAiFeature } from "./aiContext";
 
@@ -410,6 +411,23 @@ const fetchWithBackoff = async (
     : new Error("LLM request failed after exhausting retries");
 };
 
+async function loadBranding(): Promise<Branding> {
+  try {
+    const { getBranding } = await import("../branding");
+    return await getBranding();
+  } catch {
+    return DEFAULT_BRANDING;
+  }
+}
+
+/** 替换提示词中的品牌占位符（{{brand.companyName}} 等），见 shared/branding.ts。 */
+function brandMessage(message: Message, branding: Branding): Message {
+  const brandPart = (part: MessageContent): MessageContent =>
+    typeof part === "string" ? applyBrandTokens(part, branding)
+      : part.type === "text" ? { ...part, text: applyBrandTokens(part.text, branding) } : part;
+  return { ...message, content: Array.isArray(message.content) ? message.content.map(brandPart) : brandPart(message.content) };
+}
+
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const {
     messages,
@@ -436,9 +454,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const resolved = await resolveProviderConfig({ model, tier, provider: forcedProvider });
+  const branding = await loadBranding();
 
   const basePayload: Record<string, unknown> = {
-    messages: messages.map(normalizeMessage),
+    messages: messages.map(message => normalizeMessage(brandMessage(message, branding))),
   };
 
   if (resolved.model) {

@@ -4,6 +4,8 @@ import { ENV } from "./_core/env";
 import { verifyFeishuWebhook } from "./feishuWebhookAuth";
 
 import { invokeLLM } from "./_core/llm";
+import { applyBrandTokens } from "@shared/branding";
+import { getBranding } from "./branding";
 import { getAllClients, insertMeeting, getDb } from "./db";
 
 // ── 飞书 API 工具函数 ──────────────────────────────────────────────────────────
@@ -26,7 +28,8 @@ async function sendFeishuCard(openId: string, card: object): Promise<void> {
     body: JSON.stringify({
       receive_id: openId,
       msg_type: "interactive",
-      content: JSON.stringify(card),
+      // 卡片文案中的 {{brand.*}} 占位符按本部署的品牌配置替换
+      content: applyBrandTokens(JSON.stringify(card), await getBranding()),
     }),
   });
 }
@@ -241,13 +244,13 @@ export async function sendFeishuWelcomeMessage(params: {
     const card = {
       config: { wide_screen_mode: true },
       header: {
-        title: { tag: "plain_text", content: "🎉 欢迎加入 AIStorm Command！" },
+        title: { tag: "plain_text", content: "🎉 欢迎加入 {{brand.productName}}！" },
         template: "blue",
       },
       elements: [
         {
           tag: "div",
-          text: { tag: "lark_md", content: `**${params.name}** 你好！\n\n你的 AIStorm Command 账号已创建，以下是你的登录信息：` },
+          text: { tag: "lark_md", content: `**${params.name}** 你好！\n\n你的 {{brand.productName}} 账号已创建，以下是你的登录信息：` },
         },
         { tag: "hr" },
         {
@@ -267,7 +270,7 @@ export async function sendFeishuWelcomeMessage(params: {
           actions: [
             {
               tag: "button",
-              text: { tag: "plain_text", content: "🚀 立即登录 AIStorm Command" },
+              text: { tag: "plain_text", content: "🚀 立即登录 {{brand.productName}}" },
               type: "primary",
               url: params.loginUrl,
             },
@@ -276,7 +279,7 @@ export async function sendFeishuWelcomeMessage(params: {
         {
           tag: "note",
           elements: [
-            { tag: "plain_text", content: "登录后请在侧边栏底部点击 🔑 按钮修改密码。如有问题请联系 Leo。" },
+            { tag: "plain_text", content: "登录后请在侧边栏底部点击 🔑 按钮修改密码。如有问题请联系 {{brand.adminContact}}。" },
           ],
         },
       ],
@@ -310,14 +313,14 @@ export async function sendFeishuPasswordReset(params: {
     if (!openId) return { success: false, error: `未找到飞书账号: ${params.email}` };
     const card = {
       config: { wide_screen_mode: true },
-      header: { title: { tag: "plain_text", content: "🔑 你的 AIStorm Command 密码已重置" }, template: "orange" },
+      header: { title: { tag: "plain_text", content: "🔑 你的 {{brand.productName}} 密码已重置" }, template: "orange" },
       elements: [
-        { tag: "div", text: { tag: "lark_md", content: `**${params.name}** 你好！\n\n管理员已为你重置了 AIStorm Command 的登录密码，以下是新的临时密码：` } },
+        { tag: "div", text: { tag: "lark_md", content: `**${params.name}** 你好！\n\n管理员已为你重置了 {{brand.productName}} 的登录密码，以下是新的临时密码：` } },
         { tag: "hr" },
         { tag: "div", text: { tag: "lark_md", content: `**临时密码**\n\`${params.tempPassword}\`` } },
         { tag: "hr" },
         { tag: "action", actions: [{ tag: "button", text: { tag: "plain_text", content: "🚀 立即登录并修改密码" }, type: "primary", url: params.loginUrl }] },
-        { tag: "note", elements: [{ tag: "plain_text", content: "登录后请在侧边栏底部点击 🔑 按钮修改密码。如有问题请联系 Leo。" }] },
+        { tag: "note", elements: [{ tag: "plain_text", content: "登录后请在侧边栏底部点击 🔑 按钮修改密码。如有问题请联系 {{brand.adminContact}}。" }] },
       ],
     };
     await sendFeishuCard(openId, card);
@@ -358,8 +361,8 @@ export async function sendFeishuAccountStatus(params: {
           text: {
             tag: "lark_md",
             content: params.isActive
-              ? `**${params.name}** 你好！\n\n你的 AIStorm Command 账号已由管理员重新启用，现在可以正常登录使用。`
-              : `**${params.name}** 你好！\n\n你的 AIStorm Command 账号已由管理员暂停使用。如有疑问，请联系 Leo。`,
+              ? `**${params.name}** 你好！\n\n你的 {{brand.productName}} 账号已由管理员重新启用，现在可以正常登录使用。`
+              : `**${params.name}** 你好！\n\n你的 {{brand.productName}} 账号已由管理员暂停使用。如有疑问，请联系 {{brand.adminContact}}。`,
           },
         },
         ...(params.isActive ? [
@@ -463,7 +466,7 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
           body: JSON.stringify({
             receive_id: record.openId,
             msg_type: "text",
-            content: JSON.stringify({ text: `✏️ 请发送修改后的信息（用|分隔）：\n客户名|关键信息|参会人\n\n例如：美的集团|讨论了安全预算，明年有采购计划|张总（CTO）\n\n当前记录ID：${action.pendingId}` }),
+            content: JSON.stringify({ text: `✏️ 请发送修改后的信息（用|分隔）：\n客户名|关键信息|参会人\n\n例如：示例客户|讨论了安全预算，明年有采购计划|张总（CTO）\n\n当前记录ID：${action.pendingId}` }),
           }),
         });
         res.json({ toast: { type: "info", content: "请在聊天框中发送修改内容" } });
@@ -742,7 +745,7 @@ ${fileText}`, clientNamesF);
           await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t4}` },
-            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "❓ 无法从文件中识别客户名称，请在发送文件时附上一句话说明，例如：「这是和美的集团的会议记录」" }) }),
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "❓ 无法从文件中识别客户名称，请在发送文件时附上一句话说明，例如：「这是和示例客户的会议记录」" }) }),
           });
           res.json({}); return;
         }
@@ -768,7 +771,7 @@ ${fileText}`, clientNamesF);
         await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t5}` },
-          body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "💡 支持以下录入方式：\n1️⃣ 文字：「刚和美的集团张总吃了饭，聊了安全预算」\n2️⃣ 截图：直接发微信聊天截图\n3️⃣ 文件：发送飞书妙记文件\n4️⃣ 语音：直接发语音消息，自动转文字" }) }),
+          body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "💡 支持以下录入方式：\n1️⃣ 文字：「刚和示例客户张总吃了饭，聊了安全预算」\n2️⃣ 截图：直接发微信聊天截图\n3️⃣ 文件：发送飞书妙记文件\n4️⃣ 语音：直接发语音消息，自动转文字" }) }),
         });
         res.json({});
         return;
@@ -784,7 +787,7 @@ ${fileText}`, clientNamesF);
       if (!text.trim()) { res.json({}); return; }
 
       // 检测是否是修改回复（格式：客户名|关键信息|参会人，且消息中包含 pendingId 提示）
-      // 用户回复格式：美的集团|聊了安全预算|张总
+      // 用户回复格式：示例客户|聊了安全预算|张总
       const editMatch = text.match(/^([^|]+)\|([^|]+)(?:\|(.+))?$/);
       if (editMatch) {
         // 查找最近1小时内该用户的 pending 记录
@@ -833,7 +836,7 @@ ${fileText}`, clientNamesF);
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
           body: JSON.stringify({
             msg_type: "text",
-            content: JSON.stringify({ text: "❓ 无法识别客户名称，请在消息中明确提及客户名称，例如：\n「刚和美的集团张总吃了饭，聊了安全预算的事」" }),
+            content: JSON.stringify({ text: "❓ 无法识别客户名称，请在消息中明确提及客户名称，例如：\n「刚和示例客户张总吃了饭，聊了安全预算的事」" }),
           }),
         });
         res.json({});

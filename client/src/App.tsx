@@ -1,3 +1,4 @@
+import { useBrandTitle } from "@/lib/branding";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch } from "wouter";
@@ -148,6 +149,11 @@ function Router() {
   );
 }
 
+function BrandTitle() {
+  useBrandTitle();
+  return null;
+}
+
 // ── App ────────────────────────────────────────────────────────────────────
 function App() {
   return (
@@ -157,6 +163,7 @@ function App() {
           <TooltipProvider>
             <Toaster />
             <PWAUpdateBanner />
+            <BrandTitle />
             <AuthGate>
               <Router />
             </AuthGate>

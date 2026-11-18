@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { registerBrandRoutes } from "./brandRoutes";
 import { registerFileRoutes } from "./files";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
@@ -44,6 +45,7 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerFileRoutes(app);
+  registerBrandRoutes(app);
 
   // ── Multipart file upload endpoint (bypasses tRPC JSON 32MB limit) ──
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -100,7 +102,7 @@ async function startServer() {
   // 旧 Demo 已随新版三层作战架构下线；在静态资源回退前明确返回永久移除，
   // 防止 CDN 或历史构建继续呈现重构前的演示页面。
   app.get("/demo.html", (_req, res) => {
-    res.status(410).type("text/plain").send("此演示已下线，请使用 AIStorm Command 的实时作战台路径。");
+    res.status(410).type("text/plain").send("此演示已下线，请使用实时作战台。");
   });
 
   // development mode uses Vite, production mode uses static files

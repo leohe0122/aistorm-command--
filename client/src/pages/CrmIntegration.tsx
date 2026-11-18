@@ -1,3 +1,4 @@
+import { useBranding } from "@/lib/branding";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -23,6 +24,7 @@ interface CrmSession {
 }
 
 export function CrmIntegrationPanel({ embedded = false }: { embedded?: boolean }) {
+  const brand = useBranding();
   const [config, setConfig] = useState<CrmConfig>({
     clientId: "",
     clientSecret: "",
@@ -186,7 +188,7 @@ export function CrmIntegrationPanel({ embedded = false }: { embedded?: boolean }
             </span>
           )}
         </div>
-        <p className="text-sm text-muted-foreground">配置销售易凭证，将T100专项商机和关键人数据同步到CRM，保持作战系统与CRM数据一致</p>
+        <p className="text-sm text-muted-foreground">配置销售易凭证，将{brand.programName}专项商机和关键人数据同步到CRM，保持作战系统与CRM数据一致</p>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">

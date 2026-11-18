@@ -74,7 +74,7 @@ export function invalidateClientsCache() { _clientsCache = null; }
 export async function getAllClients(): Promise<Client[]> {
   const db = await getDb();
   if (!db) return [];
-  // isTest clients first (亚信安全 test client at top), then by priority, then id
+  // isTest clients first (test/demo client at top), then by priority, then id
   return db.select().from(clients).orderBy(desc(clients.isTest), clients.priority, clients.id);
 }
 

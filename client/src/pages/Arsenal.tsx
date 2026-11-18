@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,8 @@ import {
   ShoppingCart, X, Calculator, Package, Swords, Shield,
   Eye, Sparkles, ExternalLink, Loader2, Tag, FilePlus2, Files, Folder, FolderOpen, FolderPlus, Pencil
 } from "lucide-react";
-import { PRODUCT_LINE_GROUPS } from '../../../shared/productLines';
+import type { ProductCatalog } from '@shared/productCatalog';
+import { useProductCatalog } from '@/lib/branding';
 import { BookOpen, Star, TrendingUp } from "lucide-react";
 
 // ─── 成功案例库 Tab ──────────────────────────────────────────────────────────
@@ -365,29 +366,40 @@ function CaseStudiesTab() {
 
 // ─── 产品文档仓库 Tab ────────────────────────────────────────────────────────
 
-// 产品线文件夹定义（专属图标+颜色+描述）
-const FOLDER_DEFS = [
-  // 亚信科技
-  { productLine: "算力", label: "算力", group: "亚信科技", icon: "⚡", color: "from-amber-500/20 to-orange-500/10", border: "border-amber-500/30", badge: "bg-amber-500/20 text-amber-400", desc: "AI算力基础设施、GPU集群、算力租赁" },
-  { productLine: "Token运营平台", label: "Token 运营平台", group: "亚信科技", icon: "🪙", color: "from-yellow-500/20 to-amber-500/10", border: "border-yellow-500/30", badge: "bg-yellow-500/20 text-yellow-400", desc: "Token ERP、数字资产运营管理" },
-  { productLine: "物理AI", label: "物理 AI", group: "亚信科技", icon: "🤖", color: "from-blue-500/20 to-cyan-500/10", border: "border-blue-500/30", badge: "bg-blue-500/20 text-blue-400", desc: "具身智能、机器人、物理世界AI应用" },
-  { productLine: "卫星互联", label: "卫星互联", group: "亚信科技", icon: "🛰️", color: "from-indigo-500/20 to-blue-500/10", border: "border-indigo-500/30", badge: "bg-indigo-500/20 text-indigo-400", desc: "卫星通信、低轨卫星网络、天地一体" },
-  // 亚信安全
-  { productLine: "AI XDR", label: "AI XDR 平台", group: "亚信安全", icon: "🏛️", color: "from-violet-500/20 to-purple-500/10", border: "border-violet-500/30", badge: "bg-violet-500/20 text-violet-400", desc: "跨层威胁检测响应、AI驱动XDR平台" },
-  { productLine: "TrustOne", label: "TrustOne", group: "亚信安全", icon: "🛡️", color: "from-green-500/20 to-emerald-500/10", border: "border-green-500/30", badge: "bg-green-500/20 text-green-400", desc: "办公网终端 AV / EDR / 虚拟补丁" },
-  { productLine: "CloudGuard", label: "CloudGuard", group: "亚信安全", icon: "☁️", color: "from-sky-500/20 to-blue-500/10", border: "border-sky-500/30", badge: "bg-sky-500/20 text-sky-400", desc: "CWPP 数据中心及云主机安全防护" },
-  { productLine: "NDR", label: "NDR 系列", group: "亚信安全", icon: "🌐", color: "from-teal-500/20 to-cyan-500/10", border: "border-teal-500/30", badge: "bg-teal-500/20 text-teal-400", desc: "ThreatTrace / ThreatShield / PhishShield" },
-  { productLine: "威胁情报", label: "威胁情报", group: "亚信安全", icon: "🔍", color: "from-red-500/20 to-rose-500/10", border: "border-red-500/30", badge: "bg-red-500/20 text-red-400", desc: "威胁情报平台、IOC、APT追踪" },
-  { productLine: "AI智能体身份安全", label: "AI 智能体身份安全", group: "亚信安全", icon: "🔐", color: "from-pink-500/20 to-rose-500/10", border: "border-pink-500/30", badge: "bg-pink-500/20 text-pink-400", desc: "AI Agent身份认证、零信任访问控制" },
-  { productLine: "安全服务", label: "安全服务", group: "亚信安全", icon: "🎯", color: "from-orange-500/20 to-red-500/10", border: "border-orange-500/30", badge: "bg-orange-500/20 text-orange-400", desc: "EASM / 渗透测试 / 红队 / MDR" },
-  { productLine: "AI大模型防火墙", label: "AI 大模型防火墙", group: "亚信安全", icon: "🔥", color: "from-red-600/20 to-orange-500/10", border: "border-red-600/30", badge: "bg-red-600/20 text-red-400", desc: "大模型安全、LLM防护、提示词注入防御" },
-  // 其他
-  { productLine: "OEM产品", label: "OEM 产品", group: "亚信安全", icon: "🏷️", color: "from-cyan-500/20 to-teal-500/10", border: "border-cyan-500/30", badge: "bg-cyan-500/20 text-cyan-400", desc: "OEM合作产品、贴牌安全产品、合作伙伴集成方案" },
-  // 其他
-  { productLine: "其他参考资料", label: "其他参考资料", group: "其他", icon: "📚", color: "from-slate-500/20 to-gray-500/10", border: "border-slate-500/30", badge: "bg-slate-500/20 text-slate-400", desc: "竞品分析 / 行业报告 / 客户案例" },
+// 产品线文件夹：来自本部署的产品线目录（系统设置 → 品牌与产品线），颜色按顺序轮换。
+const FOLDER_STYLES = [
+  { color: "from-amber-500/20 to-orange-500/10", border: "border-amber-500/30", badge: "bg-amber-500/20 text-amber-400" },
+  { color: "from-yellow-500/20 to-amber-500/10", border: "border-yellow-500/30", badge: "bg-yellow-500/20 text-yellow-400" },
+  { color: "from-blue-500/20 to-cyan-500/10", border: "border-blue-500/30", badge: "bg-blue-500/20 text-blue-400" },
+  { color: "from-indigo-500/20 to-blue-500/10", border: "border-indigo-500/30", badge: "bg-indigo-500/20 text-indigo-400" },
+  { color: "from-violet-500/20 to-purple-500/10", border: "border-violet-500/30", badge: "bg-violet-500/20 text-violet-400" },
+  { color: "from-green-500/20 to-emerald-500/10", border: "border-green-500/30", badge: "bg-green-500/20 text-green-400" },
+  { color: "from-sky-500/20 to-blue-500/10", border: "border-sky-500/30", badge: "bg-sky-500/20 text-sky-400" },
+  { color: "from-teal-500/20 to-cyan-500/10", border: "border-teal-500/30", badge: "bg-teal-500/20 text-teal-400" },
+  { color: "from-red-500/20 to-rose-500/10", border: "border-red-500/30", badge: "bg-red-500/20 text-red-400" },
+  { color: "from-pink-500/20 to-rose-500/10", border: "border-pink-500/30", badge: "bg-pink-500/20 text-pink-400" },
+  { color: "from-orange-500/20 to-red-500/10", border: "border-orange-500/30", badge: "bg-orange-500/20 text-orange-400" },
+  { color: "from-red-600/20 to-orange-500/10", border: "border-red-600/30", badge: "bg-red-600/20 text-red-400" },
+  { color: "from-cyan-500/20 to-teal-500/10", border: "border-cyan-500/30", badge: "bg-cyan-500/20 text-cyan-400" },
+  { color: "from-slate-500/20 to-gray-500/10", border: "border-slate-500/30", badge: "bg-slate-500/20 text-slate-400" },
 ];
 
+type FolderDef = { productLine: string; label: string; group: string; icon: string; desc: string; color: string; border: string; badge: string };
+
+function buildFolderDefs(catalog: ProductCatalog): FolderDef[] {
+  return catalog.lines.map((line, index) => ({
+    productLine: line.value,
+    label: line.label,
+    group: line.group,
+    icon: line.icon,
+    desc: line.summary,
+    ...FOLDER_STYLES[index % FOLDER_STYLES.length],
+  }));
+}
+
 function ProductDocsTab() {
+  const catalog = useProductCatalog();
+  const FOLDER_DEFS = useMemo(() => buildFolderDefs(catalog), [catalog]);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [activeSubfolderId, setActiveSubfolderId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -696,7 +708,7 @@ function ProductDocsTab() {
                         <SelectItem value="root">产品线根目录</SelectItem>
                         {subfolders.map(folder => <SelectItem key={folder.id} value={`subfolder:${folder.id}`}>📁 {folder.name}</SelectItem>)}
                       </SelectGroup>
-                      {["亚信科技", "亚信安全", "其他"].map(group => (
+                      {catalog.groups.map(({ name: group }) => (
                         <SelectGroup key={group}>
                           <SelectLabel>{group}</SelectLabel>
                           {FOLDER_DEFS.filter(f => f.group === group && f.productLine !== activeFolder).map(f => (
@@ -755,7 +767,7 @@ function ProductDocsTab() {
             <div className="space-y-3">
               <div>
                 <label className="text-sm font-medium">文档标题 *</label>
-                <Input className="mt-1" value={uploadForm.title} onChange={e => setUploadForm(f => ({ ...f, title: e.target.value }))} placeholder="例：TrustOne XDR 产品白皮书 v2.0" />
+                <Input className="mt-1" value={uploadForm.title} onChange={e => setUploadForm(f => ({ ...f, title: e.target.value }))} placeholder="例：某产品白皮书 v2.0" />
               </div>
               <div>
                 <label className="text-sm font-medium">描述（可选）</label>
@@ -898,11 +910,7 @@ function ProductDocsTab() {
   }
 
   // ── 主视图：产品线文件夹网格 ──
-  const groups = [
-    { name: "亚信科技", subtitle: "热点敲门砖产品线（定制化方案）", folders: FOLDER_DEFS.filter(f => f.group === "亚信科技") },
-    { name: "亚信安全", subtitle: "安全标品（可直接交付）", folders: FOLDER_DEFS.filter(f => f.group === "亚信安全") },
-    { name: "其他", subtitle: "参考资料库", folders: FOLDER_DEFS.filter(f => f.group === "其他") },
-  ];
+  const groups = catalog.groups.map(group => ({ ...group, folders: FOLDER_DEFS.filter(f => f.group === group.name) }));
 
   return (
     <div className="space-y-8">
@@ -1005,15 +1013,14 @@ function QuoteToolTab() {
 
   const fmtUsd = (v: number) => `$${v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
-  const productLineColors: Record<string, string> = {
-    "TrustOne Suite": "bg-blue-500/10 text-blue-700",
-    "CloudGuard Suite": "bg-purple-500/10 text-purple-700",
-    "Virtual Patch Add-on": "bg-yellow-500/10 text-yellow-700",
-    "NDR Hardware": "bg-gray-500/10 text-gray-700",
-    "ThreatTrace Software": "bg-red-500/10 text-red-700",
-    "ThreatTrace TI Subscription": "bg-orange-500/10 text-orange-700",
-    "Security Services": "bg-green-500/10 text-green-700",
+  // 价目表产品线的标签颜色：按名称稳定地轮换，不写死具体产品名
+  const PRICE_LINE_COLORS = ["bg-blue-500/10 text-blue-700", "bg-purple-500/10 text-purple-700", "bg-yellow-500/10 text-yellow-700", "bg-gray-500/10 text-gray-700", "bg-red-500/10 text-red-700", "bg-orange-500/10 text-orange-700", "bg-green-500/10 text-green-700"];
+  const priceLineColor = (name: string) => {
+    let hash = 0;
+    for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+    return PRICE_LINE_COLORS[hash % PRICE_LINE_COLORS.length];
   };
+
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1043,7 +1050,7 @@ function QuoteToolTab() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-sm">{item.productName}</span>
                     {item.productLine && (
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${productLineColors[item.productLine] || "bg-muted text-muted-foreground"}`}>{item.productLine}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priceLineColor(item.productLine)}`}>{item.productLine}</span>
                     )}
                   </div>
                   {item.model && <p className="text-xs text-muted-foreground mt-0.5">型号: {item.model}</p>}

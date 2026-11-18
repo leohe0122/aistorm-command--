@@ -259,14 +259,12 @@ describe("作战工作流入口收敛", () => {
     expect(workstation).toContain("不会替代本次商机的购买信号或 AD 例外确认");
   });
 
-  it("在战场地图客户名称旁渲染可信品牌标识，并在资产不可用时保留文字回退", () => {
+  it("在战场地图客户名称旁渲染客户标识：只用名称缩写，不再内置任何客户的 Logo", () => {
     const battleMap = projectFile("client/src/pages/BattleMap.tsx");
     const brandMark = projectFile("client/src/components/ClientBrandMark.tsx");
     expect(battleMap).toContain('<ClientBrandMark clientName={client.name} />');
-    expect(brandMark).toContain('"美的集团"');
-    expect(brandMark).toContain('"香港电讯"');
-    expect(brandMark).toContain('"星展银行"');
-    expect(brandMark).toContain("onError={event => event.currentTarget.classList.add");
+    expect(brandMark).not.toContain("<img");
+    expect(brandMark).not.toMatch(/美的集团|香港电讯|星展银行|manus-storage/);
     expect(brandMark).toContain("clientName.slice(0, 2)");
   });
 
