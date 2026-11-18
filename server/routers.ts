@@ -2,7 +2,8 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { EMAIL_SESSION_COOKIE } from "@shared/const";
-import { getProductLinePrompt, PRODUCT_LINE_VALUES } from "@shared/productLines";
+import { productLinePrompt } from "@shared/productCatalog";
+import { getBranding, getProductCatalog } from "./branding";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure as authenticatedProcedure, router } from "./_core/trpc";
@@ -275,7 +276,7 @@ const AI_GUIDANCE_PRIMARY_TIMEOUT_MS = 8_500;
 const AI_GUIDANCE_TOTAL_TIMEOUT_MS = 15_000;
 // 主动引导与回答解释统一使用已验证稳定的 gpt-4o-mini 外部通道；
 // 仅在主路径失败时使用内置 gpt-5-mini 作为有限降级，不改变事实边界。
-const AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT = `你是 AIStorm Command 的主动式销售引导。你的唯一任务是帮助 SAM 把自己已经知道、但尚未录入系统的客户事实存入系统。
+const AI_ACTIVE_GUIDANCE_SYSTEM_PROMPT = `你是 {{brand.productName}} 的主动式销售引导。你的唯一任务是帮助 SAM 把自己已经知道、但尚未录入系统的客户事实存入系统。
 只把客户原话、客户动作、已发生的会议/邮件、明确时间节点或可靠外部事件视为事实；不得将销售计划、主观判断或历史关系直接当作客户意图。
 你不是在指导 SAM 做销售动作，也不是要求 SAM 再去问客户、转发材料或补填方法论字段。你是在问 SAM：你已经知道什么、见过什么、对方说过什么。
 严禁询问尚未发生的会议、评审、报告或未来事件的结果、反馈与评价。
@@ -554,7 +555,7 @@ async function generateAIGuidance(scope: "customer" | "opportunity", snapshot: s
   const scopeBoundary = scope === "opportunity"
     ? "【范围硬约束：商机作战室（Deal Map）】只围绕当前这一笔商机的阶段门控、方案推进、审批、决策、价值、竞争与项目参与人提问。不得询问第一个项目的交付反馈、未来其他安全预算或项目规划、案例合作、联合推广等客户经营（Account Map）题目。"
     : "【范围硬约束：客户经营（Account Map）】只围绕客户关系、组织认知、交付反馈、扩张机会和标杆转化提问；不得代替某一笔商机的阶段门控。";
-  const prompt = `你是 AIStorm Command 的主动式销售引导 AI。
+  const prompt = `你是 {{brand.productName}} 的主动式销售引导 AI。
 你的唯一任务是：读取 SAM 已知但尚未录入系统的信息，一次问一个问题，帮助 SAM 把脑子里的事实存入系统。
 
 你不是在指导 SAM 去做什么销售动作。你不是在要求 SAM 去问客户要什么东西。你是在问 SAM：“你已经知道什么？你见过什么？对方说过什么？”
@@ -1794,10 +1795,11 @@ ${signalsSummary}
         }
       }
       if (needsVisitAction) {
+        const brand = await getBranding();
         parsed.actions.push({
           title: '安排客户拜访',
           objective: visitActionNote,
-          suggestedScript: `您好，我是亚信安全的 ${input.stage === '建图' ? 'SAM' : 'SAM'}，最近在关注贵司在网络安全方面的布局，希望安排一次面对面交流，分享一些行业最新实践，请问本周或下周是否有时间方便？`,
+          suggestedScript: `您好，我是${brand.vendorName}的 SAM，最近在关注贵司在网络安全方面的布局，希望安排一次面对面交流，分享一些行业最新实践，请问本周或下周是否有时间方便？`,
           responsibleRole: 'SAM',
           priority: visitCount === 0 ? '高' : '中',
           timeframe: '本周',
@@ -1894,7 +1896,7 @@ MEDDPICC 状态：${input.meddpiccSummary || '未提供'}
 
 请生成 3-5 条对内资源协调任务，帮助 SAM 将内部资源调动起来。
 典型场景：
-- 指派 SA 确认产品能力（如：确认 AI Pentest 模块是否支持 HKT 的 API 安全场景）
+- 指派 SA 确认产品能力（如：确认某产品模块是否支持客户的 API 安全场景）
 - 申请内部资源（如：申请 POC 环境、申请技术驼居资源）
 - 协调 RSM 属地化支持（如：联系香港渠道伙伴确认报价资格）
 - 提醒 AD 层面关系运作（如：请 AD 确认是否有 C-Level 关系可利用）
@@ -2075,7 +2077,7 @@ ${situationSnapshot}
 {
   "hookTopic": "一句话总结：建议的敲门砖话题（具体、有针对性，基于公开情报）",
   "hookTopicBasis": "支撑该敲门砖建议的具体依据（引用简报中的具体事件、数据或公开言论，1-2句）",
-  "securityAngle": "一句话总结：建议的亚信安全产品切入角度（具体产品线或解决方案）",
+  "securityAngle": "一句话总结：建议的{{brand.vendorName}}产品切入角度（具体产品线或解决方案）",
   "securityAngleBasis": "支撑该安全切入建议的具体依据（引用简报中的具体痛点、风险或行业案例，1-2句）"
 }
 
@@ -2131,10 +2133,11 @@ ${situationSnapshot}
         : 0;
 
       // 阶段退出标准
+      const brand = await getBranding();
       const exitCriteria: Record<string, string> = {
         "建图": "识别出 Economic Buyer + 至少3个关键人，组织架构基本清晰",
         "进门": "与关键人完成首次正式会面，客户同意安排下一次深入交流",
-        "定痛": "① 客户承认痛点（I维度 ≥ 50，拜访记录中有客户原话支撑）+ ② 客户开始认可AIStorm能力（至少1个关键人态度为\"支持\"，或拜访记录出现正面表达）",
+        "定痛": `① 客户承认痛点（I维度 ≥ 50，拜访记录中有客户原话支撑）+ ② 客户开始认可${brand.companyName}能力（至少1个关键人态度为"支持"，或拜访记录出现正面表达）`,
         "找人": "Champion确认（MEDDPICC C维度 ≥ 50）+ 完成与Economic Buyer的首次接触",
         "进入商机": "商机已立项，Blue Sheet已填写，MEDDPICC初始评分完成",
       };
@@ -2199,7 +2202,7 @@ ${situationSnapshot}
           contradictions.push(
             '⚠️ 定痛不完整：客户已承认痛点（I维度达标），但尚无能力认可信号——' +
             '关键人态度中无"支持"，拜访记录中也未检测到正面表述。' +
-            '建议：安排能力展示或案例分享，在客户对AIStorm产生初步认可前不推进至"找人"阶段。'
+            `建议：安排能力展示或案例分享，在客户对${brand.companyName}产生初步认可前不推进至"找人"阶段。`
           );
         }
       }
@@ -3598,7 +3601,7 @@ ${docsSection}
 ### 收益量化
 （安全事件预防节省、合规罚款规避、运营效率提升，每项给出具体数字并标注来源）
 ### 3年TCO对比
-（自建 vs. 采购AIStorm方案的总拥有成本对比）
+（自建 vs. 采购{{brand.companyName}}方案的总拥有成本对比）
 ### 建议预算申请额度
 （给出具体数字和依据）
 ${knowledgeNote}`;
@@ -4166,7 +4169,7 @@ ${input.initiatedBy === "customer" ? "⭐ 重要信号：本次接触由客户�
         return `${c.name}(${c.stage}): MEDDPICC平均${avgScore}分, 本周新增信号${signals.length}条, 完成行动${completed.length}个, 待处理${pending.length}个, AI商机温度${latestScore ? latestScore.overallScore : '未评分'}`;
       }).join('\n');
 
-      const prompt = `以下是大湾区T100专项上周的战场数据：
+      const prompt = `以下是{{brand.programName}}专项上周的战场数据：
 
 ${clientSummaries}
 
@@ -4946,7 +4949,7 @@ ${contactList}
       const prompt = `
 竞品：${ks.competitorName}
 竞品类型：${ks.competitorType || '未指定'}
-我方对应产品：${ks.ourProduct || '亚信安全全线产品'}
+我方对应产品：${ks.ourProduct || '{{brand.vendorName}}全线产品'}
 竞品弱点：${ks.weaknessesText || ''}
 我方优势：${ks.ourAdvantages || ''}
 关键差异点：${ks.keyDiffs || ''}
@@ -4986,7 +4989,7 @@ ${contactList}
       const prompt = `
 竞品：${input.competitorName}
 竞品产品线：${input.productLine || '未指定'}
-我方对应产品：${input.ourProduct || '亚信安全全线产品'}
+我方对应产品：${input.ourProduct || '{{brand.vendorName}}全线产品'}
 客户背景：${input.clientContext || '未提供'}
 
 请生成一份完整的「竞品阻击包（Kill Sheet）」，包含：
@@ -5109,12 +5112,13 @@ ${contactList}
       .mutation(async ({ input }) => {
         try {
           const apiUrl = 'https://api.xiaoshouyi.com/rest/data/v2.0/xobjects/opportunity';
+          const brand = await getBranding();
           const body: Record<string, unknown> = {
             data: {
-              name: `${input.clientName} - T100专项商机`,
+              name: `${input.clientName} - ${brand.programName}专项商机`,
               stage: input.stage,
               closeDate: input.closeDate,
-              description: input.description || 'T100专项作战指挥系统同步',
+              description: input.description || `${brand.programName}专项作战指挥系统同步`,
               ...(input.amount && { amount: input.amount }),
               ...(input.ownerId && { owner: input.ownerId }),
               ...(input.entityType && { entityType: input.entityType }),
@@ -5492,7 +5496,9 @@ ${contactList}
           filename: productDocs.filename,
           extractedText: productDocs.extractedText,
         }).from(productDocs).where(or(isNull(productDocs.productLine), eq(productDocs.productLine, '')));
-        const productLinePromptText = getProductLinePrompt();
+        const catalog = await getProductCatalog();
+        const productLinePromptText = productLinePrompt(catalog);
+        const catalogValues = catalog.lines.map(line => line.value);
         let tagged = 0;
         let failed = 0;
         for (const doc of docs) {
@@ -5500,11 +5506,11 @@ ${contactList}
             const textSnippet = doc.extractedText
               ? doc.extractedText.slice(0, 1500)
               : `文件名：${doc.filename || doc.title}`;
-            const prompt = `请根据文档信息判断该文档属于哪个产品线。\n\n【可选产品线列表】\n${productLinePromptText}\n\n【文档标题】${doc.title}\n【文档内容摘录】\n${textSnippet}\n\n只返回产品线的 value 值（如：AI XDR、TrustOne），不含其他文字。无法判断返回"未知"。`;
+            const prompt = `请根据文档信息判断该文档属于哪个产品线。\n\n【可选产品线列表】\n${productLinePromptText}\n\n【文档标题】${doc.title}\n【文档内容摘录】\n${textSnippet}\n\n只返回列表中某个产品线的 value 值，不含其他文字。无法判断返回"未知"。`;
             const result = await invokeLLM({ model: 'gpt-4o-mini', messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }], maxTokens: 50 });
             const rawText = result.choices?.[0]?.message?.content;
             const productLine = (typeof rawText === 'string' ? rawText : '').trim().replace(/["""'']/g, '').trim();
-            if ((PRODUCT_LINE_VALUES as string[]).includes(productLine)) {
+            if (catalogValues.includes(productLine)) {
               await db.update(productDocs).set({ productLine }).where(eq(productDocs.id, doc.id));
               tagged++;
             } else {
@@ -5665,7 +5671,7 @@ ${context}
             .join("\n");
           if (reviewedHistory) historyContext = `【历史方案处置记录（仅供待验证参考）】\n${reviewedHistory}\n不得把这些反馈当作新的客户事实；如与当前证据冲突，以当前商机事实为准。`;
         }
-        const userMsg = `你是 AIStorm 的资深解决方案架构师，负责将已核验的作战事实转化为可供人工审核的${input.category}材料。
+        const userMsg = `你是 {{brand.companyName}} 的资深解决方案架构师，负责将已核验的作战事实转化为可供人工审核的${input.category}材料。
 
 ${guide}
 
@@ -5680,7 +5686,7 @@ ${historyContext}
 销售需求描述：
 ${input.prompt}
 
-${docContext ? `参考产品文档：\n${docContext}` : "未选择参考文档；仅可使用已入库商机事实与 AIStorm 通用产品知识，不能编造客户数据。"}`;
+${docContext ? `参考产品文档：\n${docContext}` : "未选择参考文档；仅可使用已入库商机事实与 {{brand.companyName}} 通用产品知识，不能编造客户数据。"}`;
 
         const llmResult = await invokeLLM({
           messages: [
@@ -6295,7 +6301,7 @@ ${recentPainPoints || "暂无拜访记录"}
     // 方案提案阶段：AI生成结构化ROI报告
     generateROI: protectedProcedure.input(z.object({
       clientId: z.number(),
-      proposedProducts: z.string().optional(), // 拟推方案（如"TrustOne + CloudGuard"）
+      proposedProducts: z.string().optional(), // 拟推方案（如"产品 A + 产品 B"）
     })).mutation(async ({ input }) => {
       const [client, baseline, contacts] = await Promise.all([
         getClientById(input.clientId),
@@ -6317,7 +6323,7 @@ ${recentPainPoints || "暂无拜访记录"}
 
       const prompt = `
 客户：${client.name}（${client.industry || "未知行业"}）
-拟推方案：${input.proposedProducts || "亚信安全整体方案"}
+拟推方案：${input.proposedProducts || "{{brand.vendorName}}整体方案"}
 ${champion ? `Champion：${champion.name}（${champion.title || ""}）` : ""}
 
 ${baselineText}
@@ -7987,6 +7993,63 @@ ${input.extractedText.slice(0, 4000)}
   }),
 
   // ─── Products 产品配置管理 ───────────────────────────────────────────────
+  // ── 品牌与产品线（每个部署可配置；默认值见 shared/branding.ts）──────────────────────────
+  branding: router({
+    // 登录页在登录前就需要品牌信息，因此公开；只返回可公开展示的字段。
+    get: publicProcedure.query(async () => {
+      const { getBrandLogo } = await import('./branding');
+      const [brand, logo] = await Promise.all([getBranding(), getBrandLogo()]);
+      const logoVersion = logo ? crypto.createHash('sha256').update(logo.data).digest('hex').slice(0, 12) : null;
+      return { ...brand, logoUrl: logoVersion ? `/brand/logo?v=${logoVersion}` : null };
+    }),
+    productCatalog: protectedProcedure.query(() => getProductCatalog()),
+    update: adminProcedure.input(z.object({
+      companyName: z.string(), productName: z.string(), vendorName: z.string(), programName: z.string(), adminContact: z.string(),
+    })).mutation(async ({ input }) => {
+      const { BRANDING_CONFIG_KEY, brandingFieldLimit } = await import('../shared/branding');
+      for (const [key, value] of Object.entries(input)) {
+        const limit = brandingFieldLimit(key as keyof typeof input);
+        if (!value.trim() || value.trim().length > limit) throw new TRPCError({ code: 'BAD_REQUEST', message: `「${key}」不能为空，且不超过 ${limit} 个字` });
+      }
+      await setSystemConfig(BRANDING_CONFIG_KEY, JSON.stringify(Object.fromEntries(Object.entries(input).map(([k, v]) => [k, v.trim()]))));
+      const { clearBrandingCache } = await import('./branding');
+      clearBrandingCache();
+      return getBranding();
+    }),
+    setLogo: adminProcedure.input(z.object({ dataUrl: z.string().max(400_000).nullable() })).mutation(async ({ input }) => {
+      const { BRAND_LOGO_CONFIG_KEY, BRAND_LOGO_MAX_BYTES, parseLogoDataUrl } = await import('../shared/branding');
+      if (input.dataUrl && !parseLogoDataUrl(input.dataUrl)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `Logo 只支持 PNG、JPEG、WebP，且不超过 ${Math.round(BRAND_LOGO_MAX_BYTES / 1024)}KB` });
+      }
+      await setSystemConfig(BRAND_LOGO_CONFIG_KEY, input.dataUrl ?? '');
+      const { clearBrandingCache } = await import('./branding');
+      clearBrandingCache();
+      return { ok: true };
+    }),
+    updateProductCatalog: adminProcedure.input(z.object({
+      catalog: z.unknown(),
+      // 删除或改名会让已归档文档失去所属产品线；需要明确确认
+      allowOrphanedDocs: z.boolean().optional(),
+    })).mutation(async ({ input }) => {
+      const { PRODUCT_CATALOG_CONFIG_KEY, validateProductCatalog } = await import('../shared/productCatalog');
+      const { catalog, problems } = validateProductCatalog(input.catalog);
+      if (problems.length) throw new TRPCError({ code: 'BAD_REQUEST', message: problems.join('；') });
+      const db = await getDb();
+      if (db) {
+        const { productDocs } = await import('../drizzle/schema');
+        const { sql } = await import('drizzle-orm');
+        const used = await db.select({ productLine: productDocs.productLine, count: sql<number>`count(*)` }).from(productDocs).groupBy(productDocs.productLine);
+        const values = new Set(catalog.lines.map(line => line.value));
+        const orphaned = used.filter(row => row.productLine && !values.has(row.productLine)).map(row => ({ value: row.productLine as string, count: Number(row.count) }));
+        if (orphaned.length && !input.allowOrphanedDocs) return { saved: false as const, orphaned };
+      }
+      await setSystemConfig(PRODUCT_CATALOG_CONFIG_KEY, JSON.stringify(catalog));
+      const { clearBrandingCache } = await import('./branding');
+      clearBrandingCache();
+      return { saved: true as const, orphaned: [] as { value: string; count: number }[] };
+    }),
+  }),
+
   products: router({
     list: protectedProcedure.query(async () => {
       const db = await getDb();

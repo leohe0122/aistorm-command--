@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-interface AIStormLogoProps {
+interface DefaultBrandMarkProps {
   className?: string;
   /** Height in pixels, width scales proportionally */
   height?: number;
@@ -13,7 +13,7 @@ interface AIStormLogoProps {
  * Renders the circular ring icon + "AIStorm" text in white.
  * Transparent background — works on any dark surface.
  */
-export default function AIStormLogo({ className, height = 32, showText = true }: AIStormLogoProps) {
+export default function DefaultBrandMark({ className, height = 32, showText = true }: DefaultBrandMarkProps) {
   // Icon aspect ratio ~1:1, text adds ~2.5x width
   const iconSize = height;
   const textWidth = showText ? iconSize * 2.4 : 0;

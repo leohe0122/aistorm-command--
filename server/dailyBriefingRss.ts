@@ -23,7 +23,7 @@ export async function getComplianceRssDigest(limit = 5): Promise<BriefingRssItem
     const results: BriefingRssItem[] = [];
     for (const source of sources) {
       try {
-        const response = await fetch(source.url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; AIStorm Daily Briefing)" }, signal: AbortSignal.timeout(6000) });
+        const response = await fetch(source.url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; Command Daily Briefing)" }, signal: AbortSignal.timeout(6000) });
         if (!response.ok) continue;
         const parsed = parser.parse(await response.text());
         const rawItems = parsed?.rss?.channel?.item || parsed?.feed?.entry || [];
@@ -49,7 +49,7 @@ export function buildDailyBriefingPrompt({ today, clientSummaries, rssDigest }: 
   const externalContext = rssDigest.length > 0
     ? JSON.stringify(rssDigest.map(item => ({ title: item.title, source: item.source, publishedAt: item.pubDate, description: item.description })), null, 2)
     : "暂无可用 RSS 外部情报；不要为此补造外部事件。";
-  return `你是 AIStorm Command 的每日战情简报生成器。今天是${today}。
+  return `你是 {{brand.productName}} 的每日战情简报生成器。今天是${today}。
 
 以下是客户作战系统的已入库事实：
 ${JSON.stringify(clientSummaries, null, 2)}

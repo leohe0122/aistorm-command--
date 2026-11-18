@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { requireCronSecret } from "../_core/cron";
+import { getBranding } from "../branding";
 import { invokeLLM } from "../_core/llm";
 import { notifyOwner } from "../_core/notification";
 import { buildDailyBriefingPrompt, getComplianceRssDigest } from "../dailyBriefingRss";
@@ -92,10 +93,11 @@ export async function dailyBriefingHandler(req: Request, res: Response) {
       : JSON.stringify(llmResult.choices[0]?.message?.content ?? "");
 
     // Format Feishu message
+    const { programName } = await getBranding();
     const feishuPayload = {
       msg_type: "text",
       content: {
-        text: `📊 T100专项每日战情简报 · ${today}\n\n${briefing}\n\n---\n🤖 由T100 AI作战指挥系统自动生成`,
+        text: `📊 ${programName}专项每日战情简报 · ${today}\n\n${briefing}\n\n---\n🤖 由 AI 作战指挥系统自动生成`,
       },
     };
 

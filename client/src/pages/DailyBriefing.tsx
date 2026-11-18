@@ -1,3 +1,4 @@
+import { useBranding } from "@/lib/branding";
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useCanManageAll } from "@/lib/permissions";
@@ -13,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 export default function DailyBriefing() {
+  const brand = useBranding();
   const canManageAll = useCanManageAll();
   const [webhook, setWebhook] = useState("");
   const [enabled, setEnabled] = useState(true);
@@ -78,7 +80,7 @@ export default function DailyBriefing() {
         body: JSON.stringify({
           msg_type: "text",
           content: {
-            text: "🔔 T100 AI作战指挥系统 · 每日简报测试消息\n\n✅ Webhook 配置正确，每日简报将在每天 08:00（北京时间）自动推送。",
+            text: `🔔 ${brand.productName} · 每日简报测试消息\n\n✅ Webhook 配置正确，每日简报将按服务器上配置的时间自动推送。`,
           },
         }),
       });
@@ -123,7 +125,7 @@ export default function DailyBriefing() {
           <h1 className="text-xl font-bold text-foreground">每日简报推送</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          配置飞书 Webhook，每天 08:00（北京时间）自动推送 T100 专项战情简报到飞书群
+          配置飞书 Webhook，每天定时（由服务器定时任务触发）自动推送 {brand.programName} 专项战情简报到飞书群
         </p>
       </div>
 
@@ -281,35 +283,33 @@ export default function DailyBriefing() {
             </div>
 
             <div className="bg-muted/20 rounded-xl p-4 border border-border font-mono text-xs text-foreground space-y-3">
-              <div className="text-primary font-semibold text-sm">📊 T100专项每日战情简报 · 2026年7月24日 星期五</div>
+              <div className="text-primary font-semibold text-sm">📊 每日战情简报 · 示例</div>
 
               <div>
                 <div className="text-muted-foreground mb-1">【今日重点关注】</div>
-                <div>荣耀终端 EU AI Act 合规窗口期剩余 14 天，需本周完成 TrustOne 方案确认；大疆 FCC 审查进入关键阶段，建议 AD 今日跟进 Adam Welsh。</div>
+                <div>示例客户甲的合规窗口期剩余 14 天，需本周完成方案确认；示例客户乙的审查进入关键阶段，建议 AD 今日跟进对方 CIO。</div>
               </div>
 
               <div>
                 <div className="text-muted-foreground mb-1">【客户状态速览】</div>
                 <div className="space-y-0.5">
-                  <div>美的集团 | 建图 | MEDDPICC: 42 | 待办: 3 | 需补充 Economic Buyer</div>
-                  <div>大疆创新 | 进门 | MEDDPICC: 58 | 待办: 2 | FCC 审查进展跟进</div>
-                  <div>荣耀终端 | 定痛 | MEDDPICC: 71 | 待办: 4 | ⚡ 合规窗口期紧迫</div>
-                  <div>传音控股 | 建图 | MEDDPICC: 35 | 待办: 1 | 需识别 Champion</div>
-                  <div>华大基因 | 建图 | MEDDPICC: 29 | 待办: 2 | 沙特数据主权合规</div>
+                  <div>示例客户甲 | 定痛 | MEDDPICC: 71 | 待办: 4 | ⚡ 合规窗口期紧迫</div>
+                  <div>示例客户乙 | 进门 | MEDDPICC: 58 | 待办: 2 | 审查进展跟进</div>
+                  <div>示例客户丙 | 建图 | MEDDPICC: 42 | 待办: 3 | 需补充 Economic Buyer</div>
                 </div>
               </div>
 
               <div>
                 <div className="text-muted-foreground mb-1">【今日建议行动】</div>
                 <div className="space-y-0.5">
-                  <div>1. [AD] 联系荣耀李健，确认 TrustOne 方案 Demo 时间（本周五截止）</div>
-                  <div>2. [SAM] 跟进大疆 Adam Welsh，了解 FCC 最新进展，准备数据安全自证材料</div>
-                  <div>3. [SA] 为美的集团准备 OT/IT 融合安全方案 PPT，重点突出 NDR 价值</div>
+                  <div>1. [AD] 联系示例客户甲的 CIO，确认方案 Demo 时间（本周五截止）</div>
+                  <div>2. [SAM] 跟进示例客户乙，了解审查最新进展，准备数据安全自证材料</div>
+                  <div>3. [SA] 为示例客户丙准备技术方案 PPT，突出与选型标准的对应关系</div>
                 </div>
               </div>
 
               <div className="text-muted-foreground text-[10px] border-t border-border pt-2">
-                🤖 由T100 AI作战指挥系统自动生成
+                🤖 由 AI 作战指挥系统自动生成
               </div>
             </div>
           </div>

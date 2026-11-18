@@ -1,6 +1,7 @@
 import { ReactNode, useState, Fragment } from "react";
 import { Link, useLocation } from "wouter";
-import AIStormLogo from "@/components/AIStormLogo";
+import BrandLogo from "@/components/BrandLogo";
+import { useBranding } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 import {
   Activity, BrainCircuit, Map, Users, MessageSquare,
@@ -173,8 +174,8 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
         <div className="px-4 pt-4 pb-3 border-b border-border relative">
           {/* Top brand accent line */}
           <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: "linear-gradient(90deg, #00A8D6 0%, #1B6FBF 60%, transparent 100%)" }} />
-          {/* AIStorm Logo */}
-          <AIStormLogo height={20} showText={true} className="mb-2" />
+          {/* Brand Logo */}
+          <BrandLogo height={20} showText={true} className="mb-2" />
           {/* System name */}
           <div className="flex items-center gap-2">
             <div className="flex-1">
@@ -291,7 +292,7 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
         <div className="p-3 border-t border-border space-y-2">
           <EmailUserFooter />
           <div className="text-[10px] text-muted-foreground text-center">
-            Powered by <span className="font-semibold" style={{ color: "#00A8D6" }}>AIStorm</span> · AI-Driven Sales Intelligence
+            <PoweredBy />
           </div>
         </div>
       </aside>
@@ -385,4 +386,9 @@ export default function CommandLayout({ children }: { children: ReactNode }) {
       </nav>
     </div>
   );
+}
+
+function PoweredBy() {
+  const { companyName } = useBranding();
+  return <>Powered by <span className="font-semibold" style={{ color: "#00A8D6" }}>{companyName}</span> · AI-Driven Sales Intelligence</>;
 }

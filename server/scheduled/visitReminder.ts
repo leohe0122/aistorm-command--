@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { requireCronSecret } from "../_core/cron";
+import { getBranding } from "../branding";
 import { getSystemConfig, getDb } from "../db";
 import { clients, meetingMinutes } from "../../drizzle/schema";
 import { sql, and, gte, lte } from "drizzle-orm";
@@ -65,10 +66,11 @@ export async function visitReminderHandler(req: Request, res: Response) {
       .map(c => `• ${c.name}（最近拜访：${c.lastVisitDate ? new Date(c.lastVisitDate).toLocaleDateString("zh-CN") : "未知"}）`)
       .join("\n");
 
+    const { productName } = await getBranding();
     const feishuPayload = {
       msg_type: "text",
       content: {
-        text: `⏰ AIStorm Command 拜访纪要提醒\n\n以下客户在过去 24-72 小时内有拜访记录，请在 48 小时内录入书面纪要：\n\n${clientList}\n\n📋 请登录 AIStorm Command → 拜访作战日志 录入纪要，包含 MEDDPICC 更新点、客户真实反应、Next Steps 及责任人。\n\n— AIStorm Command 自动提醒`
+        text: `⏰ ${productName} 拜访纪要提醒\n\n以下客户在过去 24-72 小时内有拜访记录，请在 48 小时内录入书面纪要：\n\n${clientList}\n\n📋 请登录 ${productName} → 拜访作战日志 录入纪要，包含 MEDDPICC 更新点、客户真实反应、Next Steps 及责任人。\n\n— ${productName} 自动提醒`
       }
     };
 

@@ -1,4 +1,7 @@
-import { useState, useEffect } from "react";
+import { useBranding } from "@/lib/branding";
+import { useState, useEffect, useRef } from "react";
+import { BRAND_LOGO_MAX_BYTES, brandingFieldLimit, DEFAULT_BRANDING, type Branding } from "@shared/branding";
+import { DEFAULT_PRODUCT_CATALOG, type ProductCatalog, type ProductGroup, type ProductLine } from "@shared/productCatalog";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
@@ -162,6 +165,7 @@ function RssSourcesTab() {
 
 // ── Feishu Briefing Tab ─────────────────────────────────────────────────────
 function FeishuBriefingTab() {
+  const brand = useBranding();
   const [webhook, setWebhook] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -200,7 +204,7 @@ function FeishuBriefingTab() {
       const res = await fetch(webhook, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ msg_type: "text", content: { text: "✅ AIStorm Command 飞书推送测试成功！" } }),
+        body: JSON.stringify({ msg_type: "text", content: { text: `✅ ${brand.productName} 飞书推送测试成功！` } }),
       });
       const data = await res.json();
       if (data.code === 0) { setTestResult({ ok: true, message: "推送成功！请检查飞书群消息。" }); }
@@ -574,6 +578,7 @@ function LLMConfigTab() {
 
 // ── Products Tab ─────────────────────────────────────────────────────────────
 function ProductsTab() {
+  const brand = useBranding();
   const { data: products, refetch } = trpc.products.list.useQuery();
   const createMutation = trpc.products.create.useMutation({
     onSuccess: () => { refetch(); setShowForm(false); setForm({ name: "", nameEn: "", shortCode: "", description: "", sortOrder: 0 }); toast.success("产品已添加"); }
@@ -594,7 +599,7 @@ function ProductsTab() {
       <div>
         <h3 className="text-base font-semibold text-foreground">产品覆盖度配置</h3>
         <p className="text-sm text-muted-foreground mt-1">
-          配置 AIStorm 产品列表。客户详情页会自动根据商机关联产品显示覆盖状态。
+          配置 {brand.companyName} 产品列表。客户详情页会自动根据商机关联产品显示覆盖状态。
         </p>
       </div>
       <div className="space-y-2">
@@ -733,6 +738,147 @@ function OptionalServicesTab() {
   );
 }
 
+// ── Branding Tab（品牌与产品线）──────────────────────────────────────────────
+const BRAND_FIELDS: { key: keyof Branding; label: string; hint: string }[] = [
+  { key: "companyName", label: "公司名", hint: "登录页、页脚，以及 AI 提示词中的“我方”" },
+  { key: "productName", label: "系统名称", hint: "页面标题、飞书消息、手机主屏幕名称" },
+  { key: "vendorName", label: "我方产品品牌", hint: "AI 生成方案时“我方对应产品”的默认说法" },
+  { key: "programName", label: "重点客户专项名称", hint: "重点客户计划的简称；用于专项相关标题与简报" },
+  { key: "adminContact", label: "账号联系人", hint: "登录页与飞书通知中的“如有问题请联系 …”" },
+];
+
+function BrandingTab() {
+  const utils = trpc.useUtils();
+  const { data: brand } = trpc.branding.get.useQuery();
+  const { data: catalogData } = trpc.branding.productCatalog.useQuery();
+  const updateBrand = trpc.branding.update.useMutation({ onSuccess: () => { utils.branding.get.invalidate(); toast.success("品牌已保存"); }, onError: e => toast.error(e.message) });
+  const setLogo = trpc.branding.setLogo.useMutation({ onSuccess: () => { utils.branding.get.invalidate(); toast.success("Logo 已更新"); }, onError: e => toast.error(e.message) });
+  const saveCatalog = trpc.branding.updateProductCatalog.useMutation({ onError: e => toast.error(e.message) });
+  const [form, setForm] = useState<Branding>(DEFAULT_BRANDING);
+  const [catalog, setCatalog] = useState<ProductCatalog>(DEFAULT_PRODUCT_CATALOG);
+  const [savedValues, setSavedValues] = useState<Set<string>>(new Set());
+  const logoInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (brand) setForm({ companyName: brand.companyName, productName: brand.productName, vendorName: brand.vendorName, programName: brand.programName, adminContact: brand.adminContact }); }, [brand]);
+  useEffect(() => { if (catalogData) { setCatalog(catalogData); setSavedValues(new Set(catalogData.lines.map(line => line.value))); } }, [catalogData]);
+
+  const onLogoFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) { toast.error("只支持 PNG、JPEG、WebP"); return; }
+    if (file.size > BRAND_LOGO_MAX_BYTES) { toast.error(`Logo 不超过 ${Math.round(BRAND_LOGO_MAX_BYTES / 1024)}KB`); return; }
+    const reader = new FileReader();
+    reader.onload = () => setLogo.mutate({ dataUrl: String(reader.result) });
+    reader.readAsDataURL(file);
+  };
+
+  const updateLine = (index: number, patch: Partial<ProductLine>) => setCatalog(c => ({ ...c, lines: c.lines.map((line, i) => i === index ? { ...line, ...patch } : line) }));
+  const moveLine = (index: number, delta: number) => setCatalog(c => {
+    const lines = [...c.lines];
+    const target = index + delta;
+    if (target < 0 || target >= lines.length) return c;
+    [lines[index], lines[target]] = [lines[target], lines[index]];
+    return { ...c, lines };
+  });
+  const updateGroup = (index: number, patch: Partial<ProductGroup>) => setCatalog(c => {
+    const before = c.groups[index].name;
+    const groups = c.groups.map((group, i) => i === index ? { ...group, ...patch } : group);
+    const lines = patch.name !== undefined ? c.lines.map(line => line.group === before ? { ...line, group: patch.name! } : line) : c.lines;
+    return { groups, lines };
+  });
+
+  const submitCatalog = async (next: ProductCatalog, allowOrphanedDocs = false) => {
+    const result = await saveCatalog.mutateAsync({ catalog: next, allowOrphanedDocs });
+    if (!result.saved) {
+      const detail = result.orphaned.map(item => `「${item.value}」${item.count} 份`).join("、");
+      if (window.confirm(`以下产品线已有文档，保存后这些文档将不再出现在任何产品线文件夹中：${detail}。仍要保存吗？`)) return submitCatalog(next, true);
+      return;
+    }
+    utils.branding.productCatalog.invalidate();
+    toast.success("产品线已保存");
+  };
+
+  return (
+    <div className="space-y-8 max-w-4xl">
+      <div>
+        <h3 className="text-base font-semibold text-foreground">品牌与产品线</h3>
+        <p className="text-sm text-muted-foreground mt-1">每个部署可设置自己的公司名、Logo 和产品线；未设置时使用默认值。</p>
+      </div>
+
+      <section className="p-4 rounded-lg border border-border bg-card/30 space-y-4">
+        <div className="text-sm font-semibold">品牌</div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {BRAND_FIELDS.map(field => (
+            <div key={field.key}>
+              <label className="text-xs text-muted-foreground mb-1.5 block">{field.label} <span className="opacity-60">· {field.hint}</span></label>
+              <Input value={form[field.key]} onChange={e => setForm(f => ({ ...f, [field.key]: e.target.value }))} maxLength={brandingFieldLimit(field.key)} className="h-9 text-sm" />
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => updateBrand.mutate(form)} disabled={updateBrand.isPending}><Save className="w-3.5 h-3.5 mr-1.5" />保存品牌</Button>
+          <Button size="sm" variant="outline" onClick={() => setForm(DEFAULT_BRANDING)}>填入默认值</Button>
+        </div>
+        <div className="pt-2 border-t border-border flex items-center gap-4">
+          <div className="text-xs text-muted-foreground w-40">Logo（PNG/JPEG/WebP，≤{Math.round(BRAND_LOGO_MAX_BYTES / 1024)}KB）</div>
+          {brand?.logoUrl ? <img src={brand.logoUrl} alt="Logo" className="h-8 w-auto rounded bg-white/5 p-1" /> : <span className="text-xs text-muted-foreground">未上传（显示默认图形或公司首字母）</span>}
+          <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { onLogoFile(e.target.files?.[0]); e.target.value = ""; }} />
+          <Button size="sm" variant="outline" onClick={() => logoInput.current?.click()}><Upload className="w-3.5 h-3.5 mr-1.5" />上传</Button>
+          {brand?.logoUrl && <Button size="sm" variant="ghost" onClick={() => setLogo.mutate({ dataUrl: null })}><Trash2 className="w-3.5 h-3.5 mr-1.5" />移除</Button>}
+        </div>
+      </section>
+
+      <section className="p-4 rounded-lg border border-border bg-card/30 space-y-4">
+        <div>
+          <div className="text-sm font-semibold">产品线</div>
+          <p className="text-xs text-muted-foreground mt-1">决定武器库的产品线文件夹，以及上传文档时 AI 的自动归类。“归档键”写入每份文档，已有文档的产品线不要改键或删除。</p>
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">分组</div>
+          {catalog.groups.map((group, index) => (
+            <div key={index} className="flex gap-2">
+              <Input value={group.name} onChange={e => updateGroup(index, { name: e.target.value })} placeholder="分组名称" className="h-8 text-sm w-40" />
+              <Input value={group.subtitle} onChange={e => updateGroup(index, { subtitle: e.target.value })} placeholder="一句话说明" className="h-8 text-sm flex-1" />
+              <Button size="sm" variant="ghost" disabled={catalog.lines.some(line => line.group === group.name)} title="分组下还有产品线时不能删除"
+                onClick={() => setCatalog(c => ({ ...c, groups: c.groups.filter((_, i) => i !== index) }))}><Trash2 className="w-3.5 h-3.5" /></Button>
+            </div>
+          ))}
+          <Button size="sm" variant="outline" onClick={() => setCatalog(c => ({ ...c, groups: [...c.groups, { name: `新分组${c.groups.length + 1}`, subtitle: "" }] }))}><Plus className="w-3.5 h-3.5 mr-1.5" />添加分组</Button>
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">产品线（{catalog.lines.length}）</div>
+          {catalog.lines.map((line, index) => (
+            <div key={index} className="grid gap-2 p-2 rounded-md border border-border/60 sm:grid-cols-[3rem_9rem_9rem_8rem_1fr_auto]">
+              <Input value={line.icon} onChange={e => updateLine(index, { icon: e.target.value })} className="h-8 text-sm text-center" title="图标" />
+              <Input value={line.value} onChange={e => updateLine(index, { value: e.target.value })} disabled={savedValues.has(line.value)} placeholder="归档键" className="h-8 text-sm font-mono" title={savedValues.has(line.value) ? "已保存的归档键不可修改" : "归档键"} />
+              <Input value={line.label} onChange={e => updateLine(index, { label: e.target.value })} placeholder="显示名称" className="h-8 text-sm" />
+              <select value={line.group} onChange={e => updateLine(index, { group: e.target.value })} className="h-8 rounded-md border border-input bg-transparent px-2 text-sm">
+                {catalog.groups.map(group => <option key={group.name} value={group.name}>{group.name}</option>)}
+              </select>
+              <div className="space-y-1">
+                <Input value={line.summary} onChange={e => updateLine(index, { summary: e.target.value })} placeholder="文件夹说明" className="h-8 text-sm" />
+                <Input value={line.description} onChange={e => updateLine(index, { description: e.target.value })} placeholder="AI 归类关键词" className="h-8 text-xs" />
+              </div>
+              <div className="flex items-start gap-1">
+                <Button size="sm" variant="ghost" onClick={() => moveLine(index, -1)} title="上移">↑</Button>
+                <Button size="sm" variant="ghost" onClick={() => moveLine(index, 1)} title="下移">↓</Button>
+                <Button size="sm" variant="ghost" onClick={() => setCatalog(c => ({ ...c, lines: c.lines.filter((_, i) => i !== index) }))} title="删除"><Trash2 className="w-3.5 h-3.5" /></Button>
+              </div>
+            </div>
+          ))}
+          <Button size="sm" variant="outline" onClick={() => setCatalog(c => ({ ...c, lines: [...c.lines, { value: "", label: "", group: c.groups[0]?.name ?? "", icon: "📁", summary: "", description: "" }] }))}><Plus className="w-3.5 h-3.5 mr-1.5" />添加产品线</Button>
+        </div>
+
+        <div className="flex gap-2 pt-2 border-t border-border">
+          <Button size="sm" onClick={() => submitCatalog(catalog)} disabled={saveCatalog.isPending}><Save className="w-3.5 h-3.5 mr-1.5" />保存产品线</Button>
+          <Button size="sm" variant="outline" onClick={() => setCatalog(DEFAULT_PRODUCT_CATALOG)}>填入默认产品线</Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 const TABS = [
   { id: "rss", label: "RSS 信息源", icon: Rss, desc: "自定义第三方情报 RSS" },
   { id: "feishu", label: "飞书推送", icon: Bell, desc: "每日战情简报" },
@@ -740,9 +886,11 @@ const TABS = [
   { id: "llm", label: "AI 模型配置", icon: Cpu, desc: "多模型 Key 与路由" },
   { id: "products", label: "产品管理", icon: Package, desc: "产品覆盖度看板配置" },
   { id: "optional", label: "可选服务", icon: Zap, desc: "语音转写 · 管理员通知" },
+  { id: "branding", label: "品牌与产品线", icon: Briefcase, desc: "公司名 · Logo · 产品线" },
 ];
 
 export default function SystemSettings() {
+  const brand = useBranding();
   const [activeTab, setActiveTab] = useState("rss");
   const { user } = useAuth();
   if (!user) return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">请先登录</div>;
@@ -750,7 +898,7 @@ export default function SystemSettings() {
     <div className="flex flex-col items-center justify-center h-full gap-3">
       <Shield className="w-10 h-10 text-muted-foreground/40" />
       <div className="text-sm font-medium text-foreground">仅管理员可访问系统设置</div>
-      <div className="text-xs text-muted-foreground">请联系系统管理员（Leo）获取权限</div>
+      <div className="text-xs text-muted-foreground">请联系系统管理员（{brand.adminContact}）获取权限</div>
     </div>
   );
   return (
@@ -799,6 +947,7 @@ export default function SystemSettings() {
           {activeTab === "llm" && <LLMConfigTab />}
           {activeTab === "products" && <ProductsTab />}
           {activeTab === "optional" && <OptionalServicesTab />}
+          {activeTab === "branding" && <BrandingTab />}
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import AIStormLogo from "@/components/AIStormLogo";
+import BrandLogo from "@/components/BrandLogo";
+import { useBranding } from "@/lib/branding";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Mail, Lock, User, Eye, EyeOff, LogIn } from "lucide-react";
@@ -60,13 +61,14 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
     registerMut.mutate({ email, password, name });
   };
 
+  const brand = useBranding();
   return (
     <div className="h-screen flex" style={{ background: "oklch(0.09 0.025 240)" }}>
       {/* Left panel - branding */}
       <div className="hidden md:flex md:w-5/12 flex-col justify-between p-10 relative overflow-hidden"
         style={{ background: "linear-gradient(160deg, #05070e 0%, #08162b 42%, #130d1a 100%)" }}>
 
-        {/* Network grid + glow — matches aistorm.com hero */}
+        {/* Network grid + glow */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full"
             style={{ background: "radial-gradient(circle, rgba(0,168,214,0.20) 0%, transparent 65%)" }} />
@@ -87,13 +89,13 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
 
        {/* Logo */}
         <div className="relative z-10">
-          <AIStormLogo height={28} showText={true} />
+          <BrandLogo height={28} showText={true} />
         </div>
 
         {/* Center content */}
         <div className="relative z-10">
           <h2 className="text-4xl font-bold text-white leading-tight mb-5" style={{ textShadow: "0 0 22px rgba(0,168,214,.32), 0 0 2px #ffffff" }}>
-            AIStorm<br />
+            {brand.companyName}<br />
             <span style={{ background: "linear-gradient(90deg, #00A8D6, #4DB87A)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               Command
             </span>
@@ -114,7 +116,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
 
         {/* Bottom */}
         <div className="relative z-10">
-          <p className="text-xs text-white/30">仅限 AIStorm 内部团队使用</p>
+          <p className="text-xs text-white/30">仅限 {brand.companyName} 内部团队使用</p>
         </div>
       </div>
 
@@ -126,7 +128,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
           style={{ background: "radial-gradient(circle, rgba(0,168,214,0.06) 0%, transparent 70%)" }} />
        {/* Mobile logo */}
         <div className="md:hidden mb-8">
-          <AIStormLogo height={24} showText={true} />
+          <BrandLogo height={24} showText={true} />
         </div>
 
         <div className="w-full max-w-md">
@@ -139,7 +141,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
             欢迎回来
           </h1>
           <p className="text-sm text-white/40">
-            使用公司邮箱登录 AIStorm Command
+            使用公司邮箱登录 {brand.productName}
           </p>
         </div>
 
@@ -192,7 +194,7 @@ export default function EmailLogin({ onSuccess }: EmailLoginProps) {
           </form>
 
           <p className="text-center text-[11px] text-white/25 mt-6">
-            账号由管理员统一开通 · 如需申请请联系 Leo
+            账号由管理员统一开通 · 如需申请请联系 {brand.adminContact}
           </p>
           </div>{/* /form card */}
         </div>

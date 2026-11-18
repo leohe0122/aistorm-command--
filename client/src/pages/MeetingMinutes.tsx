@@ -1,3 +1,4 @@
+import { useBranding } from "@/lib/branding";
 import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -105,6 +106,7 @@ const dimToScoreField: Record<string, string> = {
 };
 
 export default function MeetingMinutes() {
+  const brand = useBranding();
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
   // Voice auto-trigger from ?voice=1 URL param
   const autoVoice = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('voice') === '1';
@@ -625,7 +627,7 @@ export default function MeetingMinutes() {
               </div>
               <div>
                 <label className="text-xs text-muted-foreground mb-1.5 block">参会人（可选）</label>
-                <Input className="h-8 text-sm" placeholder="例如：张总（CTO）、Leo、SA 张三" value={attendees} onChange={(e) => setAttendees(e.target.value)} />
+                <Input className="h-8 text-sm" placeholder="例如：张总（CTO）、AD 李四、SA 张三" value={attendees} onChange={(e) => setAttendees(e.target.value)} />
               </div>
 
               {/* Transcript Section */}
@@ -944,7 +946,7 @@ export default function MeetingMinutes() {
                                                 </button>
                                               </TooltipTrigger>
                                               <TooltipContent side="top" className="max-w-xs text-xs">
-                                                <p>基于本次拜访中识别的客户痛点和亚信安全产品能力匹配提炼</p>
+                                                <p>基于本次拜访中识别的客户痛点和{brand.vendorName}产品能力匹配提炼</p>
                                               </TooltipContent>
                                             </Tooltip>
                                           </TooltipProvider>

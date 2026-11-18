@@ -1,3 +1,4 @@
+import { useBranding } from "@/lib/branding";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +11,7 @@ const POD_ROLES = ["AD", "SAM", "SA", "RSM"] as const;
 const SYSTEM_ROLES = ["admin", "user"] as const;
 
 export default function UserManagement() {
+  const brand = useBranding();
   const { data: users, isLoading, refetch } = trpc.admin.listUsers.useQuery();
   const toggleMutation = trpc.admin.toggleUser.useMutation({
     onSuccess: () => { refetch(); toast.success("用户状态已更新"); },
@@ -46,7 +48,7 @@ export default function UserManagement() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-foreground">用户管理</h1>
-            <p className="text-sm text-muted-foreground">管理 AIStorm Command 的团队成员账号与角色</p>
+            <p className="text-sm text-muted-foreground">管理 {brand.productName} 的团队成员账号与角色</p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-2">

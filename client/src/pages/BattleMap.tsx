@@ -1,3 +1,4 @@
+import { useBranding } from "@/lib/branding";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { useCanManageAll } from "@/lib/permissions";
@@ -28,7 +29,7 @@ const MEDDPICC_ITEMS = [
   { key: "decisionProcess", label: "D", fullLabel: "D — Decision Process 决策流程", tooltipTerm: "Decision Process", scoreKey: "decisionProcessScore", notesKey: "decisionProcessNotes", placeholder: "例：IT评估→安委会→CFO→CEO，约10周" },
   { key: "paperProcess", label: "P", fullLabel: "P — Paper Process 采购流程", tooltipTerm: "Paper Process", scoreKey: "paperProcessScore", notesKey: "paperProcessNotes", placeholder: "例：上市公司>50万需董事会审批，提前6周启动" },
   { key: "implicatePain", label: "I", fullLabel: "I — Implicate Pain 痛点紧迫性", tooltipTerm: "Implicate Pain", scoreKey: "implicatePainScore", notesKey: "implicatePainNotes", placeholder: "例：PDPA违规最高罚款100万新元+72小时报告义务" },
-  { key: "champion", label: "C", fullLabel: "C — Champion 内部推手", tooltipTerm: "Champion", scoreKey: "championScore", notesKey: "championNotes", nameKey: "championName", placeholder: "例：信息安全总监张伟，认可TrustOne价值，愿意内部推动" },
+  { key: "champion", label: "C", fullLabel: "C — Champion 内部推手", tooltipTerm: "Champion", scoreKey: "championScore", notesKey: "championNotes", nameKey: "championName", placeholder: "例：信息安全总监张伟，认可我方方案价值，愿意内部推动" },
   { key: "competition", label: "C", fullLabel: "C — Competition 竞争态势", tooltipTerm: "Competition", scoreKey: "competitionScore", notesKey: "competitionNotes", placeholder: "例：同时评估Palo Alto，我方优势：中文支持+出海场景" },
 ] as const;
 
@@ -1501,6 +1502,7 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
   initialTab?: "meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin";
   focusOppId?: number | null;
 }) {
+  const brand = useBranding();
   const [, setLocation] = useLocation();
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [activeTab, setActiveTab] = useState<"meddpicc" | "contacts" | "trend" | "fronts" | "winstrategy" | "spin" | "metrics">(initialTab ?? "meddpicc");
@@ -2125,7 +2127,7 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
               <div>
                 <h3 className="text-base font-semibold text-foreground mb-1">定痛不完整 — 确认强制推进？</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
-                  当前无关键人态度标注为「支持」，客户对 AIStorm 能力的认可信号尚未确认。
+                  当前无关键人态度标注为「支持」，客户对 {brand.companyName} 能力的认可信号尚未确认。
                 </p>
               </div>
             </div>
@@ -2748,40 +2750,8 @@ function ClientCard({ client, defaultExpanded, initialTab, focusOppId }: {
 
           {/* SPIN提问库 tab */}
           {activeTab === "spin" && (() => {
-            // 基于客户名称匹配预置SPIN问题库
-            const spinLibrary: Record<string, { s: string[]; p: string[]; i: string[]; n: string[] }> = {
-              "美的集团": {
-               s: ["美的泰国工厂目前部署了哪些AI应用？72个AI应用的安全管控机制是什么？", "海外22个制造基地的安全架构是统一管理还是各地自建？", "美云智数平台目前承载了哪些核心业务数据？"],
-               p: ["OT/IT融合后，工厂东西向流量的安全盲区是否已有系统性解决方案？", "多云AI基础设施（美擎AIGC）是否存在统一安全态势管理的缺口？", "泰国工厂的智能体（13个主要智能体）之间的身份认证和访问控制是如何实现的？"],
-               i: ["如果一次工厂OT安全事件导致生产线停工，对美的海外营收（占比43%）的影响是多少？", "AI算力投入（3年600亿）如果缺乏统一的Token成本治理，预计每年的算力浪费有多大？", "在FCC/EU等监管压力下，海外工厂数据合规问题如果未解决，对美的出海战略的影响是什么？"],
-                n: ["如果有一套方案能在3-5天内部署私有化大模型推理，同时降低AI总支出30-50%，美的的ROI预期是什么？", "如果AIStorm能帮助美的泰国工厂通过Real2Sim2Real解决多品种混产瓶颈，这对美的的战略价值如何量化？", "如果22个海外制造基地能统一接入一套安全态势管理平台，美的在合规审计和安全运营上的人力成本能降低多少？"]
-              },
-              "传音控股": {
-               s: ["传音的SPIFFE/SPIRE标准MultiAgent身份认证体系目前处于什么建设阶段？", "数据主权区域中心计划覆盖哪些地区？非洲和东南亚的部署时间表是什么？", "传音与Google Cloud的深度合作在安全层面是否有商业产品集成需求？"],
-               p: ["基于SPIFFE/SPIRE的开源实现是否存在企业级商业支持和SLA保障的缺口？", "分布式区域中心之间的东西向流量是否有统一的安全监控方案？", "非洲/东南亚基建薄弱区的网络连通性是否影响了安全系统的部署和运维？"],
-               i: ["如果MultiAgent身份认证体系出现漏洞，对传音1.69亿部手机用户数据的影响是什么？", "在非洲/东南亚40%市占率的背景下，一次重大安全事件对品牌信任的损失如何量化？", "数据主权合规问题如果未解决，对传音进入欧盟市场的时间线有什么影响？"],
-                n: ["如果Agent Trust Fabric能直接对接传音现有的SPIFFE/SPIRE架构，传音的集成成本和时间可以节省多少？", "卫星宽带+Agent安全的打包方案，对传音在非洲基建薄弱区的覆盖能力提升有多大？", "如果传音能率先在非洲市场建立'卫星宽带+端侧AI安全'的标准，这对传音的品牌溢价和竞争壁垒有什么价值？"]
-              },
-              "大疆创新": {
-               s: ["大疆目前针对FCC Covered List的应对策略是什么？是否有第三方安全审计合作方？", "大疆企业级数据安全架构通过了哪些独立安全审计？审计结果是否对外公开？", "无人机在远海/雪山等无网区的超视距通信目前是如何解决的？"],
-               p: ["FCC审查压力下，大疆的企业客户（政府/公共安全）对数据流向审计的需求有多迫切？", "现有的独立安全审计是否足以应对美国市场的监管要求？是否需要持续性的第三方监控？", "超视距通信的刚需场景（远海/雪山）目前是否有可靠的商业解决方案？"],
-               i: ["如果无法有效应对FCC审查，大疆在企业级市场（政府/公共安全）的收入损失预计是多少？", "一次数据安全事件对大疆全球70%市占率的品牌信任影响如何量化？", "超视距通信问题如果无法解决，大疆在工业无人机（农业/测绘/应急）市场的增长天花板在哪里？"],
-                n: ["如果NDR方案能提供持续性的数据流向审计报告，大疆向企业客户证明安全合规的效率能提升多少？", "千帆星座卫星宽带如果能解决超视距通信刚需，大疆工业无人机的可用场景能扩展多少？", "如果大疆能通过独立第三方安全认证重新进入政府采购名单，这对大疆企业级业务的营收增长意味着什么？"]
-              },
-              "荣耀终端": {
-               s: ["荣耀脱离华为体系后，终端安全体系是完全自建还是有外部合作？", "AI助手Yoyo目前在EU AI Act合规方面的准备进展如何？由哪个团队主导？", "荣耀的大模型训练算力目前是自建还是云端？Token成本管理是否有系统性方案？"],
-               p: ["独立运营后，荣耀的终端安全体系是否存在与华为时代不同的新缺口？", "EU AI Act分阶段合规要求（2025-2027年）对荣耀AI助手Yoyo的具体影响是什么？", "海外销量增长47%的背景下，安全合规体系是否能跟上国际化扩张的速度？"],
-               i: ["如果EU AI Act合规问题未解决，荣耀在欧洲市场的销售禁令风险对五年100亿美元阿尔法战略的影响是什么？", "终端安全体系重建如果依赖自研，时间成本和人力投入是多少？与引入成熟商业方案相比如何？", "AI算力成本如果没有有效治理，荣耀大模型研发的ROI如何保障？"],
-                n: ["如果Agent Trust Fabric能帮助Yoyo通过EU AI Act合规认证，荣耀进入欧洲市场的时间线能提前多少？", "RTX 6000D私有化推理一体机+Token ERP如果能降低AI总支出30-50%，对荣耀五年100亿美元投入的ROI改善有多大？", "如果荣耀能率先在AI终端生态中建立'安全即服务'的商业模式，这对荣耀IPO估值和投资者信心有什么影响？"]
-              },
-              "华大基因": {
-               s: ["沙特Genalive私有数据中心目前的安全架构是什么？处理83家公立医院数据的合规证明机制如何？", "GeneT Agent智能体的身份管理和访问控制目前是如何实现的？", "华大基因在中东/东南亚扩张中，跨境基因数据合规的主要挑战是什么？"],
-               p: ["沙特卫生部3年合同（93万次基因检测）是否要求第三方安全合规证明？现有方案是否满足要求？", "美国生物安全审查压力下，华大基因的供应链和数据流向是否有系统性的合规监控方案？", "GeneT Agent的多智能体协作是否存在身份认证和数据访问控制的安全缺口？"],
-               i: ["如果沙特Genalive数据中心出现安全事件，对华大基因3年合同和中东扩张战略的影响是什么？", "美国生物安全审查如果升级，华大基因在全球100+国家业务的合规风险如何量化？", "跨境基因数据合规问题如果未解决，华大基因进入欧盟/日本等高价值市场的障碍有多大？"],
-                n: ["如果CloudGuard能为Genalive数据中心提供持续性的云安全合规报告，华大基因向沙特卫生部的合规证明效率能提升多少？", "RTX 6000D私有化推理一体机（数据全程不出域）如果能满足生命科学合规要求，华大基因的数据主权成本能降低多少？", "如果华大基因能通过AIStorm的安全方案在中东建立'基因数据主权合规'的标杆案例，这对华大基因进入更多GCC国家市场的价值是什么？"]
-              }
-            };
-            const spin = spinLibrary[client.name];
+            // 客户专属 SPIN 问题库不再内置在代码里（旧客户已放弃，新客户按真实接触录入）。
+            const spin = undefined as { s: string[]; p: string[]; i: string[]; n: string[] } | undefined;
             const spinColors = { s: "text-blue-400 bg-blue-500/10 border-blue-500/20", p: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20", i: "text-orange-400 bg-orange-500/10 border-orange-500/20", n: "text-green-400 bg-green-500/10 border-green-500/20" };
             const spinLabels = { s: "S — Situation（现状问题）", p: "P — Problem（困难问题）", i: "I — Implication（影响问题）", n: "N — Need-Payoff（需求回报问题）" };
             const spinOwners = { s: "SAM 会前摸底", p: "SAM 初次接触", i: "AD C-Level 刺痛", n: "AD 高层会面收尾" };
@@ -3605,6 +3575,7 @@ function WinStrategyExtras({ clientId, aiSuggestion, enabled, stage }: { clientI
 }
 
 export default function BattleMap() {
+  const brand = useBranding();
   const utils = trpc.useUtils();
   const { data: clients = [], isLoading } = trpc.clients.list.useQuery();
   const isAD = useCanManageAll();
@@ -3709,13 +3680,13 @@ export default function BattleMap() {
 
   // CSV Template columns
   const CSV_TEMPLATE_HEADER = "客户名称,英文名称,行业,当前阶段,敲门砖话题,安全切入点,情报监控关键词(英文分号分隔)";
-  const CSV_TEMPLATE_EXAMPLE = "华为技术,Huawei Technologies,通信/5G基础设施,建图,客户正在推进安全自动化,TrustOne EDR + NDR,Huawei 5G security NDR";
+  const CSV_TEMPLATE_EXAMPLE = "示例客户,Example Corp,制造,建图,客户正在推进安全自动化,产品 A + 产品 B,example keywords";
   function downloadTemplate() {
     const bom = "\uFEFF";
     const content = bom + CSV_TEMPLATE_HEADER + "\n" + CSV_TEMPLATE_EXAMPLE;
     const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "T100客户导入模板.csv"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = `${brand.programName}客户导入模板.csv`; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -3947,7 +3918,7 @@ export default function BattleMap() {
               <div className="border border-border/50 rounded-2xl p-8 bg-card/50 text-center space-y-6">
                 <div>
                   <div className="text-3xl mb-2">🎯</div>
-                  <h2 className="text-lg font-bold text-foreground">欢迎使用 AIStorm Command</h2>
+                  <h2 className="text-lg font-bold text-foreground">欢迎使用 {brand.productName}</h2>
                   <p className="text-sm text-muted-foreground mt-1">3步开始你的第一个大客户攻坚</p>
                 </div>
                 <div className="grid grid-cols-3 gap-4 text-left">
@@ -3998,7 +3969,7 @@ export default function BattleMap() {
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>新增 T100 战略客户</DialogTitle>
+            <DialogTitle>新增 {brand.programName} 战略客户</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
@@ -4036,7 +4007,7 @@ export default function BattleMap() {
               <div className="space-y-1.5">
                 <Label>安全切入点 <span className="text-muted-foreground text-xs">— 主推产品线</span></Label>
                 <Textarea
-                  placeholder="例：TrustOne EDR + 智能体安全管控平台"
+                  placeholder="例：产品 A + 产品 B"
                   className="text-xs h-14 resize-none"
                   value={form.securityAngle}
                   onChange={e => setForm(f => ({ ...f, securityAngle: e.target.value }))}
@@ -4189,7 +4160,7 @@ export default function BattleMap() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-4 h-4" />
-              {importStep === "upload" && "批量导入 T100 客户"}
+              {importStep === "upload" && `批量导入 ${brand.programName} 客户`}
               {importStep === "preview" && `预览导入数据（${importRows.length} 条）`}
               {importStep === "done" && "导入完成"}
             </DialogTitle>
