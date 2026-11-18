@@ -28,9 +28,9 @@ async function makeBundle(overrides: Partial<Bundle> = {}) {
   const bundle: Bundle = {
     format: BUNDLE_FORMAT,
     exportedAt: "2026-11-18T00:00:00.000Z",
-    counts: { products: 0, product_doc_folders: 0, product_docs: 2, arsenal_weapons: 0, arsenal_attachments: 0, arsenal_pricing: 0 },
+    counts: { products: 0, product_doc_folders: 0, product_docs: 2, arsenal_weapons: 0, arsenal_attachments: 0, arsenal_pricing: 0, listprice_items: 0, case_studies: 0, kill_sheets: 0 },
     tables: {
-      products: [], product_doc_folders: [], arsenal_weapons: [], arsenal_attachments: [], arsenal_pricing: [],
+      products: [], product_doc_folders: [], arsenal_weapons: [], arsenal_attachments: [], arsenal_pricing: [], listprice_items: [], case_studies: [], kill_sheets: [],
       product_docs: [{ id: 21, filename: "白皮书.pdf" }, { id: 23, filename: "lost.docx" }],
     },
     files: [{ table: "product_docs", id: 21, fileKey: "product-docs/a.pdf", path: "files/product_docs/21.pdf", size: content.length, sha256: sha256(content) }],
@@ -77,6 +77,10 @@ describe("产品资料迁移：写入规则", () => {
   it("去掉原编号、还原时间，其余字段原样保留", () => {
     const values = rowForInsert({ id: 9, title: "标题", tags: ["a"], createdAt: "2026-05-01T10:00:00.000Z", isDemo: false });
     expect(values).toEqual({ title: "标题", tags: ["a"], createdAt: new Date("2026-05-01T10:00:00.000Z"), isDemo: false });
+  });
+
+  it("解除与旧环境客户的关联（客户不迁移）", () => {
+    expect(rowForInsert({ id: 1, competitorName: "竞品X", clientId: 5, sourceClientId: 6 })).toEqual({ competitorName: "竞品X", clientId: null, sourceClientId: null });
   });
 
   it("导入状态绑定目标库，且不包含密码", async () => {

@@ -1,12 +1,13 @@
 // 产品方案资料迁移：读取 scripts/export-product-materials.ts 生成的资料包，导入新环境。
-// 客户、商机等业务数据不在范围内。导入可重复执行：编号映射记录在资料包目录的状态文件中，
+// 范围：产品配置、武器库文档与文件夹、作战武器及附件与报价、产品价目表、成功案例、竞品阻击卡。
+// 客户、商机等业务数据不在范围内；资料上指向旧客户的字段导入时置空。导入可重复执行：编号映射记录在资料包目录的状态文件中，
 // 文件写入固定的键（migrated/<表>/<原编号>/<文件名>），重跑时跳过已导入的记录。
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-export const BUNDLE_FORMAT = "command-product-materials/v1";
+export const BUNDLE_FORMAT = "command-product-materials/v2";
 export const TABLE_ORDER = [
   "products",
   "product_doc_folders",
@@ -14,6 +15,9 @@ export const TABLE_ORDER = [
   "arsenal_weapons",
   "arsenal_attachments",
   "arsenal_pricing",
+  "listprice_items",
+  "case_studies",
+  "kill_sheets",
 ] as const;
 export type MaterialTable = (typeof TABLE_ORDER)[number];
 export const FILE_TABLES: MaterialTable[] = ["product_docs", "arsenal_attachments"];
@@ -70,11 +74,15 @@ export function migratedKey(table: MaterialTable, id: number, filename: string):
 
 const TIMESTAMP_COLUMNS = new Set(["createdAt", "updatedAt", "outcomeUpdatedAt"]);
 
-/** 去掉原编号、把时间字符串还原成 Date，其余字段原样保留。 */
+// 指向旧环境客户的字段：新环境不迁移客户，导入时置空（资料本身保留）。
+const CLIENT_LINK_COLUMNS = new Set(["clientId", "sourceClientId", "opportunityId"]);
+
+/** 去掉原编号与旧客户关联、把时间字符串还原成 Date，其余字段原样保留。 */
 export function rowForInsert(row: Record<string, unknown>): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
     if (key === "id") continue;
+    if (CLIENT_LINK_COLUMNS.has(key)) { values[key] = null; continue; }
     values[key] = TIMESTAMP_COLUMNS.has(key) && typeof value === "string" ? new Date(value) : value;
   }
   return values;

@@ -18,6 +18,9 @@ import {
   arsenalAttachments,
   arsenalPricing,
   arsenalWeapons,
+  caseStudies,
+  killSheets,
+  listpriceItems,
   productDocFolders,
   productDocs,
   products,
@@ -45,6 +48,9 @@ const TABLES = {
   arsenal_weapons: arsenalWeapons,
   arsenal_attachments: arsenalAttachments,
   arsenal_pricing: arsenalPricing,
+  listprice_items: listpriceItems,
+  case_studies: caseStudies,
+  kill_sheets: killSheets,
 } as const;
 
 function argValue(name: string): string | undefined {
