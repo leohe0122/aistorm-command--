@@ -97,8 +97,17 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
+  return storagePutAtKey(appendHashSuffix(normalizeKey(relKey)), data, contentType);
+}
+
+/** 按给定键原样写入（不追加随机后缀；同键覆盖）。用于资料迁移等需要可重复执行的场景。 */
+export async function storagePutAtKey(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  contentType = "application/octet-stream",
+): Promise<{ key: string; url: string }> {
   const driver = storageDriver();
-  const key = appendHashSuffix(normalizeKey(relKey));
+  const key = normalizeKey(relKey);
   const body = typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data);
 
   if (driver === "local") {
