@@ -1,4 +1,3 @@
-import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -12,7 +11,6 @@ export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath } = options ?? {};
   const utils = trpc.useUtils();
 
-  // Primary: Manus OAuth session
   const meQuery = trpc.auth.me.useQuery(undefined, {
     retry: false,
     refetchOnWindowFocus: false,
@@ -42,16 +40,12 @@ export function useAuth(options?: UseAuthOptions) {
       }
       throw error;
     } finally {
-      try {
-        sessionStorage.removeItem("manus-cookie");
-      } catch {}
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }
   }, [logoutMutation, utils]);
 
   const state = useMemo(() => {
-    // Prefer Manus OAuth user; fall back to email user
     const emailData = emailMeQuery.data;
     const user = meQuery.data ?? (emailData ? {
       id: emailData.id,
@@ -64,8 +58,6 @@ export function useAuth(options?: UseAuthOptions) {
       updatedAt: new Date(),
       lastSignedIn: new Date(),
     } : null);
-
-    localStorage.setItem("manus-runtime-user-info", JSON.stringify(user));
 
     const isLoading = (meQuery.isLoading && emailMeQuery.isLoading) || logoutMutation.isPending;
 
@@ -92,11 +84,8 @@ export function useAuth(options?: UseAuthOptions) {
     if (typeof window === "undefined") return;
     if (redirectPath && window.location.pathname === redirectPath) return;
 
-    if (redirectPath) {
-      window.location.href = redirectPath;
-    } else {
-      startLogin();
-    }
+    // 未登录统一回到首页，由 AuthGate 呈现邮箱登录页。
+    window.location.href = redirectPath || "/";
   }, [
     redirectOnUnauthenticated,
     redirectPath,
