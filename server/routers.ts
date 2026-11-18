@@ -5265,35 +5265,6 @@ ${contactList}
         return db.select().from(productDocs).orderBy(productDocs.createdAt);
       }),
 
-    // 上传产品文档
-    // 获取预签名上传URL（前端直传S3，无大小限制）
-    getUploadUrl: protectedProcedure
-      .input(z.object({
-        filename: z.string(),
-        mimeType: z.string(),
-      }))
-      .mutation(async ({ input }) => {
-        const { ENV } = await import('./_core/env');
-        const forgeUrl = (ENV.forgeApiUrl || '').replace(/\/+$/, '');
-        const forgeKey = ENV.forgeApiKey;
-        if (!forgeUrl || !forgeKey) throw new Error('Storage config missing');
-        const hash = crypto.randomUUID().replace(/-/g, '').slice(0, 8);
-        const ext = input.filename.includes('.') ? input.filename.slice(input.filename.lastIndexOf('.')) : '';
-        const base = input.filename.includes('.') ? input.filename.slice(0, input.filename.lastIndexOf('.')) : input.filename;
-        const fileKey = `product-docs/${Date.now()}-${base}_${hash}${ext}`;
-        const presignUrl = new URL('v1/storage/presign/put', forgeUrl + '/');
-        presignUrl.searchParams.set('path', fileKey);
-        const presignResp = await fetch(presignUrl.toString(), {
-          headers: { Authorization: `Bearer ${forgeKey}` },
-        });
-        if (!presignResp.ok) {
-          const msg = await presignResp.text().catch(() => presignResp.statusText);
-          throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
-        }
-        const { url: s3Url } = await presignResp.json() as { url: string };
-        return { fileKey, uploadUrl: s3Url, fileUrl: `/manus-storage/${fileKey}` };
-      }),
-
     // 确认上传完成，写入数据库
     confirmUpload: protectedProcedure
       .input(z.object({
@@ -5345,7 +5316,7 @@ ${contactList}
         if (!db) throw new Error('Database unavailable');
         const { productDocs } = await import('../drizzle/schema');
         const { storagePut } = await import('./storage');
-        // 中文标题仅作为数据库展示名；S3/Forge 的对象路径必须严格使用 ASCII。
+        // 中文标题仅作为数据库展示名；存储对象路径必须严格使用 ASCII。
         const filename = `${input.title}.md`;
         const markdown = `# ${input.title}\n\n${input.description ? `> ${input.description}\n\n` : ''}${input.content.trim()}\n`;
         const { createAsciiDocumentStorageKey } = await import('./storage');
@@ -5387,19 +5358,14 @@ ${contactList}
           filename: productDocs.filename,
         }).from(productDocs).where(or(isNull(productDocs.extractedText), eq(productDocs.extractedText, '')));
         
-        const { storageGetSignedUrl } = await import('./storage');
+        const { storageGetBuffer } = await import('./storage');
         const { extractTextFromBuffer } = await import('./docExtract');
         let processed = 0;
         let failed = 0;
         
         for (const doc of docs) {
           try {
-            // 获取签名 URL 并下载文件
-            const signedUrl = await storageGetSignedUrl(doc.fileKey);
-            const resp = await fetch(signedUrl);
-            if (!resp.ok) { failed++; continue; }
-            const arrayBuffer = await resp.arrayBuffer();
-            const buffer = Buffer.from(arrayBuffer);
+            const buffer = await storageGetBuffer(doc.fileKey);
             const text = await extractTextFromBuffer(buffer, doc.mimeType || '', doc.filename || '');
             if (text) {
               await db.update(productDocs).set({ extractedText: text }).where(eq(productDocs.id, doc.id));
@@ -5616,12 +5582,20 @@ ${context}
         return parsed;
       }),
 
-    // 获取文档的 S3 签名直链（用于预览，有效期1小时）
+    // 获取文档的限时签名链接（用于在线预览，有效期 1 小时；免登录访问，仅限该文件）
     getSignedUrl: protectedProcedure
       .input(z.object({ fileKey: z.string() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) throw new Error('Database unavailable');
+        const { productDocs } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        // 只为产品文档库中已登记的文件签发链接，避免借此读取任意对象。
+        const [doc] = await db.select({ id: productDocs.id }).from(productDocs).where(eq(productDocs.fileKey, input.fileKey)).limit(1);
+        if (!doc) throw new TRPCError({ code: 'NOT_FOUND', message: '文档不存在' });
         const { storageGetSignedUrl } = await import('./storage');
-        const url = await storageGetSignedUrl(input.fileKey);
+        const { publicAppUrl } = await import('./_core/password');
+        const url = await storageGetSignedUrl(input.fileKey, { baseUrl: publicAppUrl(ctx.req) });
         return { url };
       }),
   }),
