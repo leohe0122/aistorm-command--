@@ -8,6 +8,9 @@
 //   arsenal_weapons         作战武器
 //   arsenal_attachments     武器附件（含原文件）
 //   arsenal_pricing         武器报价
+//   listprice_items         产品价目表
+//   case_studies            成功案例
+//   kill_sheets             竞品阻击卡（导入时解除与旧客户的关联）
 //
 // 不写数据库、不改存储：只执行 SELECT，并通过存储的下载接口把原文件保存到本地目录。
 // 资料包结构：
@@ -28,13 +31,16 @@ import {
   arsenalAttachments,
   arsenalPricing,
   arsenalWeapons,
+  caseStudies,
+  killSheets,
+  listpriceItems,
   productDocFolders,
   productDocs,
   products,
 } from "../drizzle/schema";
 import { getDb } from "../server/db";
 
-const BUNDLE_FORMAT = "command-product-materials/v1";
+const BUNDLE_FORMAT = "command-product-materials/v2";
 const FILE_TABLES = ["product_docs", "arsenal_attachments"] as const;
 
 type FileEntry = {
@@ -83,13 +89,16 @@ async function main() {
   const db = await getDb();
   if (!db) throw new Error("无法连接数据库：请设置 DATABASE_URL");
 
-  const [productRows, folderRows, docRows, weaponRows, attachmentRows, pricingRows] = await Promise.all([
+  const [productRows, folderRows, docRows, weaponRows, attachmentRows, pricingRows, listpriceRows, caseRows, killSheetRows] = await Promise.all([
     db.select().from(products),
     db.select().from(productDocFolders),
     db.select().from(productDocs),
     db.select().from(arsenalWeapons),
     db.select().from(arsenalAttachments),
     db.select().from(arsenalPricing),
+    db.select().from(listpriceItems),
+    db.select().from(caseStudies),
+    db.select().from(killSheets),
   ]);
   const tables = {
     products: productRows,
@@ -98,6 +107,9 @@ async function main() {
     arsenal_weapons: weaponRows,
     arsenal_attachments: attachmentRows,
     arsenal_pricing: pricingRows,
+    listprice_items: listpriceRows,
+    case_studies: caseRows,
+    kill_sheets: killSheetRows,
   };
 
   console.log("导出范围：");
