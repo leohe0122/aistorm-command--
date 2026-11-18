@@ -1,5 +1,8 @@
 import { cn } from "@/lib/utils";
 
+// 客户 Logo 原先存放在 Manus 托管存储（/manus-storage/*.png），仓库里没有原图。
+// 迁出后这些地址会加载失败，组件已有兜底：图片出错时隐藏，显示客户名缩写。
+// 待办：确认是否保留客户 Logo；保留则把图片放进 client/public/brand/clients/ 并改这里的路径。
 const CLIENT_BRANDS: Record<string, { src: string; fallback: string; accent: string }> = {
   "美的集团": { src: "/manus-storage/midea_681e18f5.png", fallback: "M", accent: "bg-sky-500/20 text-sky-100" },
   "大疆创新": { src: "/manus-storage/dji_47b90e16.png", fallback: "DJ", accent: "bg-slate-400/20 text-slate-100" },

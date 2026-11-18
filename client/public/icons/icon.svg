@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- AIStorm Command 应用图标（由 AIStormLogo 组件的图形生成），用于 PWA 与浏览器标签页 -->
+  <defs>
+    <linearGradient id="a" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#1B6FBF"/><stop offset="50%" stop-color="#00A8D6"/><stop offset="100%" stop-color="#4DB87A"/></linearGradient>
+    <linearGradient id="s" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#8a9ab0"/><stop offset="50%" stop-color="#c8d4e0"/><stop offset="100%" stop-color="#6a7a8a"/></linearGradient>
+    <linearGradient id="g" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#4DB87A"/><stop offset="100%" stop-color="#2a9d5c"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="#0a0f1a"/>
+  <path d="M 167.1 224.3 A 120.6 120.6 0 0 1 271.9 122.7" stroke="url(#a)" stroke-width="50.8" stroke-linecap="round" fill="none"/>
+  <path d="M 271.9 122.7 A 120.6 120.6 0 0 1 357.6 281.4" stroke="url(#a)" stroke-width="44.4" stroke-linecap="round" fill="none"/>
+  <path d="M 357.6 281.4 A 120.6 120.6 0 0 1 271.9 376.6" stroke="url(#g)" stroke-width="44.4" stroke-linecap="round" fill="none"/>
+  <path d="M 271.9 376.6 A 120.6 120.6 0 0 1 167.1 287.7" stroke="url(#s)" stroke-width="50.8" stroke-linecap="round" fill="none"/>
+  <path d="M 167.1 287.7 A 120.6 120.6 0 0 1 167.1 224.3" stroke="#1B6FBF" stroke-width="50.8" stroke-linecap="round" fill="none"/>
+</svg>

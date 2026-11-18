@@ -65,3 +65,16 @@ describe("自托管：登录只保留邮箱会话", () => {
     if (saved === undefined) delete process.env.PUBLIC_APP_URL; else process.env.PUBLIC_APP_URL = saved;
   });
 });
+
+describe("自托管：存储与静态资源", () => {
+  it("不再使用 Manus 预签名存储，PWA 图标在仓库内", () => {
+    const storage = projectFile("server/storage.ts");
+    const routers = projectFile("server/routers.ts");
+    const entry = projectFile("server/_core/index.ts");
+    for (const text of [storage, routers, entry]) expect(text).not.toMatch(/forge|presign\/put|manus-storage/i);
+    const manifest = JSON.parse(projectFile("client/public/manifest.json"));
+    const indexHtml = projectFile("client/index.html");
+    expect(indexHtml).not.toContain("manus-storage");
+    for (const icon of manifest.icons) expect(() => projectFile(`client/public${icon.src}`)).not.toThrow();
+  });
+});

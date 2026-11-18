@@ -1,38 +1,47 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uploads via Forge Server presigned URL to S3 (PUT direct).
-// Downloads return /manus-storage/{key} paths served via 307 redirect.
+// 文件存储抽象：由 STORAGE_DRIVER 选择驱动，与托管平台无关。
+//   STORAGE_DRIVER=local  本地磁盘（STORAGE_LOCAL_DIR，默认 ./data/uploads），适合单机部署
+//   STORAGE_DRIVER=s3     S3 兼容对象存储（AWS S3、Cloudflare R2、MinIO、阿里云 OSS 等）
+//
+// 所有文件都通过本服务的 /files/<key> 访问（见 server/_core/files.ts）：默认要求登录；
+// 需要交给外部预览服务时，用 storageGetSignedUrl 生成限时签名链接。存储桶无需公开。
 
 import crypto from "node:crypto";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { Readable } from "node:stream";
 import { ENV } from "./_core/env";
 
-function getForgeConfig() {
-  // Always use the built-in Forge storage API, never OpenAI endpoint
-  const forgeUrl = process.env.BUILT_IN_FORGE_API_URL ?? ENV.forgeApiUrl;
-  const forgeKey = process.env.BUILT_IN_FORGE_API_KEY ?? ENV.forgeApiKey;
+export type StorageDriver = "local" | "s3";
+export const FILES_ROUTE_PREFIX = "/files/";
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
-  if (!forgeUrl || !forgeKey) {
-    throw new Error(
-      "Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY",
-    );
-  }
-
-  return { forgeUrl: forgeUrl.replace(/\/+$/, ""), forgeKey };
+export function storageDriver(): StorageDriver {
+  const value = (process.env.STORAGE_DRIVER ?? "").trim().toLowerCase();
+  if (value === "local" || value === "s3") return value;
+  throw new Error(value
+    ? `STORAGE_DRIVER=${value} 无效：只能是 local 或 s3`
+    : "未配置文件存储：请设置 STORAGE_DRIVER=local（本地磁盘）或 STORAGE_DRIVER=s3（S3 兼容对象存储）");
 }
 
-function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
+/** 规范化对象键并拒绝路径穿越；只允许 ASCII 可见字符。 */
+export function normalizeKey(relKey: string): string {
+  const key = relKey.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!key || key.split("/").some(part => part === ".." || part === ".") || /[^\x21-\x7E]/.test(key)) {
+    throw new Error("非法的文件路径");
+  }
+  return key;
 }
 
 function appendHashSuffix(relKey: string): string {
   const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
   const lastDot = relKey.lastIndexOf(".");
-  if (lastDot === -1) return `${relKey}_${hash}`;
+  if (lastDot === -1 || lastDot < relKey.lastIndexOf("/")) return `${relKey}_${hash}`;
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
 
 /**
- * 生成可传递给 Forge/S3 预签名接口的纯 ASCII 文档键。
- * 中文标题仅保存在数据库 title/filename，绝不进入对象路径。
+ * 生成纯 ASCII 的文档键。中文标题仅保存在数据库 title/filename，绝不进入对象路径。
  */
 export function createAsciiDocumentStorageKey(
   directory = "product-docs/notes",
@@ -44,70 +53,128 @@ export function createAsciiDocumentStorageKey(
   return `${safeDirectory}/note-${Date.now()}-${id}.${safeExtension}`;
 }
 
+export function fileUrlForKey(key: string): string {
+  return `${FILES_ROUTE_PREFIX}${normalizeKey(key).split("/").map(encodeURIComponent).join("/")}`;
+}
+
+// ── 本地磁盘 ────────────────────────────────────────────────────────────────
+function localRoot(): string {
+  return path.resolve(process.env.STORAGE_LOCAL_DIR?.trim() || "data/uploads");
+}
+
+function localPath(key: string): string {
+  const root = localRoot();
+  const full = path.resolve(root, key);
+  if (full !== root && !full.startsWith(root + path.sep)) throw new Error("非法的文件路径");
+  return full;
+}
+
+// ── S3 兼容 ─────────────────────────────────────────────────────────────────
+let s3Client: import("@aws-sdk/client-s3").S3Client | null = null;
+
+async function s3(): Promise<{ client: import("@aws-sdk/client-s3").S3Client; bucket: string; prefix: string; sdk: typeof import("@aws-sdk/client-s3") }> {
+  const bucket = process.env.S3_BUCKET?.trim();
+  if (!bucket) throw new Error("STORAGE_DRIVER=s3 时必须设置 S3_BUCKET");
+  const sdk = await import("@aws-sdk/client-s3");
+  if (!s3Client) {
+    const accessKeyId = process.env.S3_ACCESS_KEY_ID?.trim();
+    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY?.trim();
+    s3Client = new sdk.S3Client({
+      region: process.env.S3_REGION?.trim() || "auto",
+      endpoint: process.env.S3_ENDPOINT?.trim() || undefined,
+      forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
+      // 未提供密钥时使用 AWS SDK 默认凭证链（实例角色、环境变量等）
+      credentials: accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined,
+    });
+  }
+  const prefix = (process.env.S3_PREFIX?.trim() || "").replace(/^\/+|\/+$/g, "");
+  return { client: s3Client, bucket, prefix: prefix ? `${prefix}/` : "", sdk };
+}
+
+// ── 对外接口 ────────────────────────────────────────────────────────────────
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
-  const { forgeUrl, forgeKey } = getForgeConfig();
+  const driver = storageDriver();
   const key = appendHashSuffix(normalizeKey(relKey));
+  const body = typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data);
 
-  // 1. Get presigned PUT URL from Forge
-  const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
-  presignUrl.searchParams.set("path", key);
-
-  const presignResp = await fetch(presignUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` },
-  });
-
-  if (!presignResp.ok) {
-    const msg = await presignResp.text().catch(() => presignResp.statusText);
-    throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
+  if (driver === "local") {
+    const target = localPath(key);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, body);
+  } else {
+    const { client, bucket, prefix, sdk } = await s3();
+    await client.send(new sdk.PutObjectCommand({ Bucket: bucket, Key: prefix + key, Body: body, ContentType: contentType }));
   }
-
-  const { url: s3Url } = (await presignResp.json()) as { url: string };
-  if (!s3Url) throw new Error("Forge returned empty presign URL");
-
-  // 2. PUT file directly to S3
-  const blob =
-    typeof data === "string"
-      ? new Blob([data], { type: contentType })
-      : new Blob([data as any], { type: contentType });
-
-  const uploadResp = await fetch(s3Url, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: blob,
-  });
-
-  if (!uploadResp.ok) {
-    throw new Error(`Storage upload to S3 failed (${uploadResp.status})`);
-  }
-
-  return { key, url: `/manus-storage/${key}` };
+  return { key, url: fileUrlForKey(key) };
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
-  return { key, url: `/manus-storage/${key}` };
+  return { key, url: fileUrlForKey(key) };
 }
 
-export async function storageGetSignedUrl(relKey: string): Promise<string> {
-  const { forgeUrl, forgeKey } = getForgeConfig();
+/** 读取文件内容（服务端内部使用，例如补跑文字提取）。 */
+export async function storageGetBuffer(relKey: string): Promise<Buffer> {
   const key = normalizeKey(relKey);
+  if (storageDriver() === "local") return readFile(localPath(key));
+  const { client, bucket, prefix, sdk } = await s3();
+  const result = await client.send(new sdk.GetObjectCommand({ Bucket: bucket, Key: prefix + key }));
+  const bytes = await result.Body?.transformToByteArray();
+  if (!bytes) throw new Error("文件为空");
+  return Buffer.from(bytes);
+}
 
-  const getUrl = new URL("v1/storage/presign/get", forgeUrl + "/");
-  getUrl.searchParams.set("path", key);
-
-  const resp = await fetch(getUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` },
-  });
-
-  if (!resp.ok) {
-    const msg = await resp.text().catch(() => resp.statusText);
-    throw new Error(`Storage signed URL failed (${resp.status}): ${msg}`);
+/** 以流的方式读取文件，供 /files 路由回传；文件不存在时返回 null。 */
+export async function storageOpenStream(relKey: string): Promise<{ stream: Readable; contentType?: string; contentLength?: number } | null> {
+  const key = normalizeKey(relKey);
+  if (storageDriver() === "local") {
+    const full = localPath(key);
+    const info = await stat(full).catch(() => null);
+    if (!info?.isFile()) return null;
+    return { stream: createReadStream(full), contentLength: info.size };
   }
+  const { client, bucket, prefix, sdk } = await s3();
+  try {
+    const result = await client.send(new sdk.GetObjectCommand({ Bucket: bucket, Key: prefix + key }));
+    if (!result.Body) return null;
+    return { stream: result.Body as Readable, contentType: result.ContentType, contentLength: result.ContentLength };
+  } catch (error: any) {
+    if (error?.name === "NoSuchKey" || error?.$metadata?.httpStatusCode === 404) return null;
+    throw error;
+  }
+}
 
-  const { url } = (await resp.json()) as { url: string };
-  return url;
+// ── 限时签名链接 ────────────────────────────────────────────────────────────
+function signingSecret(): string {
+  if (!ENV.cookieSecret) throw new Error("生成文件签名链接需要设置 JWT_SECRET");
+  return ENV.cookieSecret;
+}
+
+function signature(key: string, expires: number): string {
+  return crypto.createHmac("sha256", signingSecret()).update(`files:${key}:${expires}`).digest("base64url");
+}
+
+/** 校验 /files/<key>?expires=&sig= 形式的限时链接。 */
+export function verifyFileSignature(relKey: string, expires: unknown, sig: unknown, now = Date.now()): boolean {
+  if (typeof expires !== "string" || typeof sig !== "string" || !ENV.cookieSecret) return false;
+  const exp = Number(expires);
+  if (!Number.isInteger(exp) || exp * 1000 < now) return false;
+  const expected = Buffer.from(signature(normalizeKey(relKey), exp));
+  const given = Buffer.from(sig);
+  return expected.length === given.length && crypto.timingSafeEqual(expected, given);
+}
+
+/**
+ * 生成无需登录即可访问的限时链接（默认 1 小时），用于交给外部预览服务等场景。
+ * 传入 baseUrl 时返回绝对地址。
+ */
+export async function storageGetSignedUrl(relKey: string, options: { baseUrl?: string; ttlSeconds?: number } = {}): Promise<string> {
+  const key = normalizeKey(relKey);
+  const expires = Math.floor(Date.now() / 1000) + (options.ttlSeconds ?? SIGNED_URL_TTL_SECONDS);
+  const query = `expires=${expires}&sig=${signature(key, expires)}`;
+  return `${options.baseUrl ?? ""}${fileUrlForKey(key)}?${query}`;
 }
