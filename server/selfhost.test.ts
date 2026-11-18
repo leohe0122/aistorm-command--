@@ -78,3 +78,51 @@ describe("自托管：存储与静态资源", () => {
     for (const icon of manifest.icons) expect(() => projectFile(`client/public${icon.src}`)).not.toThrow();
   });
 });
+
+describe("自托管：定时任务、模型 Key、语音与通知", () => {
+  it("定时任务只认 CRON_SECRET，未配置时一律拒绝", async () => {
+    const { isAuthorizedCronRequest } = await import("./_core/cron");
+    const req = (headers: Record<string, string>) => ({ headers } as any);
+    expect(isAuthorizedCronRequest(req({ authorization: "Bearer s3cret-value" }), "s3cret-value")).toBe(true);
+    expect(isAuthorizedCronRequest(req({ "x-cron-secret": "s3cret-value" }), "s3cret-value")).toBe(true);
+    expect(isAuthorizedCronRequest(req({ authorization: "Bearer wrong" }), "s3cret-value")).toBe(false);
+    expect(isAuthorizedCronRequest(req({}), "s3cret-value")).toBe(false);
+    expect(isAuthorizedCronRequest(req({ authorization: "Bearer " }), "")).toBe(false);
+    for (const file of ["server/scheduled/dailyBriefing.ts", "server/scheduled/visitReminder.ts"]) {
+      const source = projectFile(file);
+      expect(source).toContain("requireCronSecret(req, res)");
+      expect(source).not.toContain("isCron");
+    }
+  });
+
+  it("未配置模型 Key 时不回退到服务器环境变量", async () => {
+    const { vi } = await import("vitest");
+    vi.stubEnv("OPENAI_API_KEY", "sk-should-not-be-used");
+    vi.stubEnv("DATABASE_URL", "");
+    const { getLLMProviderConfig } = await import("./db");
+    expect(await getLLMProviderConfig("standard")).toBeNull();
+    vi.unstubAllEnvs();
+  });
+
+  it("语音转写：优先专用配置，其次本部署的 OpenAI Key，都没有则不可用", async () => {
+    const { resolveTranscriptionProvider } = await import("./_core/voiceTranscription");
+    const reader = (values: Record<string, string>) => async (key: string) => values[key] ?? null;
+    expect(await resolveTranscriptionProvider(reader({}))).toBeNull();
+    expect(await resolveTranscriptionProvider(reader({ llm_openai_key: "k1" }))).toMatchObject({ baseUrl: "https://api.openai.com/v1", model: "whisper-1", source: "openai" });
+    expect(await resolveTranscriptionProvider(reader({ llm_openai_key: "k1", voice_transcription_key: "k2", voice_transcription_url: "https://stt.example.com/v1/", voice_transcription_model: "sensevoice" })))
+      .toMatchObject({ baseUrl: "https://stt.example.com/v1", apiKey: "k2", model: "sensevoice", source: "voice" });
+  });
+
+  it("管理员通知：飞书地址用飞书消息格式，其他地址收 JSON", async () => {
+    const { buildNotificationBody } = await import("./_core/notification");
+    const payload = { title: "标题", content: "内容" };
+    expect(buildNotificationBody("https://open.feishu.cn/open-apis/bot/v2/hook/x", payload)).toEqual({ msg_type: "text", content: { text: "标题\n\n内容" } });
+    expect(buildNotificationBody("https://hooks.example.com/notify", payload)).toEqual(payload);
+  });
+
+  it("代码中不再引用 Manus 平台服务", () => {
+    for (const file of ["server/_core/sdk.ts", "server/_core/env.ts", "server/_core/notification.ts", "server/_core/voiceTranscription.ts", "server/feishuBot.ts", "server/db.ts"]) {
+      expect(projectFile(file)).not.toMatch(/forgeApi|BUILT_IN_FORGE|manus\.im|manus-storage|x-manus|OAUTH_SERVER_URL|VITE_APP_ID|OWNER_OPEN_ID/i);
+    }
+  });
+});

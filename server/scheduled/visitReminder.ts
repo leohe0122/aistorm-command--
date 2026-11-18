@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { sdk } from "../_core/sdk";
+import { requireCronSecret } from "../_core/cron";
 import { getSystemConfig, getDb } from "../db";
 import { clients, meetingMinutes } from "../../drizzle/schema";
 import { sql, and, gte, lte } from "drizzle-orm";
@@ -8,7 +8,7 @@ import { sql, and, gte, lte } from "drizzle-orm";
  * 48小时拜访纪要提醒 Handler
  * 路由：POST /api/scheduled/visit-reminder
  * 触发：每天 01:00 UTC (09:00 SGT/CST)，检查过去48小时内有拜访但未录入纪要的客户
- * 认证：Heartbeat cron (user.isCron === true)
+ * 认证：请求头携带 CRON_SECRET（Authorization: Bearer 或 X-Cron-Secret），由服务器 crontab 调用
  *
  * 架构说明：
  * - 检查 meeting_minutes 表中，拜访日期在48小时前但无纪要内容的记录
@@ -18,16 +18,8 @@ import { sql, and, gte, lte } from "drizzle-orm";
  */
 export async function visitReminderHandler(req: Request, res: Response) {
   try {
-    // Authenticate cron caller
-    let user;
-    try {
-      user = await sdk.authenticateRequest(req);
-    } catch {
-      return res.status(403).json({ error: "unauthorized" });
-    }
-    if (!user.isCron) {
-      return res.status(403).json({ error: "cron-only endpoint" });
-    }
+    // 只接受携带 CRON_SECRET 的调度器调用（见 docs/定时任务.md）
+    if (!requireCronSecret(req, res)) return;
 
     // Get config
     const feishuWebhook = await getSystemConfig("feishu_daily_briefing_webhook"); // 复用每日简报 webhook

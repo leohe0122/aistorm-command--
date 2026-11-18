@@ -563,7 +563,7 @@ function LLMConfigTab() {
           <Cpu className="w-3.5 h-3.5" /> 当前状态
         </div>
         <div className="space-y-1 text-xs text-muted-foreground">
-          <div>已配置提供商：{PROVIDERS.filter(p => hasKey(p.id)).map(p => p.label).join("、") || "无（将使用环境变量 OPENAI_API_KEY）"}</div>
+          <div>已配置提供商：{PROVIDERS.filter(p => hasKey(p.id)).map(p => p.label).join("、") || "无（AI 功能不可用，请至少配置一个）"}</div>
           <div>核心任务路由：{primaryProvider === "auto" ? "自动" : PROVIDERS.find(p => p.id === primaryProvider)?.label || primaryProvider}</div>
           <div>辅助任务路由：{fastProvider === "auto" ? "自动" : PROVIDERS.find(p => p.id === fastProvider)?.label || fastProvider}</div>
         </div>
@@ -669,12 +669,77 @@ function ProductsTab() {
 }
 
 // ── Main Settings Page ──────────────────────────────────────────────────────
+// ── Optional Services Tab（语音转写 / 管理员通知）──────────────────────────────
+// 两项都是可选能力：未配置时语音消息提示“请改发文字”，通知只记录日志，不影响其他功能。
+const OPTIONAL_FIELDS = [
+  { key: "voice_transcription_key", label: "语音转写 API Key", placeholder: "留空则使用 AI 模型配置中的 OpenAI Key（若有）", secret: true },
+  { key: "voice_transcription_url", label: "语音转写接口地址", placeholder: "默认 https://api.openai.com/v1（需兼容 /audio/transcriptions）", secret: false },
+  { key: "voice_transcription_model", label: "语音转写模型", placeholder: "默认 whisper-1", secret: false },
+  { key: "owner_notify_webhook", label: "管理员通知 Webhook", placeholder: "飞书机器人地址，或接收 JSON { title, content } 的地址", secret: false },
+] as const;
+
+function OptionalServicesTab() {
+  const { data: configs = [], refetch } = trpc.systemConfig.getAll.useQuery();
+  const setConfig = trpc.systemConfig.set.useMutation({ onSuccess: () => refetch() });
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const current = (key: string) => (configs as any[]).find(c => c.configKey === key)?.configValue as string | undefined;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      for (const field of OPTIONAL_FIELDS) {
+        const value = values[field.key];
+        if (value === undefined) continue;
+        await setConfig.mutateAsync({ key: field.key, value: value.trim() });
+      }
+      setValues({});
+      toast.success("可选服务配置已保存");
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-base font-semibold text-foreground">可选服务</h3>
+        <p className="text-sm text-muted-foreground mt-1">飞书语音消息转文字、管理员通知。不配置也不影响其他功能。</p>
+      </div>
+      <div className="p-4 rounded-lg border border-border bg-card/30 space-y-4 max-w-2xl">
+        {OPTIONAL_FIELDS.map(field => (
+          <div key={field.key}>
+            <label className="text-xs text-muted-foreground mb-1.5 block">
+              {field.label}
+              {current(field.key) ? <span className="ml-2 text-emerald-400">已配置{field.secret ? `（${current(field.key)}）` : ""}</span> : null}
+            </label>
+            <Input
+              type={field.secret ? "password" : "text"}
+              placeholder={field.secret ? field.placeholder : (current(field.key) || field.placeholder)}
+              value={values[field.key] ?? ""}
+              onChange={e => setValues(v => ({ ...v, [field.key]: e.target.value }))}
+              className="h-9 text-sm font-mono"
+            />
+          </div>
+        ))}
+        <div className="text-xs text-muted-foreground flex items-center gap-1">
+          <Info className="w-3 h-3" />
+          只保存填写过的项；要清空某项，填入空格后保存。
+        </div>
+        <Button size="sm" onClick={handleSave} disabled={saving || Object.keys(values).length === 0}>
+          {saving ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
+          保存配置
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
   { id: "rss", label: "RSS 信息源", icon: Rss, desc: "自定义第三方情报 RSS" },
   { id: "feishu", label: "飞书推送", icon: Bell, desc: "每日战情简报" },
   { id: "crm", label: "CRM 集成", icon: Database, desc: "销售易数据同步" },
   { id: "llm", label: "AI 模型配置", icon: Cpu, desc: "多模型 Key 与路由" },
   { id: "products", label: "产品管理", icon: Package, desc: "产品覆盖度看板配置" },
+  { id: "optional", label: "可选服务", icon: Zap, desc: "语音转写 · 管理员通知" },
 ];
 
 export default function SystemSettings() {
@@ -733,6 +798,7 @@ export default function SystemSettings() {
           {activeTab === "crm" && <CrmIntegrationTab />}
           {activeTab === "llm" && <LLMConfigTab />}
           {activeTab === "products" && <ProductsTab />}
+          {activeTab === "optional" && <OptionalServicesTab />}
         </div>
       </div>
     </div>

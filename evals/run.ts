@@ -7,7 +7,8 @@
 //   OPENAI_API_KEY=sk-... pnpm eval --case dinner-no-facts
 //   OPENAI_API_KEY=sk-... pnpm eval --tier reasoning --min 0.9
 //
-// 未设置 DATABASE_URL 时，模型提供方取自环境变量（见 server/db.ts getLLMProviderConfig）。
+// 设置了 OPENAI_API_KEY 时，评测显式使用该 Key（setLLMProviderOverride）；否则读取 DATABASE_URL 指向库的系统设置。
+// Web 服务本身不再读取 OPENAI_API_KEY。
 // 结果写入 evals/results/（已加入 .gitignore），任一评测集通过率低于 --min 时以非零状态退出。
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,7 +16,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractEvidence, type EvidenceExtractionInput } from "../server/ai/evidenceExtraction";
 import { extractMeetingSignals, meetingSourceText, type MeetingSignalsInput } from "../server/ai/meetingSignals";
-import type { ModelTier } from "../server/_core/modelRouting";
+import { chatCompletionsUrl, type ModelTier } from "../server/_core/modelRouting";
+import { setLLMProviderOverride } from "../server/db";
 import { materialToExtractionInput, scoreStory, type DealStory } from "../server/evidence/dealStories";
 import {
   gradeDealScoring,
@@ -140,6 +142,8 @@ async function runSuite(suite: Suite<any>, tier: ModelTier, only: string | undef
 }
 
 async function main() {
+  const evalKey = process.env.OPENAI_API_KEY?.trim();
+  if (evalKey) setLLMProviderOverride({ provider: "openai", apiKey: evalKey, chatUrl: chatCompletionsUrl("openai"), modelOverrides: {} });
   const tier = (argValue("tier") ?? "standard") as ModelTier;
   const minPassRate = Number(argValue("min") ?? "0.8");
   const only = argValue("case");

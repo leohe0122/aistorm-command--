@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { sdk } from "../_core/sdk";
+import { requireCronSecret } from "../_core/cron";
 import { invokeLLM } from "../_core/llm";
 import { notifyOwner } from "../_core/notification";
 import { buildDailyBriefingPrompt, getComplianceRssDigest } from "../dailyBriefingRss";
@@ -12,20 +12,12 @@ import {
  * 每日简报飞书推送 Handler
  * 路由：POST /api/scheduled/daily-briefing
  * 触发：每天 00:00 UTC (08:00 SGT/CST)
- * 认证：Heartbeat cron (user.isCron === true)
+ * 认证：请求头携带 CRON_SECRET（Authorization: Bearer 或 X-Cron-Secret），由服务器 crontab 调用
  */
 export async function dailyBriefingHandler(req: Request, res: Response) {
   try {
-    // Authenticate cron caller (throws ForbiddenError if not valid)
-    let user;
-    try {
-      user = await sdk.authenticateRequest(req);
-    } catch {
-      return res.status(403).json({ error: "unauthorized" });
-    }
-    if (!user.isCron) {
-      return res.status(403).json({ error: "cron-only endpoint" });
-    }
+    // 只接受携带 CRON_SECRET 的调度器调用（见 docs/定时任务.md）
+    if (!requireCronSecret(req, res)) return;
 
     // Get Feishu webhook config
     const feishuWebhook = await getSystemConfig("feishu_daily_briefing_webhook");
@@ -148,8 +140,6 @@ export async function dailyBriefingHandler(req: Request, res: Response) {
     console.error("[DailyBriefing] Error:", error);
     return res.status(500).json({
       error: error.message || "Internal error",
-      stack: error.stack,
-      context: { url: req.url, taskUid: (req as any).user?.taskUid },
       timestamp: new Date().toISOString(),
     });
   }

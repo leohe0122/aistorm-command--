@@ -3492,8 +3492,8 @@ ${input.samAnswerNotes}
       const llmResult = await invokeLLM({ messages: [{ role: "system", content: SALES_METHODOLOGY_SYSTEM_PROMPT }, { role: "user", content: prompt }] });
       const briefing = typeof llmResult.choices[0]?.message?.content === "string" ? llmResult.choices[0].message.content : "";
       if (!briefing) return { ok: false, message: "AI 生成失败", briefing: "" };
-      await notifyOwner({ title: `📊 每日战情简报 · ${today}`, content: briefing.slice(0, 2000) });
-      return { ok: true, briefing, today, message: "简报已生成并推送" };
+      const delivered = await notifyOwner({ title: `📊 每日战情简报 · ${today}`, content: briefing.slice(0, 2000) });
+      return { ok: true, briefing, today, message: delivered ? "简报已生成并推送" : "简报已生成（未配置管理员通知，未推送）" };
     }),
   }),
 

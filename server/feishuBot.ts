@@ -533,38 +533,20 @@ export async function feishuWebhookHandler(req: Request, res: Response) {
 
         // 上传到临时存储获取 URL，再调用 Whisper 转录
         const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-        const audioBase64 = audioBuffer.toString("base64");
         const mimeType = audioRes.headers.get("content-type") || "audio/ogg";
 
-        // 直接调用 Whisper API（复用 voiceTranscription 逻辑）
-        let transcribedText = "";
-        try {
-          const formData = new FormData();
-          const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
-          formData.append("file", audioBlob, `audio.ogg`);
-          formData.append("model", "whisper-1");
-          formData.append("response_format", "verbose_json");
-          formData.append("prompt", "这是一段销售拜访记录，请转录为中文");
-          const baseUrl = ENV.forgeApiUrl?.endsWith("/") ? ENV.forgeApiUrl : `${ENV.forgeApiUrl}/`;
-          const whisperRes = await fetch(`${baseUrl}v1/audio/transcriptions`, {
-            method: "POST",
-            headers: { authorization: `Bearer ${ENV.forgeApiKey}`, "Accept-Encoding": "identity" },
-            body: formData,
-          });
-          if (whisperRes.ok) {
-            const whisperData = await whisperRes.json() as any;
-            transcribedText = whisperData.text ?? "";
-          }
-        } catch (e: any) {
-          console.error("[feishu-webhook] whisper error:", e.message);
-        }
+        // 语音转写为可选能力：未配置时提示改发文字（见 server/_core/voiceTranscription.ts）
+        const { transcribeAudioBuffer } = await import("./_core/voiceTranscription");
+        const transcription = await transcribeAudioBuffer(audioBuffer, { mimeType, filename: "audio.ogg", prompt: "这是一段销售拜访记录，请转录为中文" });
+        const transcribedText = transcription.ok ? transcription.text : "";
+        if (!transcription.ok) console.warn("[feishu-webhook] voice:", transcription.reason);
 
         if (!transcribedText) {
           const t = await getFeishuToken();
           await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${message.message_id}/reply`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${t}` },
-            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: "⚠️ 语音转文字失败，请直接发文字描述" }) }),
+            body: JSON.stringify({ msg_type: "text", content: JSON.stringify({ text: transcription.ok ? "⚠️ 语音转文字失败，请直接发文字描述" : `⚠️ ${transcription.reason}，请直接发文字描述` }) }),
           });
           res.json({}); return;
         }
