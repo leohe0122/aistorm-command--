@@ -527,9 +527,12 @@ describe("作战工作流入口收敛", () => {
     expect(clientEntry).toContain("刷新登录会话后重试");
   });
 
-  it("托管平台内置服务不再被 OPENAI_API_KEY 劫持，AI 调用统一走模型路由", () => {
+  it("AI 调用统一走模型路由，不再有 OPENAI_API_KEY 或托管平台内置通道兜底", () => {
     const env = projectFile("server/_core/env.ts");
-    expect(env).toContain('forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? ""');
+    expect(env).not.toContain("BUILT_IN_FORGE_API");
+    const db = projectFile("server/db.ts");
+    expect(db).not.toContain("process.env.OPENAI_API_KEY");
+    expect(db).not.toContain("BUILT_IN_FORGE_API");
     expect(env).not.toContain('"https://api.openai.com"');
     const llmCore = projectFile("server/_core/llm.ts");
     expect(llmCore).toContain("adaptPayloadForProvider");

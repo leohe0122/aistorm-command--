@@ -672,12 +672,21 @@ export type LLMProviderConfig = {
  * 选择本次调用使用的模型提供方。
  * tier=fast 读取 llm_fast_provider，其他读取 llm_primary_provider；
  * forceProvider 用于“测试连接”等必须命中指定提供方的场景。
- * 只有数据库中未配置任何提供方 Key 时，才回退到环境变量（OPENAI_API_KEY 或托管平台内置通道）。
+ * 模型 Key 只来自本部署“系统设置”；没有环境变量或托管平台兜底。
+ * 离线评测等命令行工具可用 setLLMProviderOverride 显式指定提供方（服务进程不调用）。
  */
+let llmProviderOverride: LLMProviderConfig | null = null;
+
+/** 仅供离线评测等命令行工具显式指定模型提供方；Web 服务进程从不调用。 */
+export function setLLMProviderOverride(config: LLMProviderConfig | null): void {
+  llmProviderOverride = config;
+}
+
 export async function getLLMProviderConfig(
   tier: import("./_core/modelRouting").ModelTier,
   forceProvider?: import("./_core/modelRouting").ProviderId,
 ): Promise<LLMProviderConfig | null> {
+  if (llmProviderOverride && (!forceProvider || forceProvider === llmProviderOverride.provider)) return llmProviderOverride;
   const { PROVIDERS, MODEL_TIERS, chatCompletionsUrl, modelOverrideKey } = await import("./_core/modelRouting");
   type ProviderId = (typeof PROVIDERS)[number];
 
@@ -706,15 +715,8 @@ export async function getLLMProviderConfig(
   }
   if (forceProvider) return null;
 
-  // 环境变量兜底：OPENAI_API_KEY 视为 openai；否则使用托管平台注入的内置 OpenAI 兼容通道。
-  if (process.env.OPENAI_API_KEY) {
-    return { provider: "openai", apiKey: process.env.OPENAI_API_KEY, chatUrl: chatCompletionsUrl("openai"), modelOverrides: {} };
-  }
-  const builtinUrl = process.env.BUILT_IN_FORGE_API_URL?.trim();
-  const builtinKey = process.env.BUILT_IN_FORGE_API_KEY?.trim();
-  if (builtinUrl && builtinKey) {
-    return { provider: "custom", apiKey: builtinKey, chatUrl: chatCompletionsUrl("custom", builtinUrl), modelOverrides: {} };
-  }
+  // 不再有环境变量或托管平台兜底：模型 Key 只来自本部署“系统设置”里管理员填写的配置，
+  // 未配置时由调用方（server/_core/llm.ts）明确报错，避免悄悄使用服务器上的其他 Key。
   return null;
 }
 
