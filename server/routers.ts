@@ -1,7 +1,7 @@
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { COOKIE_NAME } from "@shared/const";
+import { EMAIL_SESSION_COOKIE } from "@shared/const";
 import { getProductLinePrompt, PRODUCT_LINE_VALUES } from "@shared/productLines";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -687,9 +687,19 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    // 退出登录：删除邮箱会话并清除 Cookie（登录只认邮箱会话）。
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      const token = (ctx.req.headers?.cookie as string | undefined)?.match(/(?:^|;\s*)email_session=([^;]+)/)?.[1];
+      if (token) {
+        const db = await getDb();
+        if (db) {
+          const { emailSessions } = await import('../drizzle/schema');
+          const { eq } = await import('drizzle-orm');
+          await db.delete(emailSessions).where(eq(emailSessions.token, token));
+        }
+      }
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie(EMAIL_SESSION_COOKIE, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
   }),
@@ -7636,13 +7646,14 @@ ${input.aiSuggestion}
         await db.update(emailUsers).set({ isActive: input.isActive }).where(eq(emailUsers.id, input.userId));
         // 异步发送飞书账号状态通知
         const targetUser = await db.select({ email: emailUsers.email, name: emailUsers.name }).from(emailUsers).where(eq(emailUsers.id, input.userId)).limit(1);
+        const { publicAppUrl } = await import('./_core/password');
         if (targetUser.length > 0) {
           import('./feishuBot').then(({ sendFeishuAccountStatus }) => {
             sendFeishuAccountStatus({
               email: targetUser[0].email,
               name: targetUser[0].name,
               isActive: input.isActive,
-              loginUrl: 'https://command.aistorm.com',
+              loginUrl: publicAppUrl(ctx.req),
             }).then((r: { success: boolean; error?: string }) => {
               if (!r.success) console.warn('[toggleUser] 飞书通知失败:', r.error);
             });
@@ -7675,7 +7686,7 @@ ${input.aiSuggestion}
       email: z.string().email(),
       name: z.string().min(1),
       podRole: z.enum(["AD", "SAM", "SA", "RSM"]),
-      password: z.string().min(6).optional(),
+      password: z.string().min(8).optional(),
     })).mutation(async ({ input, ctx }) => {
       const token = (() => { const h = ctx.req.headers?.cookie as string | undefined; if (!h) return undefined; const m = h.match(/(?:^|;\s*)email_session=([^;]+)/); return m?.[1]; })();
       if (!token) throw new Error('未登录');
@@ -7692,7 +7703,10 @@ ${input.aiSuggestion}
       // Check email uniqueness
       const existing = await db.select({ id: emailUsers.id }).from(emailUsers).where(eq(emailUsers.email, input.email.toLowerCase())).limit(1);
       if (existing.length > 0) throw new Error('该邮箱已存在');
-      const passwordHash = await bcrypt.hash(input.password || 'Aistorm2024!', 10);
+      // 未指定密码时生成一次性随机初始密码，仅在本次响应中返回给管理员，不落库明文。
+      const { generateTempPassword, publicAppUrl } = await import('./_core/password');
+      const plainPassword = input.password || generateTempPassword();
+      const passwordHash = await bcrypt.hash(plainPassword, 10);
       const [result] = await db.insert(emailUsers).values({
         email: input.email.toLowerCase(),
         passwordHash,
@@ -7701,7 +7715,6 @@ ${input.aiSuggestion}
       });
       const newId = (result as any).insertId;
       // 发送飞书欢迎消息（等待结果以便前端回显状态）
-      const plainPassword = input.password || 'Aistorm2024!';
       let feishuSent = false;
       let feishuError: string | undefined;
       try {
@@ -7711,7 +7724,7 @@ ${input.aiSuggestion}
           name: input.name,
           podRole: input.podRole,
           password: plainPassword,
-          loginUrl: 'https://command.aistorm.com',
+          loginUrl: publicAppUrl(ctx.req),
         });
         feishuSent = feishuResult.success;
         feishuError = feishuResult.error;
@@ -7721,7 +7734,7 @@ ${input.aiSuggestion}
         feishuError = e.message;
         console.warn('[createMember] 飞书模块加载失败:', e.message);
       }
-      return { id: newId, name: input.name, feishuSent, feishuError };
+      return { id: newId, name: input.name, feishuSent, feishuError, initialPassword: input.password ? undefined : plainPassword };
     }),
 
     // 更新团队成员信息（改名/改角色）
@@ -7801,18 +7814,14 @@ ${input.aiSuggestion}
     // 重置成员密码（生成临时密码，返回给管理员）
     resetMemberPassword: adminProcedure.input(z.object({
       userId: z.number(),
-    })).mutation(async ({ input }) => {
+    })).mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Database unavailable' });
       const { emailUsers } = await import('../drizzle/schema');
       const { eq } = await import('drizzle-orm');
-      // Generate a readable temporary password: 3 words + 4 digits
-      const adjectives = ['Blue', 'Fast', 'Bold', 'Calm', 'Keen', 'Wise', 'Bright', 'Swift'];
-      const nouns = ['Tiger', 'Eagle', 'Storm', 'River', 'Cloud', 'Spark', 'Stone', 'Wave'];
-      const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-      const noun = nouns[Math.floor(Math.random() * nouns.length)];
-      const digits = String(Math.floor(1000 + Math.random() * 9000));
-      const tempPassword = `${adj}${noun}${digits}`;
+      // 临时密码用密码学安全随机数生成（原先 Math.random 拼词，可能值只有约 58 万种）。
+      const { generateTempPassword, publicAppUrl } = await import('./_core/password');
+      const tempPassword = generateTempPassword();
       const passwordHash = await bcrypt.hash(tempPassword, 10);
       await db.update(emailUsers).set({ passwordHash }).where(eq(emailUsers.id, input.userId));
       // 异步发送飞书重置密码通知
@@ -7823,7 +7832,7 @@ ${input.aiSuggestion}
             email: targetUser[0].email,
             name: targetUser[0].name,
             tempPassword,
-            loginUrl: 'https://command.aistorm.com',
+            loginUrl: publicAppUrl(ctx.req),
           }).then((r: { success: boolean; error?: string }) => {
             if (!r.success) console.warn('[resetMemberPassword] 飞书通知失败:', r.error);
             else console.log('[resetMemberPassword] 飞书通知已发送至', targetUser[0].email);
@@ -7852,7 +7861,7 @@ ${input.aiSuggestion}
     updateMemberCredentials: adminProcedure.input(z.object({
       userId: z.number(),
       email: z.string().email().optional(),
-      password: z.string().min(6).optional(),
+      password: z.string().min(8).optional(),
     })).mutation(async ({ input, ctx }) => {
       if (!input.email && !input.password) throw new TRPCError({ code: 'BAD_REQUEST', message: '请至少提供邮箱或密码' });
       const db = await getDb();
