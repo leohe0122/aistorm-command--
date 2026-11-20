@@ -114,16 +114,18 @@ export default function TeamManagement() {
 
   // ── Create ──────────────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: "", name: "", podRole: "SAM" as "AD"|"SAM"|"SA"|"RSM", password: "" });
+  const [createForm, setCreateForm] = useState({ email: "", name: "", podRole: "SAM" as "AD"|"SAM"|"SA"|"RSM" });
   const createMut = trpc.admin.createMember.useMutation({
     onSuccess: (data) => {
-      const feishuStatus = (data as any).feishuSent
+      const feishuStatus = data.feishuSent
         ? `✅ 飞书欢迎消息已发送至 ${createForm.email}`
-        : `⚠️ 飞书消息发送失败：${(data as any).feishuError || '未知原因'}`;
+        : `⚠️ 飞书消息未发送：${data.feishuError || '未知原因'}`;
       toast.success(`成员 ${data.name} 已创建\n${feishuStatus}`, { duration: 6000 });
+      // 初始密码随机生成，只在此显示一次；飞书未发送时由管理员自行转达。
+      if (data.initialPassword) setResetResult({ name: data.name, tempPassword: data.initialPassword, kind: "initial" });
       utils.admin.listUsers.invalidate();
       setShowCreate(false);
-      setCreateForm({ email: "", name: "", podRole: "SAM", password: "" });
+      setCreateForm({ email: "", name: "", podRole: "SAM" });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -187,7 +189,7 @@ export default function TeamManagement() {
   const [bulkToId, setBulkToId] = useState<string>("");
 
   // ── Reset Password ────────────────────────────────────────────────────────
-  const [resetResult, setResetResult] = useState<{ name: string; tempPassword: string } | null>(null);
+  const [resetResult, setResetResult] = useState<{ name: string; tempPassword: string; kind?: "initial" | "reset" } | null>(null);
   const resetPasswordMut = (trpc.admin as any).resetMemberPassword.useMutation({
     onSuccess: (data: any, variables: any) => {
       const member = members.find((m: any) => m.id === variables.userId);
@@ -516,7 +518,7 @@ export default function TeamManagement() {
               </Select>
             </div>
             <p className="text-xs text-muted-foreground bg-muted/30 px-3 py-2 rounded-lg">
-              初始密码：<strong className="text-foreground">{createForm.password || 'Aistorm2024!'}</strong>，创建后将通过飞书自动发送给成员
+              初始密码将随机生成，创建后只显示一次；已配置飞书时会同时通过飞书发送给成员
             </p>
           </div>
           <DialogFooter>
@@ -592,11 +594,11 @@ export default function TeamManagement() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <RotateCcw className="w-4 h-4 text-orange-400" />
-              密码已重置：{resetResult?.name}
+              {resetResult?.kind === "initial" ? "成员已创建" : "密码已重置"}：{resetResult?.name}
             </DialogTitle>
           </DialogHeader>
           <div className="py-3 space-y-3">
-            <p className="text-sm text-muted-foreground">临时密码已生成，请将以下密码告知该成员，登录后建议立即修改：</p>
+            <p className="text-sm text-muted-foreground">{resetResult?.kind === "initial" ? "初始密码" : "临时密码"}已生成，请将以下密码告知该成员，登录后建议立即修改：</p>
             <div className="flex items-center gap-2 p-3 rounded-lg bg-orange-500/10 border border-orange-500/30">
               <span className="flex-1 text-lg font-mono font-bold text-orange-300 tracking-widest">
                 {resetResult?.tempPassword}
